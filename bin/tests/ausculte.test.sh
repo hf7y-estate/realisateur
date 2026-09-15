@@ -777,4 +777,84 @@ case "$live" in
 esac
 has "H3 a DOWN row still exits 5, so a caller can still see it" "$live" 'exit 5'
 
+section "I. routes -- the port carries the identity at dexter's address (#1189)"
+# The distros share ONE network namespace and Windows sshd holds 22, so an
+# alias that omits Port does not fail: it reaches a REAL sshd on the WRONG
+# host, and the refusal reads as a broken key. hf7y/wtul#131 lost three days
+# concluding "dexter's sshd rejects restrict/command=" from exactly that.
+ADDR=dexter.tail893f2c.ts.net
+# A stub `ssh -G` so this stays offline. It answers from the fixture, which is
+# all the probe reads.
+cat > "$TMP/stub/ssh" <<'SSHSTUB'
+#!/usr/bin/env bash
+conf=""; alias=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -G) ;;
+    -F) shift; conf="$1" ;;
+    -*) ;;
+    *)  alias="$1" ;;
+  esac
+  shift
+done
+awk -v want="$alias" '
+  tolower($1)=="host" { inblk=0; for(i=2;i<=NF;i++) if ($i==want) inblk=1; next }
+  inblk && tolower($1)=="hostname" { h=$2 }
+  inblk && tolower($1)=="port"     { p=$2 }
+  END { printf "hostname %s\nport %s\n", (h?h:want), (p?p:22) }
+' "$conf"
+SSHSTUB
+chmod +x "$TMP/stub/ssh"
+
+routes() { SSH_ROUTE_CONFIG="$1" run routes; }
+
+# I1-I3: wtul#131's block exactly as it shipped -- five lines copied from
+# ocf-chezz-deploy, where port 22 IS correct.
+printf 'Host dexter-staging\n  HostName %s\n  User zach\n' "$ADDR" > "$TMP/portless"
+out="$(routes "$TMP/portless")"; rc=$?
+check "I1 a portless alias at that address is DOWN (5), not a route that quietly reaches Windows" "$rc" "5"
+case "$out" in *"WINDOWS sshd"*) ok "I2 ...and it names what :22 actually is, so the key is not retried" ;;
+  *) bad "I2 names the Windows sshd" "got: $out" ;; esac
+case "$out" in *"2223 dexter"*) ok "I3 ...and hands over the ports rather than making the reader look them up" ;;
+  *) bad "I3 names the ports" "got: $out" ;; esac
+
+printf 'Host dexter-staging\n  HostName %s\n  Port 2223\nHost monkey\n  HostName %s\n  Port 2224\n' "$ADDR" "$ADDR" > "$TMP/portful"
+out="$(routes "$TMP/portful")"; rc=$?
+check "I4 naming the port is OK (0)" "$rc" "0"
+case "$out" in *"2 ssh alias(es)"*) ok "I5 ...and it says how many it actually looked at" ;;
+  *) bad "I5 counts the aliases" "got: $out" ;; esac
+
+printf 'Host somewhere\n  HostName %s\n  Port 2299\n' "$ADDR" > "$TMP/unknownport"
+out="$(routes "$TMP/unknownport")"; rc=$?
+check "I6 a port nothing is declared on is a finding, not a silent pass" "$rc" "5"
+case "$out" in *"fleet-hosts-set.sh"*) ok "I7 ...and it says which file declares the map" ;;
+  *) bad "I7 names the map" "got: $out" ;; esac
+
+# ocf-chezz-deploy is the block dexter-staging was copied FROM, and :22 is
+# right there. A check that flagged it would be trained away within a week.
+printf 'Host ocf-chezz-deploy\n  HostName tsunami.ocf.berkeley.edu\n  User pine\n' > "$TMP/elsewhere"
+out="$(routes "$TMP/elsewhere")"; rc=$?
+check "I8 an alias at a DIFFERENT address is none of this probe's business" "$rc" "0"
+case "$out" in *ocf-chezz-deploy*) bad "I9 it is not even mentioned" "got: $out" ;;
+  *) ok "I9 ...and it is not even mentioned" ;; esac
+
+printf 'Host *\n  ServerAliveInterval 30\nHost dexter\n  HostName %s\n  Port 2223\n' "$ADDR" > "$TMP/wild"
+out="$(routes "$TMP/wild")"; rc=$?
+check "I10 a wildcard Host is a pattern, not a route -- skipped, not flagged" "$rc" "0"
+
+out="$(routes "$TMP/does-not-exist")"; rc=$?
+check "I11 no ssh config is BLIND (6), never a quiet OK" "$rc" "6"
+
+rm -f "$TMP/stub/ssh"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"
+
+section "J. the port map is a declaration, one file, and 22 is IN it"
+. "$HERE/../lib/fleet-hosts-set.sh"
+check "J1 22 is declared, so defaulting to it reads WRONG not merely unlisted" "$(ssh_netns_host_at 22)" "windows"
+check "J2 2223 is dexter's WSL2" "$(ssh_netns_host_at 2223)" "dexter"
+check "J3 2224 is monkey" "$(ssh_netns_host_at 2224)" "monkey"
+check "J4 2225 is vaporwave" "$(ssh_netns_host_at 2225)" "vaporwave"
+check "J5 the reverse lookup ausculte's propagation probe uses agrees" "$(ssh_netns_port_for dexter)" "2223"
+if ssh_netns_host_at 9999 >/dev/null 2>&1; then bad "J6 an undeclared port must not resolve"; else ok "J6 an undeclared port does not resolve"; fi
+
 summary

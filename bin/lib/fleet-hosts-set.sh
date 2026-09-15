@@ -30,3 +30,38 @@ else
   # reading vaporwave's silence as health once accounts exist there.
   FLEET_HOSTS=(monkey vaporwave)
 fi
+
+# --- AND WHICH PORT REACHES EACH ---------------------------------------------
+# Same file because it is the same question: naming a host is useless if the
+# name does not select it. dexter, monkey and vaporwave are WSL2 distros sharing
+# ONE network namespace, and Windows sshd holds 22 -- so at dexter's address the
+# PORT, not the hostname, selects the machine. An ssh_config Host block that
+# omits Port therefore does not fail. It reaches a REAL sshd on the WRONG host,
+# whose authorized_keys is a different file, and the refusal reads as a broken
+# key: hf7y/wtul#131 spent three days concluding "dexter's sshd rejects
+# restrict/command=" from exactly that. ausculte.sh's `routes` probe is the
+# guard; its propagation probe reads ssh_netns_port_for rather than retyping
+# 2223 inline, which is how it used to carry its own copy (realisateur#1189).
+SSH_NETNS_ADDR="${SSH_NETNS_ADDR:-dexter.tail893f2c.ts.net}"
+
+# port=who-answers. 22 IS DECLARED ON PURPOSE -- naming it is what lets a block
+# that defaults to it read as WRONG rather than as merely unlisted. Proven by
+# host key, not belief: `ssh-keyscan -p <port>` re-proves any row, and the
+# fingerprints are recorded in provision/monkey-wsl2/runbook.1.
+SSH_NETNS_PORTS="${SSH_NETNS_PORTS:-22=windows 2223=dexter 2224=monkey 2225=vaporwave}"
+
+ssh_netns_host_at() {  # <port> -> who answers there; rc 1 for a port not declared
+  local kv
+  for kv in $SSH_NETNS_PORTS; do
+    [ "${kv%%=*}" = "$1" ] && { printf '%s' "${kv#*=}"; return 0; }
+  done
+  return 1
+}
+
+ssh_netns_port_for() {  # <host> -> the port that reaches it, for callers that must build an ssh command rather than use an alias
+  local kv
+  for kv in $SSH_NETNS_PORTS; do
+    [ "${kv#*=}" = "$1" ] && { printf '%s' "${kv%%=*}"; return 0; }
+  done
+  return 1
+}
