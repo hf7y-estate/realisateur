@@ -44,9 +44,11 @@ APPLY=0
 
 die() { printf '%s: FAIL: %s\n' "$CLI_NAME" "$*" >&2; exit 2; }
 
-# THE CADENCE NAMES THE HOST PIN (#834), never $BASH_SOURCE: `readlink -f` on a
-# copy under the pin resolves THROUGH it to a dated build and freezes the row on
-# that build. The outer `flock` went with the `git pull` it wrapped (senechal#550).
+# --install-cadence below targets the host pin, never $BASH_SOURCE: `readlink -f`
+# on a copy under the pin resolves THROUGH it to a dated build and freezes the
+# row on that build. Ground truth on dexter (2026-09-15): the line actually
+# installed still wraps a live `git pull --ff-only` clone in `flock`, not this
+# path -- --install-cadence was never run to replace it.
 CRON_TAG='# realisateur:monkey-watch:WATCH'
 CRON_SPEC="${MONKEY_WATCH_CRON_SPEC:-*/10 * * * *}"
 if [ "${1:-}" = "--install-cadence" ]; then
@@ -239,10 +241,10 @@ if [ "$1" != NONE ]; then
   msg="$alert_head
 $alert_why
 $alert_url"
-  tid="$(zaxon_ask "$msg" monkey-watch)"
-  if [ -n "$tid" ]; then
+  sent="$(zaxon_send "$msg" monkey-watch)"
+  if [ -n "$sent" ]; then
     mw_alert_mark_sent "$STATE_FILE" "$NOW"
-    printf '%s: alerted (%s) ticket %s\n' "$CLI_NAME" "$LABEL" "$tid"
+    printf '%s: alerted (%s)\n' "$CLI_NAME" "$LABEL"
   fi
 fi
 
@@ -254,8 +256,8 @@ if [ -n "$LONG_READOUT" ]; then  # no count at all (unreachable, or the trip fai
     cs_head="monkey: clocksource stalls rising ${CS_LAST}->${LONG_READOUT}"
     cs_msg="$cs_head
 $cs_url"
-    cs_tid="$(zaxon_ask "$cs_msg" monkey-watch)"
-    [ -n "$cs_tid" ] && printf '%s: clocksource alerted (%s) ticket %s\n' "$CLI_NAME" "$cs_head" "$cs_tid"
+    cs_sent="$(zaxon_send "$cs_msg" monkey-watch)"
+    [ -n "$cs_sent" ] && printf '%s: clocksource alerted (%s)\n' "$CLI_NAME" "$cs_head"
   fi
   printf '%s\n' "$LONG_READOUT" > "$CS_STATE"
 fi
