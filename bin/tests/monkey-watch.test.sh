@@ -361,4 +361,11 @@ fi
 has "Q2 ...and it does not claim OK either -- the watcher lost a probe" \
   "$(code "$W")" 'VERDICT="DEGRADED"; WHY="the host could not read the VM state'
 
+section "R. alerts are fire-and-forget, not a question (2026-09-09: 113 asks, 0 answers)"
+case "$(code "$W")" in
+  *zaxon_ask*) bad "R1 no live call to zaxon_ask" "it is back -- alerts will flood the relay's one question slot again" ;;
+  *)           ok  "R1 no live call to zaxon_ask" ;;
+esac
+has "R2 alerting goes through zaxon_send instead" "$(code "$W")" 'zaxon_send'
+
 summary

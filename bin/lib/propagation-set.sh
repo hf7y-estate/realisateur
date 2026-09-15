@@ -187,8 +187,8 @@ PROP_LEAK_BOUND=7
 # "NEVER LEAVES THIS REPO" IS NOT "NEVER RUNS ANYWHERE ELSE", and reading it
 # that way cost the estate its only outside observer: #511's scan saw no caller
 # for monkey-watch.sh and deleted it -- its caller is a crontab line on dexter
-# (bin/lib/cron-invoked.tsv). Still LOCAL and never on PATH, but since #834 it
-# travels IN THE BUILD and dexter runs it from the pin, not from a clone.
+# (bin/lib/cron-invoked.tsv). Still LOCAL and never on PATH: dexter's crontab
+# runs it from a live `git pull --ff-only` clone, not a pinned build.
 # Before cutting anything in this list, ask what invokes it FROM SOMEWHERE ELSE.
 PROP_LOCAL_SCRIPTS="
 monkey-watch.sh
