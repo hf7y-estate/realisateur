@@ -725,6 +725,47 @@ check "AUSCULTE_FLEET_HOSTS overrides the set down to one host" "$rc" "0"
 has "and only that host's count is used" "$out" "3 account(s) checked"
 
 echo
+echo "-- fatals counts the CURRENT run, not the whole of history --------------"
+# THE ROW MUST BE ABLE TO CLEAR. sweep.log is never rotated, so counting FATAL
+# over the whole file latched this row DOWN for good: on 2026-09-16 it reported
+# 25 aborts across 4 accounts, of which zero were current and the newest was 10
+# days old. These run the program ausculte actually ships -- lifted out of the
+# copied script rather than retyped, so the two cannot drift apart.
+fatawk="$(grep -o 'awk "[^"]*END{print n+0}[^"]*"' "$TMP/bin/ausculte.sh" | head -1 | sed 's/^awk "//; s/"$//')"
+[ -n "$fatawk" ] && ok "the FATAL counter can be lifted out of ausculte.sh" \
+  || bad "the FATAL counter can be lifted out of ausculte.sh" "no awk program matched"
+fatcount() { printf '%s\n' "$1" > "$TMP/sweep.log"; awk "$fatawk" "$TMP/sweep.log"; }
+
+check "an abort in the CURRENT run still reads as aborting" "$(fatcount '=== 2026-09-16T05:37:10-05:00 ===
+FATAL git fetch origin failed -- aborting rather than running against a stale base')" "1"
+
+check "the same abort, once a later run completes, no longer counts" "$(fatcount '=== 2026-09-06T01:00:00-05:00 ===
+FATAL git fetch origin failed -- aborting rather than running against a stale base
+=== 2026-09-16T05:37:10-05:00 ===
+=== done 2026-09-16T05:53:27-05:00 (975s) ===')" "0"
+
+# sequestria's real shape on 2026-09-16: 19 lifetime FATALs, last run `done`.
+check "19 historical aborts with a completed last run count zero" "$(fatcount '=== a ===
+FATAL git fetch origin failed
+=== b ===
+FATAL git fetch origin failed
+=== 2026-09-06T01:00:50-05:00 ===
+COMPUTED VERDICT: WORKED -- pushed 3 commit(s)
+=== done 2026-09-06T01:10:59-05:00 (609s) ===')" "0"
+
+# vim-arcade's real shape: the last run ENDED, but on the turn ceiling. That is
+# a completed dispatch, not an abort before one, and must not read as a FATAL.
+check "a run that ends FAILED on the ceiling is not an abort" "$(fatcount '=== 2026-09-16T05:37:10-05:00 ===
+COMPUTED VERDICT: WORKED-CUTOFF -- the run itself exited rc=1
+=== FAILED (ceiling: max turns reached) 2026-09-16T05:53:27-05:00 (975s) ===')" "0"
+
+# An abort BEFORE the run marker is written lands after the previous
+# terminator, which is exactly the gap #1005 named. It must still be caught.
+check "an abort before the next run marker is still caught" "$(fatcount '=== 2026-09-15T08:00:00-05:00 ===
+=== done 2026-09-15T08:19:59-05:00 (1364s) ===
+FATAL could not push salvage branch -- aborting before any claude work')" "1"
+
+echo
 echo "-- NOT-MINE: the containment boundary is not a failure -----------------"
 # monkey is a WSL2 DISTRO on dexter. Holding shell on its own host is backwards,
 # so root@monkey has an empty authorized_keys and no key -- and with only
