@@ -9,8 +9,8 @@ CLI_NAME='ausculte.sh'
 CLI_SUMMARY='is self-dev healthy enough to stop watching?'
 CLI_USAGE='  ausculte              every probe; the exit code is the answer
   ausculte --json       one object per probe
-  ausculte <probe>      just one: channel hosts arming hygiene propagation
-                        rot landing unarmed fleet fatals handoff
+  ausculte <probe>      just one: channel hosts routes arming hygiene
+                        propagation rot landing unarmed fleet fatals handoff
   ausculte --cadence    run once on a clock: report, and record how long
                         each DOWN/BLIND row has held (--quiet to hush it)
   ausculte --install-cadence [--apply]
@@ -177,6 +177,41 @@ if want hosts; then
       record hosts OK 'monkey-watch (dexter) reports dexter serves what it declares'
     else
       record hosts DOWN "${why:-monkey-watch (dexter) reports $wv}"
+    fi
+  fi
+fi
+
+if want routes; then
+  # A ROUTE THAT ANSWERS IS NOT A ROUTE THAT ARRIVED. dexter, monkey and
+  # vaporwave share one network namespace, so the PORT selects the machine and
+  # Windows sshd holds 22 -- an alias missing Port reaches a REAL sshd on the
+  # WRONG host, and its refusal reads as a broken key. wtul#131 spent three
+  # days concluding "dexter's sshd rejects restrict/command=" from exactly
+  # that. See bin/lib/fleet-hosts-set.sh.
+  rconf="${SSH_ROUTE_CONFIG:-$HOME/.ssh/config}"
+  if [ ! -r "$rconf" ]; then
+    record routes BLIND "no ssh config at $rconf -- nothing to check"
+  else
+    # ssh -G, NOT a grep over the file: it resolves Include and Match, which is
+    # where an alias's real port can live. A wildcard Host is a pattern, not a
+    # route, so it is skipped rather than resolved and flagged.
+    rbad=''; rok=0
+    for ra in $(awk 'tolower($1)=="host"{for(i=2;i<=NF;i++) if ($i !~ /[*?!]/) print $i}' "$rconf" | sort -u); do
+      rg="$(ssh -G -F "$rconf" "$ra" 2>/dev/null)" || continue
+      [ "$(printf '%s\n' "$rg" | awk '$1=="hostname"{print $2; exit}')" = "$SSH_NETNS_ADDR" ] || continue
+      rp="$(printf '%s\n' "$rg" | awk '$1=="port"{print $2; exit}')"
+      rwho="$(ssh_netns_host_at "$rp")" \
+        || { rbad="$rbad $ra->:$rp(nothing is declared on that port -- see lib/fleet-hosts-set.sh)"; continue; }
+      # The whole point: 22 ANSWERS, and is the wrong machine. A missing Port is
+      # indistinguishable from naming it, which is why this cannot be eyeballed.
+      if [ "$rwho" = windows ]; then
+        rbad="$rbad $ra->:$rp(dexter's WINDOWS sshd -- different authorized_keys; every key in the WSL2 file is refused there)"
+      else rok=$((rok+1)); fi
+    done
+    if [ -n "$rbad" ]; then
+      record routes DOWN "ssh alias reaching dexter's address without naming its host:$rbad -- 2223 dexter, 2224 monkey, 2225 vaporwave"
+    else
+      record routes OK "$rok ssh alias(es) at dexter's address, each naming the port that selects its host"
     fi
   fi
 fi
@@ -355,7 +390,10 @@ if want propagation; then
       # a host omitted without saying so is how a partial answer reads as a
       # complete one.
       bad=''; unreachable=''; skipped=''
-      _hosts=(monkey "-p 2223 dexter")
+      # The port is READ, not retyped: fleet-hosts-set.sh is the one place that
+      # says 2223 is dexter. This line carried its own copy because the ssh
+      # config could not be trusted to -- which is now the `routes` probe's job.
+      _hosts=(monkey "-p $(ssh_netns_port_for dexter) dexter")
       on_target_host monkey && { _hosts=(monkey); skipped=' dexter'; }
       for h in "${_hosts[@]}"; do
         # LOCALHOST IS NOT AN SSH TARGET: the row read "monkey:unreachable"
