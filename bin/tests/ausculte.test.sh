@@ -188,6 +188,72 @@ check "no anonymous token is BLIND (6), never DOWN" "$rc" "6"
 
 printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"
 
+# --- promote: is it cycling, or merely up? ----------------------------------
+# `docker ps` says "Up 3 hours" for a container whose loop died; the timestamp
+# on the container's own `cycle ok` line is the only thing that separates them.
+prssh() { printf '#!/usr/bin/env bash\ncat <<'"'"'R'"'"'\n%s\nR\n' "$1" > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
+now="$(date -u +%FT%TZ)"; long_ago="$(date -u -d '2 hours ago' +%FT%TZ)"
+
+out="$(run promote)"; rc=$?
+check "an unreachable dexter is BLIND (6) -- an unread container grades nothing" "$rc" "6"
+
+prssh 'NODECL'
+out="$(run promote)"; rc=$?
+check "an undeployed promote is BLIND (6), never OK -- the declaration lives in wtul, not on dexter" "$rc" "6"
+has "and it names what would deploy it" "$out" "deploy.sh"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE running
+LAST wtul-dexter-promote: cycle ok, $now"
+out="$(run promote)"; rc=$?
+check "running with a fresh cycle stamp is OK" "$rc" "0"
+
+prssh "INTERVAL 300
+APPLY 0
+STATE running
+LAST wtul-dexter-promote: cycle ok, $now"
+out="$(run promote)"; rc=$?
+check "a dry-run promote still grades the clock OK" "$rc" "0"
+has "...and the row refuses to read as 'discs are reaching the library'" "$out" "promotes nothing"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE running
+LAST wtul-dexter-promote: cycle ok, $long_ago"
+out="$(run promote)"; rc=$?
+check "up for hours past a 300s interval is DOWN (5) -- which is the question docker ps cannot answer" "$rc" "5"
+has "and it says up is not cycling" "$out" "it is not cycling"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE exited"
+out="$(run promote)"; rc=$?
+check "a stopped container is DOWN (5) -- the entrypoint exits on a failed cycle rather than looping silently" "$rc" "5"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE running"
+out="$(run promote)"; rc=$?
+check "running with no completed cycle is DOWN (5)" "$rc" "5"
+has "and it says up is not promoting" "$out" "up is not the same as promoting"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE "
+out="$(run promote)"; rc=$?
+check "a compose file declaring promote with no container at all is DOWN (5)" "$rc" "5"
+has "and it says nothing is promoting" "$out" "nothing is promoting"
+
+prssh "INTERVAL 300
+APPLY 1
+STATE running
+LAST wtul-dexter-promote: cycle ok, not-a-date"  # A STAMP THAT WILL NOT PARSE IS NOT A STALE CYCLE: grading it DOWN would alarm about promote when the fault is this probe's reading of it
+out="$(run promote)"; rc=$?
+check "an unparseable cycle stamp is BLIND (6), never DOWN" "$rc" "6"
+
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"
+
 hygiene() { printf '#!/usr/bin/env bash\ncat <<'"'"'J'"'"'\n%s\nJ\n' "$1" > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }  # hygiene grades what monkey-status-collect.py already publishes (#706); ecosim#91 refused a CI grant onto 0700 self-dev homes, so the question is answered here instead, off the same published status arming reads
 CLEAN='{"account":"a","uid":1,"containment":{"foreign_clones":[],"outside_home":[],"sudoers":[]},"credentials":{"claude_settings":"0o600"}}'
 
