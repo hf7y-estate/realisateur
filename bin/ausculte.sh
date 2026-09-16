@@ -9,8 +9,9 @@ CLI_NAME='ausculte.sh'
 CLI_SUMMARY='is self-dev healthy enough to stop watching?'
 CLI_USAGE='  ausculte              every probe; the exit code is the answer
   ausculte --json       one object per probe
-  ausculte <probe>      just one: channel hosts routes arming hygiene
-                        propagation rot landing unarmed fleet fatals handoff
+  ausculte <probe>      just one: channel hosts routes arming roster_read
+                        hygiene propagation rot landing unarmed fleet fatals
+                        handoff
   ausculte --cadence    run once on a clock: report, and record how long
                         each DOWN/BLIND row has held (--quiet to hush it)
   ausculte --install-cadence [--apply]
@@ -269,6 +270,24 @@ if want arming; then
     else
       record arming OK "$n_armed account(s) armed, each dispatched within ${ARMING_STALE_DAYS:-3}d"
     fi
+  fi
+fi
+
+if want roster_read; then  # THE ARMING AUTHORITY ITSELF, not what the accounts did with it (#1191): arming reads accounts[].armed, which the accounts publish and which stays populated with the roster service gone -- so a dead authority read as a clean ausculte for four days while monkey-status-collect.py measured and published the fact the whole time.
+  fetch_monkey_status; rst="$_monkey_status"
+  rvu="$(printf '%s' "$rst" | jq -r '.watcher.valid_until // .valid_until // empty' 2>/dev/null)"
+  rr="$(printf '%s' "$rst" | jq -r 'if has("roster_read") then (.roster_read | tostring) else "absent" end' 2>/dev/null)"
+  if [ -z "$rst" ] || ! printf '%s' "$rst" | jq -e . >/dev/null 2>&1; then
+    record roster_read BLIND 'the published monkey status could not be read'
+  elif [ -n "$rvu" ] && [ "$(date -u +%s)" -gt "$(date -u -d "$rvu" +%s 2>/dev/null || echo 0)" ]; then
+    record roster_read BLIND "the published monkey status expired at $rvu -- nothing is publishing it"  # a document past its own declared freshness is not evidence, as in arming and hosts above
+  elif [ -z "$rr" ] || [ "$rr" = absent ] || [ "$rr" = null ]; then
+    record roster_read BLIND "the published monkey status carries no roster_read field: $(printf '%s' "$rst" | jq -r '.watcher.why // .watcher.verdict // "no reason given"' 2>/dev/null)"  # BLIND, NOT DOWN: absent is a document that cannot say -- a collector older than the field, or the watcher's degraded fallback, which publishes no accounts and no roster_read when the collector could not run at all. Reading that silence as DOWN would alarm on the wrong host.
+  elif [ "$rr" = false ]; then
+    rnull="$(printf '%s' "$rst" | jq -r '[.accounts[]? | select(.roster_state == null)] | length' 2>/dev/null)"
+    record roster_read DOWN "the collector could not read the roster service at $GH_ESTATE_ROSTER_URL -- ${rnull:-?} account(s) have no roster_state, so arming_state() answers nothing and BLIND classifies nothing"
+  else
+    record roster_read OK "the collector read the roster service; every account carries a roster_state"
   fi
 fi
 
