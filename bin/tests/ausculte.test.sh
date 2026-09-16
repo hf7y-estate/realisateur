@@ -151,6 +151,38 @@ out="$(run roster_read)"; rc=$?
 check "a status past its own valid_until is BLIND (6) even reading true -- a DEAD watcher publishes nothing new" "$rc" "6"
 has "and it names the expiry" "$out" "expired at"
 
+# --- pullable: can a rebuilt dexter recover from its compose files alone? ----
+pullssh() { printf '#!/usr/bin/env bash\ncat <<'"'"'R'"'"'\n%s\nR\n' "$1" > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
+pullcurl() {  # $1 manifest status, $2 token document -- the probe calls curl twice and only the manifest call passes -w
+  { printf '#!/usr/bin/env bash\n'
+    printf 'for a in "$@"; do [ "$a" = "-w" ] && { printf %%s %s; exit 0; }; done\n' "$1"
+    printf 'printf %%s %s\n' "${2:-'{\"token\":\"t\"}'}"
+  } > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }
+
+out="$(run pullable)"; rc=$?
+check "an unreachable dexter is BLIND (6) -- an unread compose file grades nothing" "$rc" "6"
+
+pullssh 'groc-browser:local'; pullcurl 401
+out="$(run pullable)"; rc=$?
+check "an image with no registry is DOWN (5) -- it exists only in dexter's local store" "$rc" "5"
+has "and it says a rebuilt dexter cannot recover it" "$out" "cannot recover it"
+
+pullssh 'ghcr.io/hf7y/wtul-dexter-promote:latest'; pullcurl 403
+out="$(run pullable)"; rc=$?
+check "a PRIVATE ghcr package is DOWN (5) -- dexter carries no credential to pull it" "$rc" "5"
+has "and it names the flip, not a login" "$out" "one-way"
+hasnt "and it never suggests putting a credential on dexter" "$out" "docker login"
+
+pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200
+out="$(run pullable)"; rc=$?
+check "a public ghcr package is OK" "$rc" "0"
+
+pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200 "'{}'"  # A REGISTRY THAT WILL NOT ANSWER IS NOT A PRIVATE PACKAGE: grading silence as DOWN would alarm about dexter when the fault is the network or ghcr itself
+out="$(run pullable)"; rc=$?
+check "no anonymous token is BLIND (6), never DOWN" "$rc" "6"
+
+printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"
+
 hygiene() { printf '#!/usr/bin/env bash\ncat <<'"'"'J'"'"'\n%s\nJ\n' "$1" > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }  # hygiene grades what monkey-status-collect.py already publishes (#706); ecosim#91 refused a CI grant onto 0700 self-dev homes, so the question is answered here instead, off the same published status arming reads
 CLEAN='{"account":"a","uid":1,"containment":{"foreign_clones":[],"outside_home":[],"sudoers":[]},"credentials":{"claude_settings":"0o600"}}'
 
