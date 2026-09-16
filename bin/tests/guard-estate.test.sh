@@ -242,7 +242,16 @@ for n in $GUARDS; do
     # A non-zero exit with no findings and no admission of blindness is the
     # mirror image of D1: it is unreadable. A caller cannot tell a refusal
     # from a failure from a finding. (Non-zero WITH a BLIND line is correct
-    bad "D2 $n: exited $rc having reported neither a finding nor a BLIND"
+    # NAME THE LIKELY CAUSE, or this row sends its reader to the guard's own
+    # logic when the fault is in the GATE line above it. `none` takes a reason
+    # (`# GATE: none -- <why>`) and default/strict do NOT: anything after the
+    # mode word is EXTRA ARGV, so a guard author mirroring the `none` spelling
+    # ships prose straight into cli-guard, which rejects it as positionals and
+    # exits 2 -- reaching exactly here, with nothing about argv in the message.
+    # Cost a cycle on #1189.
+    hint=''
+    [ -n "${extra//[[:space:]]/}" ] && hint=" -- invoked with extra argv from its '# GATE: $mode' line:$extra. After the mode word that is ARGV, not a comment; only '# GATE: none' takes a trailing reason."
+    bad "D2 $n: exited $rc having reported neither a finding nor a BLIND$hint"
   else
     ok "D1 $n: rc=$rc, findings=$cnt -- consistent"
   fi
