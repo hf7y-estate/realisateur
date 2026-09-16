@@ -10,8 +10,8 @@ CLI_SUMMARY='is self-dev healthy enough to stop watching?'
 CLI_USAGE='  ausculte              every probe; the exit code is the answer
   ausculte --json       one object per probe
   ausculte <probe>      just one: channel hosts routes arming roster_read
-                        pullable hygiene propagation rot landing unarmed fleet
-                        fatals handoff
+                        pullable promote hygiene propagation rot landing
+                        unarmed fleet fatals handoff
   ausculte --cadence    run once on a clock: report, and record how long
                         each DOWN/BLIND row has held (--quiet to hush it)
   ausculte --install-cadence [--apply]
@@ -327,6 +327,46 @@ PULLABLE_EOF
       elif [ -n "$pblind" ]; then record pullable BLIND "a registry could not be asked about:$pblind"
       else record pullable OK "$pok vendored and $pup upstream image(s) declared on $pdh, every one anonymously pullable"; fi
     fi
+  fi
+fi
+
+if want promote; then  # WHEN DID IT LAST RUN, AND WHEN DOES IT RUN NEXT? `docker ps` says "Up 3 hours", which is a different question -- a promote container can sit up for days with a dead loop. A systemd timer answers it for free via `systemctl list-timers`, at the price of a second scheduler on a host where compose is already the first and where duplicate mechanisms were deleted on 2026-09-16. The container already stamps `cycle ok, <ts>` on every pass (hf7y/wtul#211, the line deploy.sh gates on), so the witness is READ here beside roster_read and pullable rather than BUILT again -- the same move that turned "is the arming authority alive" from an architecture question into a probe.
+  if on_target_host monkey; then
+    not_mine promote 'dexter is watched from dexter; a guest must not hold shell on its host to audit it'
+  else
+    mdh="${AUSCULTE_DEXTER_HOST:-dexter}"
+    mout="$(${AUSCULTE_SSH:-ssh} -o ConnectTimeout=10 -o BatchMode=yes "$mdh" '
+      d=/srv/wtul-dexter-promote
+      [ -r "$d/compose.yaml" ] || { echo NODECL; exit 0; }
+      sed -n "s/.*PROMOTE_INTERVAL_SECONDS:[^0-9]*\([0-9][0-9]*\).*/INTERVAL \1/p" "$d/compose.yaml" | head -1
+      sed -n "s/.*PROMOTE_APPLY:[^0-9]*\([0-9]\).*/APPLY \1/p" "$d/compose.yaml" | head -1
+      echo "STATE $(sudo -n docker inspect -f "{{.State.Status}}" wtul-dexter-promote 2>/dev/null)"
+      sudo -n docker logs --tail 200 wtul-dexter-promote 2>&1 | grep "^wtul-dexter-promote: cycle ok" | tail -1 | sed "s/^/LAST /"
+    ' 2>/dev/null)"
+    mfield() { printf '%s' "$mout" | sed -n "s/^$1 //p" | head -1; }
+    case "$mout" in
+      '') record promote BLIND "no answer from $mdh -- the promote container could not be looked at" ;;
+      NODECL*) record promote BLIND "no /srv/wtul-dexter-promote/compose.yaml on $mdh -- promote is not deployed, so nothing measures whether a staged disc ever reaches the library; hf7y/wtul provision/dexter/wtul-dexter-promote/deploy.sh is what puts it there" ;;  # BLIND, NOT DOWN: the declaration lives in wtul's checkout, not on dexter, so an absent compose file is a question this host cannot answer rather than a service that failed. It still is not OK, and exit 6 says so.
+      *)
+        mint="$(mfield INTERVAL)"; mint="${mint:-300}"
+        mst="$(mfield STATE)"
+        mlast="$(printf '%s' "$mout" | sed -n 's/^LAST wtul-dexter-promote: cycle ok, //p' | head -1)"
+        mts=''; [ -n "$mlast" ] && mts="$(date -u -d "$mlast" +%s 2>/dev/null)"
+        mnote=''; [ "$(mfield APPLY)" = 0 ] && mnote=' -- and PROMOTE_APPLY=0, so it cycles and promotes nothing; this row grades the clock, not the library'
+        if [ -z "$mst" ]; then
+          record promote DOWN "$mdh declares promote in /srv/wtul-dexter-promote/compose.yaml and no container by that name exists -- nothing is promoting"
+        elif [ "$mst" != running ]; then
+          record promote DOWN "the promote container on $mdh is $mst, not running -- its entrypoint exits non-zero on a failed cycle rather than looping silently (hf7y/wtul b4a1171), so a stopped container IS the failed cycle; \`sudo docker compose logs\` in /srv/wtul-dexter-promote names it"
+        elif [ -z "$mlast" ]; then
+          record promote DOWN "the promote container on $mdh is running and has logged no completed cycle -- up is not the same as promoting"
+        elif [ -z "$mts" ]; then
+          record promote BLIND "the last cycle stamp on $mdh could not be read as a date: $mlast"
+        elif [ "$(( $(date -u +%s) - mts ))" -gt "$(( mint * 3 ))" ]; then
+          record promote DOWN "the last completed promote cycle on $mdh was $mlast, $(( ($(date -u +%s) - mts) / 60 ))m ago -- past 3x the declared ${mint}s interval. It is up and it is not cycling"
+        else
+          record promote OK "promote on $mdh completed a cycle $(( ($(date -u +%s) - mts) / 60 ))m ago, inside the declared ${mint}s interval (last: $mlast)$mnote"
+        fi ;;
+    esac
   fi
 fi
 
