@@ -298,7 +298,9 @@ if want pullable; then  # CAN A REBUILT DEXTER RECOVER FROM ITS COMPOSE FILES AL
     pdh="${AUSCULTE_DEXTER_HOST:-dexter}"
     prefs="$(${AUSCULTE_SSH:-ssh} -o ConnectTimeout=10 -o BatchMode=yes "$pdh" '
       for f in /srv/*/compose.yaml; do [ -r "$f" ] || continue
-        sed -n "s/^[[:space:]]*image:[[:space:]]*//p" "$f"; done' 2>/dev/null | tr -d "\"'" | sort -u)"
+        sed -n "s/^[[:space:]]*image:[[:space:]]*//p" "$f"; done' 2>/dev/null \
+      | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' \
+      | tr -d "\"'" | sort -u)"  # A TRAILING COMMENT IS PART OF THE LINE, NOT THE REF: this repo's prose ratchet pushes explanation into trailing comments, so the first `image:` line written under that rule fed the whole comment to the registry and graded a healthy groc-browser BLIND. Stripped locally, not in the remote sed, so the stub in ausculte.test.sh exercises it.
     if [ -z "$prefs" ]; then
       record pullable BLIND "no compose.yaml under /srv on $pdh could be read -- nothing to grade"
     else
