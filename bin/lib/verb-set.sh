@@ -81,8 +81,18 @@ verb_set_is_exempt() {
 # verb_set_verbs_of <repo> <ref> -- an executable bin/<n> declares a verb,
 # man/<n>.1 optional (#891), filtered through the same opt-out as every caller.
 verb_set_verbs_of() {
-  local repo="$1" ref="$2" project v
-  project="$(basename "$repo")"
+  local repo="$1" ref="$2" project v url
+  # THE REMOTE NAMES THE PROJECT; THE DIRECTORY IS NOT OBLIGED TO (#1194).
+  # `project` keys not-a-verb.tsv, whose rows carry REPO names. Under the
+  # estate's own agent layout the checkout is `hf7y__realisateur`, no row
+  # matched, every exemption was silently lost, and this suite has been red in
+  # every spawn checkout and green in CI -- so the only readers who saw the
+  # failure were the ones for whom it was false. The lookup never failed; it
+  # missed, which is why no message could name the reason.
+  # Fall back to the basename: the suite's fixture repos have no remote.
+  url="$(git -C "$repo" remote get-url origin 2>/dev/null)"
+  [ -n "$url" ] && project="$(basename "${url%.git}")"
+  [ -n "$project" ] || project="$(basename "$repo")"
   git -C "$repo" ls-tree -r "$ref" -- bin/ 2>/dev/null | awk '
     $1 == "100755" && $2 == "blob" && $4 ~ /^bin\/[^\/]+$/ { print substr($4, 5) }
   ' | sort | while IFS= read -r v; do
