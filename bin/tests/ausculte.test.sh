@@ -177,6 +177,11 @@ pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200
 out="$(run pullable)"; rc=$?
 check "a public ghcr package is OK" "$rc" "0"
 
+pullssh 'ghcr.io/hf7y/groc-browser:latest  # NOT groc-browser:local with a build: . -- dexter pulls and never builds (#322)'; pullcurl 200
+out="$(run pullable)"; rc=$?
+check "a trailing YAML comment is stripped, not fed to the registry -- the prose ratchet puts explanation exactly there" "$rc" "0"
+hasnt "and no verdict quotes the comment back" "$out" "never builds"
+
 pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200 "'{}'"  # A REGISTRY THAT WILL NOT ANSWER IS NOT A PRIVATE PACKAGE: grading silence as DOWN would alarm about dexter when the fault is the network or ghcr itself
 out="$(run pullable)"; rc=$?
 check "no anonymous token is BLIND (6), never DOWN" "$rc" "6"
