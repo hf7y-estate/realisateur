@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Boot recovery for every service under /srv on dexter.
+#
+#   dexter-srv-autostart --install [--dry-run]   from a machine with a dexter
+#                                                login; installs and enables
+#   dexter-srv-autostart --unit                  print the systemd unit
+#   dexter-srv-autostart                         the sweep itself; what the unit runs
+#
+# WHY THIS EXISTS: `restart: always` does NOT cover a container that fails at
+# START. roster died on 2026-09-11 binding 100.107.253.56:8646 nine seconds
+# after docker came up, before the tailnet address existed on any interface --
+# RestartCount stayed 0, because the restart policy governs a container that ran
+# and exited, not one that never programmed its network endpoint. It sat Exited,
+# not Restarting, for four days, and came back only when a human typed
+# `docker compose up -d`. Every tailnet-bound service on this host had the same
+# hole (hf7y/realisateur#1191, hf7y/senechal#439).
+set -uo pipefail
+
+# THE UNIT LIVES HERE, not in a file beside this one: a .service naming an
+# ExecStart and a timeout that the script it starts does not agree with is a
+# drift nothing checks. --install writes what --unit prints.
+if [ "${1:-}" = "--unit" ]; then
+  cat <<'UNIT'
+[Unit]
+Description=Start every /srv/*/compose.yaml on dexter, once its bind address exists
+Documentation=https://github.com/hf7y/realisateur/blob/main/provision/dexter/autostart/dexter-srv-autostart
+# Requires=, not Wants=: with no docker there is nothing this unit can do, and
+# failing is the honest report. The wait for the tailnet address is in the
+# script, not here -- dexter runs no tailscaled unit to order After=.
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/dexter-srv-autostart
+# Longer than the script's own address wait, so systemd never kills it mid-wait
+# and leaves the services it had not reached yet stopped.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  exit 0
+fi
+
+SRV="${DEXTER_SRV:-/srv}"
+TIMEOUT="${DEXTER_AUTOSTART_TIMEOUT:-300}"
+
+log() { printf '[dexter-srv-autostart] %s\n' "$*"; }
+
+# THE ROAD, in the same file as the freight: one file to read, and the unit that
+# lands on the host is what the host's own copy printed, so the two cannot
+# disagree about ExecStart or the timeout.
+if [ "${1:-}" = "--install" ]; then
+  HOST="${DEXTER_HOST:-dexter}"
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" true \
+    || { log "FATAL: no ssh to $HOST -- --install runs from a machine with a dexter login"; exit 1; }
+  if [ "${2:-}" = "--dry-run" ]; then
+    log "DRY RUN -- nothing is written to $HOST"
+    log "would install /usr/local/bin/dexter-srv-autostart, then enable this unit:"
+    "$self" --unit | sed 's/^/           | /'
+    exit 0
+  fi
+  log "installing on $HOST"
+  scp -q "$self" "$HOST:/tmp/dexter-srv-autostart"
+  # ENABLED, NOT STARTED: this unit's whole job is the next boot, and everything
+  # it would start is already up. `systemctl start` here would read as a test and
+  # not be one -- the address wait is only exercised by a real boot. Worse, the
+  # sweep reconciles: `up -d` against a compose file edited since the containers
+  # were created would recreate a live service as a side effect of installing.
+  ssh "$HOST" 'sudo -n install -m 0755 /tmp/dexter-srv-autostart /usr/local/bin/dexter-srv-autostart
+rm -f /tmp/dexter-srv-autostart
+/usr/local/bin/dexter-srv-autostart --unit | sudo -n tee /etc/systemd/system/dexter-srv-autostart.service >/dev/null
+sudo -n systemctl daemon-reload
+sudo -n systemctl enable dexter-srv-autostart.service' || exit 1
+  log "enabled for next boot. Verify: ssh $HOST systemctl is-enabled dexter-srv-autostart.service"
+  exit 0
+fi
+
+# THE ADDRESS IS THE PRECONDITION, NOT A DAEMON: dexter runs no tailscaled unit
+# -- `systemctl show tailscaled` is empty, because mirrored WSL2 networking
+# carries the address in from the Windows host -- so there is nothing to order
+# After=. Wait for the address itself. Read from the compose files rather than
+# hardcoded, so this stays true when the address changes.
+mapfile -t want < <(grep -rhoE '\b100\.[0-9]+\.[0-9]+\.[0-9]+\b' "$SRV"/*/compose.yaml 2>/dev/null | sort -u)
+
+have_all() {
+  local a
+  for a in "${want[@]}"; do
+    ip -4 -o addr show 2>/dev/null | grep -qF " $a/" || return 1
+  done
+}
+
+if [ "${#want[@]}" -gt 0 ]; then
+  log "waiting up to ${TIMEOUT}s for: ${want[*]}"
+  for _ in $(seq "$TIMEOUT"); do have_all && break; sleep 1; done
+  # STARTING ANYWAY IS DELIBERATE: a bind that fails here fails loudly in the
+  # journal, which is the state this unit exists to make visible. Refusing to
+  # start would reproduce the silent Exited container it replaces.
+  have_all || log "WARNING: address still absent after ${TIMEOUT}s -- starting anyway; a bind to it will fail in the log below"
+fi
+
+rc=0
+for d in "$SRV"/*/; do
+  [ -r "$d/compose.yaml" ] || continue
+  name="$(basename "$d")"
+  # OPT-OUT, for a service whose resting state is stopped: groc-browser is
+  # started on demand by groc-browser-ctl and parked by its idle-stop cron, so
+  # booting it up would fight its own lifecycle (hf7y/groc-mangr#141).
+  [ -e "$d/.no-autostart" ] && { log "skipping $name (.no-autostart)"; continue; }
+  log "starting $name"
+  (cd "$d" && docker compose up -d) || { rc=1; log "FAILED: $name"; }
+done
+exit "$rc"
