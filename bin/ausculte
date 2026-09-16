@@ -701,7 +701,20 @@ $_led" ;;
   fi
 fi
 
-if want fatals; then  # A HARD ABORT BEFORE `claude` STARTS writes no ledger row, so `fleet` above never sees it -- two accounts hard-aborted every dispatch for days on exactly that gap (#1005) and a four-line sweep.log FATAL count found both in a minute
+if want fatals; then  # A HARD ABORT BEFORE `claude` STARTS writes no ledger row, so `fleet` above never sees it -- two accounts hard-aborted every dispatch for days on exactly that gap (#1005) and a four-line sweep.log FATAL count found both in a minute.
+  # CURRENT RUN, NOT LIFETIME. sweep.log is never rotated, so `grep -c FATAL`
+  # over the whole file made this row LATCH: one abort in an account's history
+  # held it DOWN forever, and no recovery could ever clear it. Measured
+  # 2026-09-16, it was reporting 25 aborts across 4 accounts of which ZERO were
+  # current -- the newest was 10 days old and every one of those accounts has
+  # completed runs since. A row that cannot return to OK is not a witness, it
+  # is furniture, and an operator learns to scroll past it -- which is the
+  # failure this whole verb exists to prevent.
+  #
+  # A run writes `=== <ts> ===` on entry and `=== done|FAILED ... ===` on exit,
+  # so resetting the count at every `^=== ` line counts only what has happened
+  # since the last marker. A hard abort still lands after one and still reads
+  # DOWN, which is the case #1005 named; a historical one does not.
   _fatals_probe='
     sudo -n true 2>/dev/null && SU="sudo -n" || SU=""   # homes are 0700
     n_checked=0
@@ -712,7 +725,7 @@ if want fatals; then  # A HARD ABORT BEFORE `claude` STARTS writes no ledger row
       [ -n "$L" ] || continue
       $SU test -r "$L" || continue
       n_checked=$((n_checked + 1))
-      c=$($SU grep -c FATAL "$L" 2>/dev/null)
+      c=$($SU awk "/^=== /{n=0} /FATAL/{n++} END{print n+0}" "$L" 2>/dev/null)
       [ "${c:-0}" -gt 0 ] && printf "FATALS-FOUND %s %s\n" "$u" "$c"
     done < /etc/passwd
     echo "FATALS-CHECKED $n_checked"'
