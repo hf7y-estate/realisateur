@@ -126,6 +126,31 @@ status "{\"accounts\":[{\"account\":\"live\",\"armed\":true,\"last_run\":{\"star
 out="$(run arming)"; rc=$?
 check "and the flat shape expires too, so neither side of the schema is a blind spot" "$rc" "6"
 
+# --- roster_read grades the AUTHORITY, not what the accounts did with it --
+status '{"roster_read":true,"accounts":[{"account":"a","roster_state":"live"}]}'  # arming above reads accounts[].armed, which the accounts publish and which stays populated with the roster service gone -- so roster sat Exited four days and ausculte still read clean (#1191), while the collector measured the fact the whole time
+out="$(run roster_read)"; rc=$?
+check "a collector that read the roster service is OK" "$rc" "0"
+
+status '{"roster_read":false,"accounts":[{"account":"a","roster_state":null},{"account":"b","roster_state":null}]}'
+out="$(run roster_read)"; rc=$?
+check "roster_read false is DOWN (5) -- the arming authority is unreachable" "$rc" "5"
+has "and it counts the accounts left with no roster_state" "$out" "2 account(s)"
+
+status '{"accounts":[],"watcher":{"verdict":"DEGRADED","why":"sshd sent its banner but the session stalled -- no answer in 180s"}}'  # ABSENT IS NOT FALSE: this is the watcher's degraded fallback, measured live 2026-09-15 -- it publishes no accounts and no roster_read when the collector could not run, and reading that silence as DOWN alarms on the wrong host
+out="$(run roster_read)"; rc=$?
+check "an absent roster_read is BLIND (6), never DOWN -- the document cannot say" "$rc" "6"
+has "and it repeats why the publisher could not collect" "$out" "the session stalled"
+hasnt "and it never claims the roster service is unreachable" "$out" "could not read the roster service"
+
+status '{"roster_read":null,"accounts":[]}'
+out="$(run roster_read)"; rc=$?
+check "an explicit null grades BLIND too, not DOWN" "$rc" "6"
+
+status "{\"roster_read\":true,\"accounts\":[{\"account\":\"a\",\"roster_state\":\"live\"}],\"watcher\":{\"valid_until\":\"$expired\"}}"
+out="$(run roster_read)"; rc=$?
+check "a status past its own valid_until is BLIND (6) even reading true -- a DEAD watcher publishes nothing new" "$rc" "6"
+has "and it names the expiry" "$out" "expired at"
+
 hygiene() { printf '#!/usr/bin/env bash\ncat <<'"'"'J'"'"'\n%s\nJ\n' "$1" > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }  # hygiene grades what monkey-status-collect.py already publishes (#706); ecosim#91 refused a CI grant onto 0700 self-dev homes, so the question is answered here instead, off the same published status arming reads
 CLEAN='{"account":"a","uid":1,"containment":{"foreign_clones":[],"outside_home":[],"sudoers":[]},"credentials":{"claude_settings":"0o600"}}'
 
