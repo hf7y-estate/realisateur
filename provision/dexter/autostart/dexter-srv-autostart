@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Boot recovery for every service under /srv on dexter. Installed by install.sh
+# beside this file; run by dexter-srv-autostart.service at multi-user.target.
+#
+# WHY THIS EXISTS: `restart: always` does NOT cover a container that fails at
+# START. roster died on 2026-09-11 binding 100.107.253.56:8646 nine seconds
+# after docker came up, before the tailnet address existed on any interface --
+# RestartCount stayed 0, because the restart policy governs a container that ran
+# and exited, not one that never programmed its network endpoint. It sat Exited,
+# not Restarting, for four days, and came back only when a human typed
+# `docker compose up -d`. Every tailnet-bound service on this host had the same
+# hole (hf7y/realisateur#1191, hf7y/senechal#439).
+set -uo pipefail
+
+SRV="${DEXTER_SRV:-/srv}"
+TIMEOUT="${DEXTER_AUTOSTART_TIMEOUT:-300}"
+
+log() { printf '[dexter-srv-autostart] %s\n' "$*"; }
+
+# THE ADDRESS IS THE PRECONDITION, NOT A DAEMON: dexter runs no tailscaled unit
+# -- `systemctl show tailscaled` is empty, because mirrored WSL2 networking
+# carries the address in from the Windows host -- so there is nothing to order
+# After=. Wait for the address itself. Read from the compose files rather than
+# hardcoded, so this stays true when the address changes.
+mapfile -t want < <(grep -rhoE '\b100\.[0-9]+\.[0-9]+\.[0-9]+\b' "$SRV"/*/compose.yaml 2>/dev/null | sort -u)
+
+have_all() {
+  local a
+  for a in "${want[@]}"; do
+    ip -4 -o addr show 2>/dev/null | grep -qF " $a/" || return 1
+  done
+}
+
+if [ "${#want[@]}" -gt 0 ]; then
+  log "waiting up to ${TIMEOUT}s for: ${want[*]}"
+  for _ in $(seq "$TIMEOUT"); do have_all && break; sleep 1; done
+  # STARTING ANYWAY IS DELIBERATE: a bind that fails here fails loudly in the
+  # journal, which is the state this unit exists to make visible. Refusing to
+  # start would reproduce the silent Exited container it replaces.
+  have_all || log "WARNING: address still absent after ${TIMEOUT}s -- starting anyway; a bind to it will fail in the log below"
+fi
+
+rc=0
+for d in "$SRV"/*/; do
+  [ -r "$d/compose.yaml" ] || continue
+  name="$(basename "$d")"
+  # OPT-OUT, for a service whose resting state is stopped: groc-browser is
+  # started on demand by groc-browser-ctl and parked by its idle-stop cron, so
+  # booting it up would fight its own lifecycle (hf7y/groc-mangr#141).
+  [ -e "$d/.no-autostart" ] && { log "skipping $name (.no-autostart)"; continue; }
+  log "starting $name"
+  (cd "$d" && docker compose up -d) || { rc=1; log "FAILED: $name"; }
+done
+exit "$rc"
