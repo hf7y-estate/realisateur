@@ -10,3 +10,4 @@
 # This file exists so the NEXT suite that goes bad under time pressure has a
 # one-line lever instead of forcing the choice #125 forced -- block every PR
 # in the repo, or drop the whole `suites` required check.
+bin/tests/carry-drift.test.sh	hf7y/realisateur#1207	TRANSIENT, and it clears ON THE MERGE OF THIS PR. carry-drift reads the table from origin/main, which still declares bin/lib/ausculte-owner.tsv while this revert is unmerged; the file is already gone from bashified, which is the end state. Merging removes the row and the guard goes green with nothing left to fix. Remove this line in the follow-up.
