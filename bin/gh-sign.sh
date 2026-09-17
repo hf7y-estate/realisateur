@@ -510,6 +510,25 @@ case "${args[$idx]}" in
     args[$bi]="$signed"
     exec "$GH" "${args[@]}" ;;
 esac
+# `pr edit` reads repository.pullRequest.projectCards, which GitHub now errors
+# on (Projects classic sunset): exit 1, body unwritten, and a line that reads as
+# a deprecation warning (hf7y/musc-2300#104). A body-only edit is the same
+# PATCH over REST, which never asks for the field. Anything else passes through.
+if [ "${1:-} ${2:-}" = 'pr edit' ]; then
+  _n='' _r='{owner}/{repo}' _other=0
+  for ((i = 2; i < ${#args[@]}; i++)); do
+    { [ "$i" -eq "$idx" ] || [ "$i" -eq "$bi" ]; } && continue
+    case "${args[$i]}" in
+      -R|--repo) _r="${args[$((i + 1))]:-}"; i=$((i + 1)) ;;
+      [0-9]*)    _n="${args[$i]}" ;;
+      *)         _other=1 ;;
+    esac
+  done
+  if [ -n "$_n" ] && [ "$_other" -eq 0 ]; then
+    printf '%s' "$signed" | "$GH" api -X PATCH "repos/$_r/pulls/$_n" -F body=@- --jq .html_url
+    exit $?
+  fi
+fi
 args[$idx]='--body-file'
 args[$bi]='-'
 printf '%s' "$signed" | "$GH" "${args[@]}"

@@ -77,6 +77,12 @@ case "$(lastline)" in
   *) bad "signed" "last non-blank line: $(lastline)" ;;
 esac
 
+contains "...over REST, not the GraphQL edit (musc-2300#104)" "$(cat "$TMP/gh.log")" "api -X PATCH repos/hf7y/widget/pulls/5 -F body=@-"
+
+reset
+run pr edit 5 --repo hf7y/widget --title T --body "$GOOD" >/dev/null 2>&1
+contains "a pr edit touching more than the body still goes to gh pr edit" "$(cat "$TMP/gh.log")" "pr edit 5 --repo hf7y/widget --title T --body-file -"
+
 reset
 run pr edit 5 --repo hf7y/widget --body "$BAD" >/dev/null 2>&1
 check "a malformed pr edit is REFUSED (7)" "$?" "7"
