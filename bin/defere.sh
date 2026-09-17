@@ -20,8 +20,9 @@ CLI_USAGE="  defere.sh '<one line>' --project <name>       file on hf7y/<name>
   defere.sh --scan --all                        every script path named in the
                                                 tree that does not exist
   options: --body <text> --from <project> --repo owner/name --decider @who --dry-run
+           --milestone '<title>'              default: the repo's first open one
            --default-after '<n>d: <action>'   required by --human/--unroutable"
-CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --default-after --dry-run --ledger --forget --scan --all'
+CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --milestone --default-after --dry-run --ledger --forget --scan --all'
 CLI_POSITIONAL=any
 CLI_EXITS='  0  filed, or printed under --dry-run / --ledger
   1  could not file -- destination did not resolve, or gh refused
@@ -36,7 +37,7 @@ OWNER="${DEFERE_OWNER:-$GH_ESTATE_OWNER}"
 # account: an agent account filing under its own name would be addressing the
 # decision to itself, which is the ownerless case with a handle stuck on it.
 DECIDER="${DEFERE_DECIDER:-hf7y}"
-WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''
+WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''; MILESTONE=''
 ALL=0
 DRY=0; MODE='file'   # quoted: `file` is a mode name, not file(1) -- SC2209
 
@@ -50,6 +51,7 @@ while [ $# -gt 0 ]; do
     --repo)       REPO="${2:-}"; [ -n "$REPO" ] || cli_die '--repo needs owner/name'; shift 2 ;;
     --decider)    DECIDER="${2:-}"; [ -n "$DECIDER" ] || cli_die '--decider needs a handle'; DECIDER="${DECIDER#@}"; shift 2 ;;
     --default-after) DEFAULT_AFTER="${2:-}"; [ -n "$DEFAULT_AFTER" ] || cli_die "--default-after needs '<n>d: <action>'"; shift 2 ;;
+    --milestone)  MILESTONE="${2:-}"; [ -n "$MILESTONE" ] || cli_die '--milestone needs a title'; shift 2 ;;
     --dry-run)    DRY=1; shift ;;
     --ledger)     MODE=ledger; shift ;;
     --forget)     MODE=forget; shift ;;
@@ -265,6 +267,22 @@ case "$LEDGER_KIND" in
 DEFAULT-AFTER $DEFAULT_AFTER" ;;
 esac
 
+# NO MILESTONE IS NO QUEUE (hf7y/musc-2300#103, #1178): a project runs only
+# while a milestone holds an open issue, so every filing that landed unplaced
+# was a finding nothing picks up. Unnamed, take the first open milestone GitHub
+# lists for the destination -- the nearest one -- and say in the body it was
+# guessed. None open: file unplaced and say so, since refusing loses the item.
+if [ -z "$MILESTONE" ]; then
+  MILESTONE="$(gh api "repos/$DEST/milestones?state=open" --jq '.[0].title // empty' 2>/dev/null)"
+  if [ -n "$MILESTONE" ]; then
+    BODY="${BODY:+$BODY
+
+}Milestone \"$MILESTONE\" was chosen by \`defere\` as the first open milestone on $DEST, not by whoever filed this. Move it if it is the wrong queue."
+  else
+    echo "defere: $DEST has no open milestone; this files unplaced. Name one with --milestone." >&2
+  fi
+fi
+
 FULLBODY="$DECLARE
 
 $BODY
@@ -284,7 +302,7 @@ See realisateur \`bin/lib/body-grammar.sh\` for why this exists."
 
 if [ "$DRY" -eq 1 ]; then
   printf 'defere: DRY RUN -- nothing filed.\n\n'
-  printf '  repo:   %s\n  label:  %s\n  title:  %s\n\n  body:\n' "$DEST" "$LABEL" "$TITLE"
+  printf '  repo:   %s\n  label:  %s\n  milestone: %s\n  title:  %s\n\n  body:\n' "$DEST" "$LABEL" "${MILESTONE:-none}" "$TITLE"
   printf '%s\n' "$FULLBODY" | sed 's/^/    /'
   exit 0
 fi
@@ -296,7 +314,7 @@ fi
 gh label create "$LABEL" --repo "$DEST" --color ededed \
    --description 'work deferred from another run; see body' >/dev/null 2>&1 || true
 
-URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" --label "$LABEL" 2>&1)" || {
+URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" --label "$LABEL" ${MILESTONE:+--milestone "$MILESTONE"} 2>&1)" || {
   printf 'defere: gh refused to file on %s:\n%s\n' "$DEST" "$URL" >&2
   printf '        NOTHING was filed. There is no ownerless line to fall back on --\n' >&2
   printf '        lib/body-grammar.sh refuses one. Fix the destination and re-run.\n' >&2

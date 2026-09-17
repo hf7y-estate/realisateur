@@ -28,6 +28,7 @@ cat > "$T/bin/gh" <<'EOF'
 case "$1 $2" in
   'repo view') printf 'realisateur\n'; exit 0 ;;
 esac
+[ "$1" = api ] && printf '%s' "${STUB_MILESTONE:-}"
 exit 0
 EOF
 chmod +x "$T/bin/gh"
@@ -62,5 +63,17 @@ section "B. the block that was missing is actually there"
 body="$(composed 'a thing' --project realisateur --body 'why')"
 has 'DELIVERS opens'  "$body" '<!-- DELIVERS -->'
 has 'DELIVERS closes' "$body" '<!-- /DELIVERS -->'
+
+section "C. no milestone is no queue (hf7y/musc-2300#103)"
+
+out="$(STUB_MILESTONE='Queue A' PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --dry-run 2>&1)"
+has 'unnamed, the first open milestone is taken' "$out" 'milestone: Queue A'
+has '...and the body says it was guessed'        "$out" 'was chosen by `defere`'
+check '...and still passes the grammar' "$(STUB_MILESTONE='Queue A' composed 'a thing' --project realisateur)"
+out="$(STUB_MILESTONE='Queue A' PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --milestone 'Queue B' --dry-run 2>&1)"
+has '--milestone wins over the guess' "$out" 'milestone: Queue B'
+case "$out" in *'was chosen by'*) bad '...with no guess note' "$out" ;; *) ok '...with no guess note' ;; esac
+out="$(PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --dry-run 2>&1)"
+has 'none open: said out loud, not silent' "$out" 'has no open milestone'
 
 summary
