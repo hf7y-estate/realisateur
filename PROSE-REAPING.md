@@ -30,6 +30,17 @@ either keeping the paragraph or removing it. So reaping means asking what
 nothing reads. A script the verb build ships and no crontab invokes, a doctrine
 page for a mechanism that was retired, a spec for a check that is gone.
 
+**A file counts once it carries a full-line comment; a trailing one on the line
+it explains does not tip it in.** So a code file with none is one full-line
+comment away from being prose-bearing, and the guard will then ask for a whole
+file deleted to pay for it -- measured 2026-09-16 in hf7y/wtul#214, where four
+explanatory lines across two comment-free files read as `+2` and `RUN /reap.
+Delete 2 file(s)`. A third file in the same change received a trailing comment
+and did not move. **This is why the estate writes trailing comments** --
+`bin/ausculte.sh` is written almost entirely that way and says so at its
+`image:` parser. That idiom is a consequence of this metric, not a matter of
+taste, and explaining a line where it sits costs nothing.
+
 ## 2. The three destinations
 
 **The repo** — mechanical traps and live invariants only: would an agent
