@@ -61,265 +61,16 @@ if [ "$INSTALL_CADENCE" = 1 ]; then
 fi
 
 # WHAT --cadence ADDS OVER A BARE RUN: a SINCE record per DOWN/BLIND row
-# (written once, on entry, never rewritten while the reason holds -- that mtime
-# is the only thing an escalation ever produced that is worth keeping), a
-# GH_TOKEN minted for the root crontab that has no gh login, and the filing leg
-# below.
-#
-# THE FILING LEG IS A REBUILD OF A MECHANISM CUT FOR CAUSE (hf7y/realisateur#1207).
-# The first one cost 47 questions sent/0 answered and 10 issues in 5 days. Four
-# things were wrong with it and each is answered here, in the code rather than
-# in a paragraph:
-#
-#   rows could not clear     lib/ausculte-owner.tsv's `clears_when` column, with
-#                            bin/tests/ausculte-clears.test.sh driving every
-#                            probe DOWN and then back to OK. A row that cannot
-#                            return to OK is a bug, not an alarm.
-#   every DOWN filed at once `escalate_after` consecutive ticks must hold first,
-#                            and a change of reason restarts the count.
-#   nothing deduplicated     one marker per row, searched before filing, so this
-#                            leg finds-or-reopens and never files twice. The
-#                            SEARCH BEFORE YOU FILE hook does not protect
-#                            automation -- it is an agent tool-call hook and is
-#                            invisible to cron -- so idempotence is carried here.
-#   questions went to a
-#   human who did not answer a `human` row files DECISION: on line 1, etiquette
-#                            derives needs-human, and the dispatch gate
-#                            subtracts it. Nothing asks; fire-and-forget only.
-#
-# AUSCULTE_CADENCE_FILE=0 disarms the whole leg and leaves the SINCE record --
-# the one-command reversal, so turning this off never needs an edit.
+# (written once, on entry, never rewritten while the state holds -- that
+# mtime is the only thing an escalation ever produced that is worth keeping),
+# a GH_TOKEN minted for the root crontab that has no gh login, and nothing
+# that files or pages -- the relay and issue-filing legs cost 47 questions
+# sent/0 answered and 10 issues/5 days before both were cut for cause.
 if [ "$CADENCE" = 1 ]; then
   . "$HERE/lib/cron-lock.sh"
-  . "$HERE/lib/roster-set.sh"
-  . "$HERE/lib/zaxon.sh"
   cron_lock ausculte-cadence
   STATE="${AUSCULTE_CADENCE_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/ausculte-cadence}"
   mkdir -p "$STATE" || { echo "$CLI_NAME: BLIND -- cannot write $STATE" >&2; exit 6; }
-  CAD_FILE="${AUSCULTE_CADENCE_FILE:-1}"
-  CAD_TICK="${AUSCULTE_TICK_SECONDS:-14400}"   # the 37 */4 spacing, in seconds
-  CAD_OWNER="${GH_ESTATE_OWNER:-hf7y}"
-  OWNER_TSV=''
-  for _cand in "${AUSCULTE_OWNER_TSV:-}" "$HERE/lib/ausculte-owner.tsv" \
-               "${SELFDEV_LIBEXEC:-/usr/local/libexec/selfdev}/lib/ausculte-owner.tsv"; do
-    [ -n "$_cand" ] && [ -r "$_cand" ] && { OWNER_TSV="$_cand"; break; }
-  done
-
-  # cad_owner <probe> -- sets CAD_REPO/CAD_ROUTE/CAD_AFTER/CAD_CLEARS from the
-  # table; 1 when it holds no row for this probe. A probe with no row is NOT
-  # filed anywhere and says so: guessing a destination is how a finding lands
-  # in a repo that cannot act on it.
-  cad_owner() {
-    local p r route after clears
-    CAD_REPO=''; CAD_ROUTE=''; CAD_AFTER=''; CAD_CLEARS=''
-    [ -n "$OWNER_TSV" ] || return 1
-    while IFS=$'\t' read -r p r route after clears; do
-      case "$p" in ''|'#'*) continue ;; esac
-      [ "$p" = "$1" ] || continue
-      CAD_REPO="$r"; CAD_ROUTE="$route"; CAD_AFTER="$after"; CAD_CLEARS="$clears"
-      return 0
-    done < "$OWNER_TSV"
-    return 1
-  }
-
-  # cad_resolve_repo <owner_repo> <detail> -- a literal owner/repo passes
-  # through; `from-detail` reads the destination out of the row itself. Returns
-  # 1 having printed the realisateur fallback, so the body can say it could not
-  # tell rather than quietly claiming a repo owns this.
-  cad_resolve_repo() {
-    local spec="$1" detail="$2" w b
-    [ "$spec" = from-detail ] || { printf '%s' "$spec"; return 0; }
-    for w in $detail; do
-      case "$w" in
-        *[a-zA-Z0-9]/[a-zA-Z0-9]*'#'[0-9]*) printf '%s' "${w%%#*}"; return 0 ;;
-      esac
-    done
-    # A WHOLE WORD, NEVER A SUBSTRING: `crt` and `dog` are repo names, and
-    # `concert` is a word a detail can contain. svc-<repo> matches too, because
-    # the fatals row names accounts and accounts are named after projects.
-    for w in $(printf '%s' "$detail" | tr -cs 'A-Za-z0-9_-' ' '); do
-      for b in "${SWEEP[@]}"; do
-        if [ "$w" = "$b" ] || [ "$w" = "svc-$b" ]; then
-          printf '%s/%s' "$CAD_OWNER" "$b"; return 0
-        fi
-      done
-    done
-    printf '%s/realisateur' "$CAD_OWNER"
-    return 1
-  }
-
-  cad_marker() { printf '<!-- ausculte-row: %s -->' "$1"; }
-
-  # cad_issue <repo> <probe> -- `owner/repo#n` for the issue this row already
-  # owns, 1 when it owns none. THE STATE FILE FIRST: GitHub's issue search does
-  # not reliably index an HTML comment, and one missed hit is a duplicate. The
-  # search is the fallback for a state directory that was wiped, and the marker
-  # is re-read off the body either way -- a cached number is not evidence.
-  cad_issue() {
-    local repo="$1" probe="$2" cached n
-    cached="$(cat "$STATE/$probe.issue" 2>/dev/null)"
-    if [ -n "$cached" ] && gh issue view "${cached#*#}" --repo "${cached%#*}" \
-         --json body --jq .body 2>/dev/null | grep -qF "$(cad_marker "$probe")"; then
-      printf '%s' "$cached"; return 0
-    fi
-    [ -n "$repo" ] || return 1
-    for n in $(gh issue list --repo "$repo" --state all --limit 30 \
-                 --search "ausculte-row $probe in:body" --json number \
-                 --jq '.[].number' 2>/dev/null); do
-      gh issue view "$n" --repo "$repo" --json body --jq .body 2>/dev/null \
-        | grep -qF "$(cad_marker "$probe")" || continue
-      printf '%s#%s' "$repo" "$n" > "$STATE/$probe.issue"
-      printf '%s#%s' "$repo" "$n"; return 0
-    done
-    return 1
-  }
-
-  # cad_milestone <repo> -- the title to file on: the open milestone with the
-  # earliest due date, then any open one, else a fresh `ausculte`. FILING
-  # WITHOUT A MILESTONE IS NOT FILING -- nothing dispatches to an issue that
-  # has none, which is why #1180-#1184 have sat unworked since 2026-09-13.
-  cad_milestone() {
-    local ms
-    ms="$(gh api "repos/$1/milestones?state=open&per_page=100" \
-            --jq 'sort_by(.due_on // "9999") | .[0].title' 2>/dev/null)"
-    case "$ms" in ''|null) ;; *) printf '%s' "$ms"; return 0 ;; esac
-    gh api "repos/$1/milestones" -f title=ausculte >/dev/null 2>&1 || return 1
-    printf 'ausculte'
-  }
-
-  # cad_send <probe> <message> -- ONE message per row per DOWN spell. The
-  # relay's question path is not used and stays cut: it sent 47 and answered 0.
-  cad_send() {
-    [ -f "$STATE/$1.sent" ] && return 0
-    zaxon_send "$2" ausculte >/dev/null
-    : > "$STATE/$1.sent"
-    printf '  SENT    %s -- one message to Zach; not repeated while this reason holds\n' "$1"
-  }
-
-  # cad_body <probe> <word> <detail> <since> <ticks> <route> <repo-note>
-  # THE DETAIL IS FENCED, and that is load-bearing: it is prose a probe built,
-  # it can hold `closes #12` or a line starting `- `, and lib/body-grammar.sh
-  # skips a fenced line -- so an accidental closing keyword cannot shut someone
-  # else's issue and a stray bullet cannot read as a DEFERRED entry.
-  cad_body() {
-    local probe="$1" word="$2" detail="$3" since="$4" ticks="$5" route="$6" note="$7"
-    if [ "$route" = human ]; then
-      printf 'DECISION: @zach -- ausculte'"'"'s `%s` row has read %s for %s consecutive reading(s) and the fix is a call, not a change an agent can make\n' \
-        "$probe" "$word" "$ticks"
-      printf 'DEFAULT-AFTER 0d: block -- there is no safe default here. The row goes on reading %s, ausculte goes on reporting it, and this stays open.\n' "$word"
-    else
-      printf 'NO-DECISION: ausculte'"'"'s `%s` row has read %s for %s consecutive reading(s); what would clear it is written below\n' \
-        "$probe" "$word" "$ticks"
-    fi
-    printf '\n```\n%s\n```\n' "$detail"
-    printf '\n- first reading that was not OK: %s\n' "$since"
-    printf -- '- this row reads OK again when: %s\n' "${CAD_CLEARS:-no clearing condition is recorded for this probe, which is itself the finding}"
-    printf -- '- read it again with: `ausculte %s`\n%s' "$probe" "$note"
-    printf '\nFiled by `bin/ausculte.sh` --cadence. It keeps one issue per row and\n'
-    printf 'reopens that same one rather than opening a second, so this is the only\n'
-    printf 'issue for this row. The same leg shuts it once the row reads OK again.\n'
-    printf '\n%s\n' "$(cad_marker "$probe")"
-    printf '\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n'
-    printf '\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n'
-  }
-
-  # cad_clear <probe> <detail> -- the row is OK. Drop its state, and shut what
-  # this leg opened, citing the probe and the OK detail: gh-sign refuses a
-  # completed close that names nothing a check could go and look at.
-  cad_clear() {
-    local probe="$1" detail="$2" ref repo n
-    # THE CACHE ONLY, never a search: a row that is OK is the common case, and
-    # a search per OK row per tick is ten issue searches every four hours to
-    # learn nothing. No cache means this state directory never filed; if one
-    # was filed before it was wiped, the escalation path finds it by marker.
-    if [ "$CAD_FILE" = 1 ] && ref="$(cad_issue '' "$probe")"; then
-      repo="${ref%#*}"; n="${ref#*#}"
-      if [ "$(gh issue view "$n" --repo "$repo" --json state --jq .state 2>/dev/null)" = OPEN ]; then
-        gh issue close "$n" --repo "$repo" --comment \
-"ausculte's \`$probe\` row reads OK again: $detail
-
-Shut by \`bin/ausculte.sh\` --cadence, which opened it. Re-read the row with \`ausculte $probe\`." >/dev/null 2>&1 \
-          && printf '  SHUT    %s -- %s#%s, the row it was filed for reads OK\n' "$probe" "$repo" "$n"
-      fi
-    fi
-    rm -f "$STATE/$probe.down" "$STATE/$probe.blind" "$STATE/$probe.n" \
-          "$STATE/$probe.sent" "$STATE/$probe.latched" "$STATE/$probe.issue"
-  }
-
-  # cad_escalate <probe> <word> <detail> <since> <ticks>
-  cad_escalate() {
-    local probe="$1" word="$2" detail="$3" since="$4" ticks="$5"
-    local repo note='' ref n st upd age ms title body url
-    local -a msarg=()
-    [ "$CAD_FILE" = 1 ] || return 0
-    if ! cad_owner "$probe"; then
-      printf '  NOROW   %s -- no row in %s, so this finding has no destination and was NOT filed\n' \
-        "$probe" "${OWNER_TSV:-bin/lib/ausculte-owner.tsv}"
-      return 0
-    fi
-    [ "$ticks" -ge "${CAD_AFTER:-3}" ] || return 0
-    if [ -f "$STATE/$probe.latched" ]; then
-      printf '  LATCHED %s -- its issue is open and nothing has moved it; this leg has stopped\n' "$probe"
-      return 0
-    fi
-    if [ "$CAD_ROUTE" = zaxon-only ]; then
-      cad_send "$probe" "ausculte: $probe is $word -- ${detail:0:80}"
-      return 0
-    fi
-
-    repo="$(cad_resolve_repo "$CAD_REPO" "$detail")" \
-      || note=$'\nTHE ROW NAMES NO REPO this leg could resolve, so it is filed here rather\nthan dropped. If another repo owns it, move it and say which.\n'
-    if ref="$(cad_issue "$repo" "$probe")"; then
-      repo="${ref%#*}"; n="${ref#*#}"
-      st="$(gh issue view "$n" --repo "$repo" --json state --jq .state 2>/dev/null)"
-      upd="$(gh issue view "$n" --repo "$repo" --json updatedAt --jq .updatedAt 2>/dev/null)"
-      if [ "$st" = CLOSED ]; then
-        gh issue reopen "$n" --repo "$repo" >/dev/null 2>&1
-        gh issue comment "$n" --repo "$repo" --body \
-"ausculte's \`$probe\` row is $word again after $ticks reading(s), since $since:
-
-\`\`\`
-$detail
-\`\`\`
-
-Reopened rather than refiled, so the history of this row stays in one place." >/dev/null 2>&1
-        printf '  REOPEN  %s -- %s#%s, the row came back\n' "$probe" "$repo" "$n"
-      else
-        # THE CIRCUIT BREAKER the previous leg did not have. The issue exists,
-        # the row still reads $word, and nothing has touched the issue for
-        # three escalation windows -- so filing more is not what is missing.
-        # One message, once, and this leg stops touching the row.
-        age=$(( $(date -u +%s) - $(date -u -d "${upd:-now}" +%s 2>/dev/null || date -u +%s) ))
-        if [ "$age" -gt $(( 3 * ${CAD_AFTER:-3} * CAD_TICK )) ]; then
-          cad_send "$probe" "ausculte: $repo#$n open $(( age / 3600 ))h untouched and $probe still $word"
-          : > "$STATE/$probe.latched"
-          printf '  LATCH   %s -- %s#%s open %sh with nothing working it; no more filing for this row\n' \
-            "$probe" "$repo" "$n" "$(( age / 3600 ))"
-        else
-          printf '  OPEN    %s -- already %s#%s, not filed twice\n' "$probe" "$repo" "$n"
-        fi
-      fi
-      [ "$CAD_ROUTE" = human ] && cad_send "$probe" "ausculte: $probe is $word -- $repo#$n needs your call"
-      return 0
-    fi
-
-    ms="$(cad_milestone "$repo")" && msarg=(--milestone "$ms")
-    title="ausculte: $probe is $word -- ${detail:0:70}"
-    body="$(cad_body "$probe" "$word" "$detail" "$since" "$ticks" "$CAD_ROUTE" "$note")"
-    url="$(printf '%s' "$body" | gh issue create --repo "$repo" --title "$title" \
-             "${msarg[@]}" --body-file - 2>/dev/null | tail -1)"
-    case "$url" in
-      *://*/issues/[0-9]*)
-        n="${url##*/}"
-        printf '%s#%s' "$repo" "$n" > "$STATE/$probe.issue"
-        printf '  FILED   %s -- %s#%s on milestone %s\n' "$probe" "$repo" "$n" "${ms:-NONE, so nothing will dispatch to it}"
-        [ -n "$ms" ] || cad_send "$probe" "ausculte: filed $repo#$n with NO milestone -- nothing dispatches to it"
-        [ "$CAD_ROUTE" = human ] && cad_send "$probe" "ausculte: $probe is $word -- $repo#$n needs your call" ;;
-      *) printf '  UNFILED %s -- gh refused the create at %s; the row is still %s and nothing has it\n' \
-           "$probe" "$repo" "$word" ;;
-    esac
-    return 0
-  }
   APP_MINT="${SELFDEV_APP_MINT:-${SELFDEV_LIBEXEC:-/usr/local/libexec/selfdev}/selfdev-gh-app.sh}"
   if [ -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] && [ -x "$APP_MINT" ]; then
     t="$("$APP_MINT" --token 2>/dev/null | tail -1)"
@@ -343,30 +94,18 @@ Reopened rather than refiled, so the history of this row stays in one place." >/
     # BLIND is not DOWN: "I could not look" is a claim about the observer,
     # and it keeps its own file so the two never collapse into one number.
     case "$status" in
-      OK)    cad_clear "$name" "$detail"; continue ;;
+      OK)    rm -f "$STATE/$name.down" "$STATE/$name.blind"; continue ;;
       DOWN)  f="$STATE/$name.down";  rm -f "$STATE/$name.blind"; word=DOWN ;;
       BLIND) f="$STATE/$name.blind"; rm -f "$STATE/$name.down"; word=BLIND ;;
-      # NOT-MINE is a boundary, not a recovery: drop the state, shut nothing.
-      # A row that becomes NOT-MINE was answered somewhere else, and closing an
-      # issue on that would be this host claiming an answer it did not read.
-      *)     rm -f "$STATE/$name.down" "$STATE/$name.blind" "$STATE/$name.n"; continue ;;
+      *)     rm -f "$STATE/$name.down" "$STATE/$name.blind"; continue ;;
     esac
     [ "$word" = DOWN ] && cad_down=1
-    # A CHANGE OF REASON RESTARTS THE COUNT, the rule the paced runner's
-    # pull-block already proved: a row whose cause changed is a new row, and
-    # carrying its predecessor's ticks would file on a condition seen once.
-    if [ ! -f "$f" ] || [ "$(cat "$f" 2>/dev/null)" != "$detail" ]; then
+    if [ ! -f "$f" ]; then
       printf '%s\n' "$detail" > "$f"
-      printf '1\n' > "$STATE/$name.n"
-      rm -f "$STATE/$name.sent" "$STATE/$name.latched"
-      ticks=1; since=now
+      [ "$QUIET" -eq 1 ] || echo "  $word    $name -- since now: $detail"
     else
-      ticks=$(( $(cat "$STATE/$name.n" 2>/dev/null || echo 1) + 1 ))
-      printf '%s\n' "$ticks" > "$STATE/$name.n"
-      since="$(date -u -r "$f" +%Y-%m-%dT%H:%MZ 2>/dev/null || echo earlier)"
+      [ "$QUIET" -eq 1 ] || echo "  $word    $name -- since $(date -u -r "$f" +%Y-%m-%dT%H:%MZ 2>/dev/null || echo earlier): $detail"
     fi
-    [ "$QUIET" -eq 1 ] || echo "  $word    $name -- since $since ($ticks reading(s)): $detail"
-    cad_escalate "$name" "$word" "$detail" "$since" "$ticks"
   done <<< "$cad_rows"
   [ "$cad_down" -eq 0 ] || exit 5
   exit 0

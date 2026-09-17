@@ -45,9 +45,6 @@ bin/lib/propagation-set.sh	bin/lib/propagation-set.sh
 bin/lib/roster-set.sh	bin/lib/roster-set.sh
 bin/lib/estate-set.sh	bin/lib/estate-set.sh
 bin/lib/fleet-hosts-set.sh	bin/lib/fleet-hosts-set.sh
-# Uncarried, `ausculte --cadence` finds no owner table on a host, every DOWN row
-# reads NOROW, and the filing leg is armed against nothing (#1207).
-bin/lib/ausculte-owner.tsv	bin/lib/ausculte-owner.tsv
 # arming.sh is bin/decision-rot.sh's only lib not already carried for another
 # reason (#894 made decision-rot.sh a verb, riding this row instead of
 # prop_support_libs()'s libexec derivation). Uncarried, bin/decision-rot
