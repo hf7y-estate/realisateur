@@ -291,7 +291,7 @@ if want roster_read; then  # THE ARMING AUTHORITY ITSELF, not what the accounts 
   fi
 fi
 
-if want pullable; then  # CAN A REBUILT DEXTER RECOVER FROM ITS COMPOSE FILES ALONE? That is the container pattern's first rule -- "PULLED, NOT BUILT: a dexter that lost its checkout recovers from this file" -- and until now nothing measured it. A ghcr package published for the first time lands PRIVATE, dexter has no ~/.docker/config.json and pulls anonymously on purpose, so the gap between "the image built" and "dexter can fetch it" is silent and one UI click wide (#1196).
+if want pullable; then  # CAN A REBUILT DEXTER RECOVER FROM ITS COMPOSE FILES ALONE? The container pattern's first rule -- "PULLED, NOT BUILT: a dexter that lost its checkout recovers from this file". Asked WITH dexter's own credential: Zach ruled 2026-09-16 that packages are private and dexter pulls with a read:packages token in docker login (#1210, superseding #1196's anonymous rule), so the question is what dexter itself can fetch.
   if on_target_host monkey; then
     not_mine pullable 'dexter is watched from dexter; a guest must not hold shell on its host to audit it'
   else
@@ -304,28 +304,22 @@ if want pullable; then  # CAN A REBUILT DEXTER RECOVER FROM ITS COMPOSE FILES AL
     if [ -z "$prefs" ]; then
       record pullable BLIND "no compose.yaml under /srv on $pdh could be read -- nothing to grade"
     else
+      pres="$(printf '%s\n' "$prefs" | ${AUSCULTE_SSH:-ssh} -o ConnectTimeout=10 -o BatchMode=yes "$pdh" 'while IFS= read -r r; do [ -n "$r" ] || continue; e="$(timeout 30 docker manifest inspect "$r" 2>&1 >/dev/null)"; printf "%s\t%s\t%s\n" "$?" "$r" "$(printf %s "$e" | head -1)"; done' 2>/dev/null)"
       pbad=''; pblind=''; pok=0; pup=0
-      while IFS= read -r pr; do  # ASKED, NOT GUESSED: `nginx:latest` and `groc-browser:local` are both registry-less and only one is recoverable, so each is resolved against the registry that would serve it rather than classified by its shape -- measured 2026-09-16, nginx answers 200 and groc-browser 401.
+      while IFS=$'\t' read -r prc pr perr; do  # ASKED, NOT GUESSED: `nginx:latest` and `groc-browser:local` are both registry-less and only one is recoverable, so each is resolved by the registry that would serve it.
         [ -n "$pr" ] || continue
-        ptag="${pr##*:}"; pname="${pr%:*}"
-        case "$pr" in *:*) ;; *) ptag=latest; pname="$pr" ;; esac
-        case "$pr" in
-          ghcr.io/*) pn="${pname#ghcr.io/}"; purl=https://ghcr.io
-             ptok="$(curl -s -m 10 "https://ghcr.io/token?scope=repository:$pn:pull&service=ghcr.io" 2>/dev/null | jq -r '.token // empty' 2>/dev/null)" ;;
-          *) pn="$pname"; case "$pn" in */*) ;; *) pn="library/$pn" ;; esac; purl=https://registry-1.docker.io
-             ptok="$(curl -s -m 10 "https://auth.docker.io/token?service=registry.docker.io&scope=repository:$pn:pull" 2>/dev/null | jq -r '.token // empty' 2>/dev/null)" ;;
-        esac
-        if [ -z "$ptok" ]; then pblind="$pblind $pr(no anonymous token -- the registry did not answer)"; continue; fi
-        pc="$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $ptok" -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json' "$purl/v2/$pn/manifests/$ptag" 2>/dev/null)"
-        if [ "$pc" = 200 ]; then case "$pr" in ghcr.io/*) pok=$((pok+1)) ;; *) pup=$((pup+1)) ;; esac
-        elif [ "$purl" = https://ghcr.io ]; then pbad="$pbad $pr(anonymous pull $pc -- the package is private, and dexter carries no credential to make it otherwise; flip it, one-way, in the package's own settings)"
-        else pbad="$pbad $pr(anonymous pull $pc -- no registry serves this, so it exists only in dexter's local image store and a rebuilt dexter cannot recover it)"; fi
+        if [ "$prc" = 0 ]; then case "$pr" in ghcr.io/*) pok=$((pok+1)) ;; *) pup=$((pup+1)) ;; esac
+        elif printf '%s' "$perr" | grep -qiE 'unauthorized|denied|not found|no such manifest|manifest unknown'; then
+          case "$pr" in ghcr.io/*) pbad="$pbad $pr(dexter's own credential cannot pull it: $perr -- is dexter logged in to ghcr.io with a read:packages token?)" ;;
+                        *) pbad="$pbad $pr(no registry serves this: $perr -- it exists only in dexter's local image store and a rebuilt dexter cannot recover it)" ;; esac
+        else pblind="$pblind $pr(${perr:-no answer})"; fi
       done <<PULLABLE_EOF
-$prefs
+$pres
 PULLABLE_EOF
-      if [ -n "$pbad" ]; then record pullable DOWN "declared in a compose file on $pdh and NOT anonymously pullable:$pbad"
+      if [ -z "$pres" ]; then record pullable BLIND "$pdh read its compose files but answered nothing about pulling them"
+      elif [ -n "$pbad" ]; then record pullable DOWN "declared in a compose file on $pdh and NOT pullable by dexter:$pbad"
       elif [ -n "$pblind" ]; then record pullable BLIND "a registry could not be asked about:$pblind"
-      else record pullable OK "$pok vendored and $pup upstream image(s) declared on $pdh, every one anonymously pullable"; fi
+      else record pullable OK "$pok vendored and $pup upstream image(s) declared on $pdh, every one pullable with dexter's own credential"; fi
     fi
   fi
 fi
