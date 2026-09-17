@@ -1248,11 +1248,7 @@ curl_json '{"roster_read":true,"accounts":[{"account":"a","armed":true,"roster_s
 clear roster_read "L5 ...and OK once it can"
 
 # pullable -- can a rebuilt dexter recover from its compose files alone?
-pullssh() {  # <image lines> <docker rc> [<first stderr line>]
-  { printf '#!/usr/bin/env bash\n'
-    printf 'case "$*" in *docker*) while IFS= read -r l; do printf "%%s\\t%%s\\t%%s\\n" %q "$l" %q; done; exit 0 ;; esac\n' "$2" "${3:-}"
-    printf 'cat <<'"'"'R'"'"'\n%s\nR\n' "$1"
-  } > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
+# pullssh is the fixture the pullable section above already defines.
 pullssh 'groc-browser:local' 1 'pull access denied for groc-browser'
 broke pullable "L6 pullable is DOWN on an image no registry serves"
 pullssh 'ghcr.io/hf7y/roster:latest' 0
