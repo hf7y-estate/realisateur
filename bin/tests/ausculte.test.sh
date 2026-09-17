@@ -152,39 +152,37 @@ check "a status past its own valid_until is BLIND (6) even reading true -- a DEA
 has "and it names the expiry" "$out" "expired at"
 
 # --- pullable: can a rebuilt dexter recover from its compose files alone? ----
-pullssh() { printf '#!/usr/bin/env bash\ncat <<'"'"'R'"'"'\n%s\nR\n' "$1" > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
-pullcurl() {  # $1 manifest status, $2 token document -- the probe calls curl twice and only the manifest call passes -w
+pullssh() {  # $1 the image: lines dexter's compose files hold; $2 `docker manifest inspect` exit on dexter, $3 its first stderr line. The probe calls ssh twice; only the pull call names docker.
   { printf '#!/usr/bin/env bash\n'
-    printf 'for a in "$@"; do [ "$a" = "-w" ] && { printf %%s %s; exit 0; }; done\n' "$1"
-    printf 'printf %%s %s\n' "${2:-'{\"token\":\"t\"}'}"
-  } > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }
+    printf 'case "$*" in *docker*) while IFS= read -r l; do printf "%%s\\t%%s\\t%%s\\n" %q "$l" %q; done; exit 0 ;; esac\n' "$2" "${3:-}"
+    printf 'cat <<'"'"'R'"'"'\n%s\nR\n' "$1"
+  } > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
 
 out="$(run pullable)"; rc=$?
 check "an unreachable dexter is BLIND (6) -- an unread compose file grades nothing" "$rc" "6"
 
-pullssh 'groc-browser:local'; pullcurl 401
+pullssh 'groc-browser:local' 1 'Error response from daemon: pull access denied for groc-browser'
 out="$(run pullable)"; rc=$?
 check "an image with no registry is DOWN (5) -- it exists only in dexter's local store" "$rc" "5"
 has "and it says a rebuilt dexter cannot recover it" "$out" "cannot recover it"
 
-pullssh 'ghcr.io/hf7y/wtul-dexter-promote:latest'; pullcurl 403
+pullssh 'ghcr.io/hf7y/wtul-dexter-promote:latest' 1 'unauthorized'
 out="$(run pullable)"; rc=$?
-check "a PRIVATE ghcr package is DOWN (5) -- dexter carries no credential to pull it" "$rc" "5"
-has "and it names the flip, not a login" "$out" "one-way"
-hasnt "and it never suggests putting a credential on dexter" "$out" "docker login"
+check "a ghcr package dexter's credential cannot pull is DOWN (5)" "$rc" "5"
+has "and it names dexter's read:packages login, the path Zach ruled (#1210)" "$out" "read:packages"
 
-pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200
+pullssh 'ghcr.io/hf7y/roster:latest' 0
 out="$(run pullable)"; rc=$?
-check "a public ghcr package is OK" "$rc" "0"
+check "a PRIVATE ghcr package dexter pulls with its own credential is OK -- private is the rule, not the fault (#1210)" "$rc" "0"
 
-pullssh 'ghcr.io/hf7y/groc-browser:latest  # NOT groc-browser:local with a build: . -- dexter pulls and never builds (#322)'; pullcurl 200
+pullssh 'ghcr.io/hf7y/groc-browser:latest  # NOT groc-browser:local with a build: . -- dexter pulls and never builds (#322)' 0
 out="$(run pullable)"; rc=$?
 check "a trailing YAML comment is stripped, not fed to the registry -- the prose ratchet puts explanation exactly there" "$rc" "0"
 hasnt "and no verdict quotes the comment back" "$out" "never builds"
 
-pullssh 'ghcr.io/hf7y/roster:latest'; pullcurl 200 "'{}'"  # A REGISTRY THAT WILL NOT ANSWER IS NOT A PRIVATE PACKAGE: grading silence as DOWN would alarm about dexter when the fault is the network or ghcr itself
+pullssh 'ghcr.io/hf7y/roster:latest' 1 'Get "https://ghcr.io/v2/": dial tcp: i/o timeout'  # A REGISTRY THAT WILL NOT ANSWER IS NOT A PRIVATE PACKAGE: grading silence as DOWN would alarm about dexter when the fault is the network or ghcr itself
 out="$(run pullable)"; rc=$?
-check "no anonymous token is BLIND (6), never DOWN" "$rc" "6"
+check "a registry that does not answer is BLIND (6), never DOWN" "$rc" "6"
 
 printf '#!/usr/bin/env bash\nexit 1\n' > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"
 
