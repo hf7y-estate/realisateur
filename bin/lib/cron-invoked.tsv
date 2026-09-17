@@ -10,5 +10,5 @@
 # declare a CRON_TAG has a row.
 monkey-watch.sh	dexter	*/10 * * * *	dexter crontab; its own --install-cadence
 selfdev-release-tick.sh	monkey, dexter	41 5 * * *	its own --install-cadence
-ausculte.sh	monkey	37 */4 * * *	its own --install-cadence
+ausculte.sh	monkey	37 */4 * * *	its own --install-cadence. READ 2026-09-16: monkey's ROOT crontab still invokes /usr/local/libexec/selfdev/ausculte-cadence.sh, the standalone #894 retired and folded into `ausculte --cadence` -- the same shape as the unarmed.sh row below. So the clock is armed at a path no build refreshes, and #1207's filing leg reaches it only once `ausculte --install-cadence --apply` is re-run as root there
 unarmed.sh	monkey	19 7 * * 1	monkey root crontab, by hand -- tag realisateur:unarmed:CADENCE, no --install-cadence. #894 made unarmed.sh the verb `unarmed`, off carries.tsv's libexec/ rows and prop_host_tools() -- the live crontab row still invokes /usr/local/libexec/selfdev/unarmed.sh by its old path (unrefreshed now, since nothing carries it there anymore) and needs a follow-up host-side repoint to `unarmed --check`, which this dispatch does not perform (root crontab edit, out of scope here)

@@ -18,6 +18,10 @@ cp "$HERE/../lib/propagation-set.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/estate-set.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/cron-lock.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/fleet-hosts-set.sh" "$TMP/bin/lib/"
+cp "$HERE/../lib/roster-set.sh" "$TMP/bin/lib/"
+# NOT lib/ausculte-owner.tsv: --cadence finds it beside itself, and sections A-F
+# below grade the SINCE record with the filing leg off. Section G points
+# AUSCULTE_OWNER_TSV at the real table and grades the leg with it on.
 
 stub() { printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\nexit %s\n' "${3:-}" "$2" > "$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
@@ -826,7 +830,7 @@ stub_cad_json() { # <json> [exit]
   chmod +x "$TMP/bin/cad-source.sh"
 }
 runcad() { OUT="$(PATH="$TMP/stub:$PATH" AUSCULTE_BIN="$TMP/bin/cad-source.sh" \
-                  AUSCULTE_CADENCE_STATE="$CADSTATE" \
+                  AUSCULTE_CADENCE_STATE="$CADSTATE" AUSCULTE_CADENCE_FILE=0 \
                   bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
 
 DOWN_ROW='[{"probe":"arming","status":"DOWN","detail":"two accounts stopped"}]'
@@ -897,52 +901,145 @@ has "F1 it prints the line it would install" "$OUT" "realisateur:ausculte:CADENC
 has "...naming --cadence, not the retired standalone script" "$OUT" "--cadence"
 eq "F2 the crontab is untouched" "$(crontab -l 2>/dev/null | md5sum)" "$before"
 
-section "cadence G. it files nothing at anybody, and reaches no human on its own"
-# Same guard #894 carried over from ausculte-cadence.sh: 47 zaxon questions
-# sent/0 answered, 10 issues/5 days over 5 rows, both cut for cause. The
-# `channel` probe still legitimately reaches zaxon (it is what answers
-# "can Zach be reached at all") -- what must stay gone is the CADENCE layer
-# escalating on its own, so the check is for zaxon_ask/issue-create/-close
-# specifically, not for zaxon.sh being sourced anywhere in the file.
-cat > "$TMP/bin/gh" <<'STUB'
+section "cadence G. the filing leg (#1207) -- it files LATE, ONCE, and shuts what it opened"
+# The leg this rebuilds was cut for cause: 47 questions sent/0 answered, and 10
+# issues in 5 days over 5 rows. Each half of that is a case below -- a
+# transient must not file (G1), the same condition must not file twice (G4),
+# and an issue nothing is working must stop the leg rather than feed it (G6).
+cat > "$TMP/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_LOG"
-case "$*" in *"issue list"*) echo 654 ;; esac
+case "$*" in
+  *"issue create"*)          cat > "$GH_BODY_OUT"; printf 'https://github.com/%s/issues/777\n' "${GH_CREATE_REPO:-hf7y/scheduler}" ;;
+  *"milestones?state=open"*) printf '%s\n' "${GH_MILESTONE-v2}" ;;
+  *"issue list"*)            printf '%s\n' "${GH_FOUND-}" ;;
+  *"--json body"*)           printf '%s\n' "${GH_BODY-}" ;;
+  *"--json state"*)          printf '%s\n' "${GH_STATE-OPEN}" ;;
+  *"--json updatedAt"*)      printf '%s\n' "${GH_UPDATED-2099-01-01T00:00:00Z}" ;;
+esac
 exit 0
 STUB
-chmod +x "$TMP/bin/gh"
-ghruncad() { OUT="$(PATH="$TMP/stub:$PATH" GH_LOG="$TMP/gh.log" \
-                    AUSCULTE_BIN="$TMP/bin/cad-source.sh" AUSCULTE_CADENCE_STATE="$CADSTATE" \
-                    bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
+chmod +x "$TMP/stub/gh"
+filecad() { OUT="$(PATH="$TMP/stub:$PATH" GH_LOG="$TMP/gh.log" GH_BODY_OUT="$TMP/gh.body" \
+                   AUSCULTE_BIN="$TMP/bin/cad-source.sh" AUSCULTE_CADENCE_STATE="$CADSTATE" \
+                   AUSCULTE_OWNER_TSV="$HERE/../lib/ausculte-owner.tsv" \
+                   bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
 
-: > "$TMP/gh.log"; rm -f "$CADSTATE"/*.down "$CADSTATE"/*.blind
+# `arming` is hf7y/scheduler, route agent, escalate_after 3 in the real table.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
 stub_cad_json "$DOWN_ROW"
-ghruncad; ghruncad
+filecad; filecad
 check "G1 a row DOWN twice running still exits 5" "$RC" "5"
 case "$(cat "$TMP/gh.log")" in
-  *"issue create"*) bad "G2 no issue is ever created" "it called gh issue create" ;;
-  *)                ok  "G2 no issue is ever created" ;;
+  *"issue create"*) bad "G2 nothing is filed below the row's escalate_after" "it filed on reading 2 of 3" ;;
+  *)                ok  "G2 nothing is filed below the row's escalate_after" ;;
 esac
+
+filecad
+has "G3 the third consecutive reading files" "$OUT" "FILED"
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) ok "...with gh issue create" ;;
+  *)                bad "G3 it files with gh issue create" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+# FILING WITHOUT A MILESTONE IS NOT FILING: the milestone gate is what turns a
+# filed issue into a dispatch, and #1180-#1184 were filed without one and sat.
+case "$(cat "$TMP/gh.log")" in
+  *"--milestone v2"*) ok "...onto the nearest open milestone, or nothing dispatches to it" ;;
+  *)                  bad "G3 the create names a milestone" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+body="$(cat "$TMP/gh.body")"
+has "G3a the body carries this row's marker, which is what makes the next tick idempotent" \
+  "$body" '<!-- ausculte-row: arming -->'
+has "G3b an agent-route body declares NO-DECISION, so it is not parked on a human" "$body" 'NO-DECISION:'
+has "G3c it says what would put the row back to OK" "$body" 'reads OK again when:'
+# The detail is FENCED: it is prose a probe built and can hold a closing keyword
+# or a leading bullet, either of which the grammar would read as structure.
+case "$body" in *'```'*"two accounts stopped"*'```'*) ok "G3d the probe's detail is fenced, not loose in the body" ;;
+  *) bad "G3d the detail is fenced" "got: $body" ;; esac
+
+: > "$TMP/gh.log"
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+has "G4 the next tick finds the same issue instead of filing a second" "$OUT" "not filed twice"
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "G4 nothing is filed twice for one row" "it created a second issue" ;;
+  *)                ok  "G4 nothing is filed twice for one row" ;;
+esac
+
+# A CHANGE OF REASON IS A NEW ROW: carrying the old count would file on a
+# condition seen once. Same rule the paced runner's pull-block already uses.
+: > "$TMP/gh.log"
+stub_cad_json '[{"probe":"arming","status":"DOWN","detail":"a different account stopped"}]'
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+has "G5 a changed reason restarts the count" "$OUT" "since now (1 reading(s))"
+
+# THE CIRCUIT BREAKER the previous leg did not have.
+: > "$TMP/gh.log"
+stub_cad_json "$DOWN_ROW"
+for _ in 1 2 3; do GH_BODY='<!-- ausculte-row: arming -->' GH_UPDATED='2001-01-01T00:00:00Z' filecad; done
+has "G6 an issue open and untouched for three windows latches the row" "$OUT" "LATCH"
+GH_BODY='<!-- ausculte-row: arming -->' GH_UPDATED='2001-01-01T00:00:00Z' filecad
+has "G6a and a latched row files nothing further" "$OUT" "LATCHED"
 
 : > "$TMP/gh.log"
 stub_cad_json "$OK_ROW"
-ghruncad
-check "G3 a recovery exits 0" "$RC" "0"
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+check "G7 a recovery exits 0" "$RC" "0"
 case "$(cat "$TMP/gh.log")" in
-  *"issue close"*) bad "G4 no issue is ever closed" "it called gh issue close" ;;
-  *)               ok  "G4 no issue is ever closed" ;;
+  *"issue close"*) ok "G8 the row that filed it shuts it once the row reads OK" ;;
+  *)               bad "G8 an OK row shuts its issue" "gh.log: $(cat "$TMP/gh.log")" ;;
 esac
+# gh-sign REFUSES a completed close naming nothing to go and look at (#752), so
+# the close comment has to carry a reference or the recovery silently fails.
+case "$(cat "$TMP/gh.log")" in
+  *'`bin/ausculte.sh`'*) ok "...citing something a check can go and look at" ;;
+  *) bad "G8 the close names a landing reference" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+
+section "cadence H. the routes the table declares"
+# A `human` row must NOT become an agent run: a needs-human-only milestone is
+# not permission (hf7y/scheduler#587), and the previous leg's 47 unanswered
+# questions were the cost of asking a person through a channel nobody read.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"hygiene","status":"DOWN","detail":"monkey:holding something it should not: svc-x"}]'
+GH_CREATE_REPO=hf7y/realisateur filecad; GH_CREATE_REPO=hf7y/realisateur filecad
+has "H1 a human-route row files DECISION: on line 1, which is what derives needs-human" \
+  "$(cat "$TMP/gh.body")" 'DECISION: @zach'
+has "...and declares a DEFAULT-AFTER, without which the grammar refuses the body" \
+  "$(cat "$TMP/gh.body")" 'DEFAULT-AFTER 0d:'
+
+# zaxon-only files nothing at all. `channel` DOWN means the relay itself is
+# down, so there is nothing to file at and nothing that would reach a human.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"channel","status":"DOWN","detail":"no zaxon relay answered"}]'
+filecad
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "H2 a zaxon-only row files no issue" "it filed one" ;;
+  *)                ok  "H2 a zaxon-only row files no issue" ;;
+esac
+
+# A PROBE WITH NO ROW HAS NO DESTINATION, and a guessed one is worse than none.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"invented","status":"DOWN","detail":"nothing owns this"}]'
+filecad
+has "H3 a probe the table does not name is not filed anywhere, and says so" "$OUT" "NOROW"
+
+# THE ONE-COMMAND REVERSAL. Arming this was a decision; un-arming it must not
+# need an edit.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json "$DOWN_ROW"
+runcad; runcad; runcad
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "H4 AUSCULTE_CADENCE_FILE=0 files nothing" "it filed anyway" ;;
+  *)                ok  "H4 AUSCULTE_CADENCE_FILE=0 files nothing" ;;
+esac
+has "...and still records the row" "$OUT" "arming"
 
 live="$(grep -vE '^[[:space:]]*#' "$HERE/../ausculte.sh")"
 case "$live" in
-  *zaxon_ask*) bad "H1 no live call to zaxon_ask" "it is back -- 47 sent, 0 answered" ;;
-  *)           ok  "H1 no live call to zaxon_ask" ;;
+  *zaxon_ask*) bad "H5 no live call to the relay's question path" "it is back -- 47 sent, 0 answered" ;;
+  *)           ok  "H5 no live call to the relay's question path" ;;
 esac
-case "$live" in
-  *"issue create"*) bad "H2 the issue-filing leg is gone from the source too" "gh issue create is back" ;;
-  *)                ok  "H2 the issue-filing leg is gone from the source too" ;;
-esac
-has "H3 a DOWN row still exits 5, so a caller can still see it" "$live" 'exit 5'
+has "H6 a DOWN row still exits 5, so a caller can still see it" "$live" 'exit 5'
 
 section "I. routes -- the port carries the identity at dexter's address (#1189)"
 # The distros share ONE network namespace and Windows sshd holds 22, so an
@@ -1023,5 +1120,205 @@ check "J3 2224 is monkey" "$(ssh_netns_host_at 2224)" "monkey"
 check "J4 2225 is vaporwave" "$(ssh_netns_host_at 2225)" "vaporwave"
 check "J5 the reverse lookup ausculte's propagation probe uses agrees" "$(ssh_netns_port_for dexter)" "2223"
 if ssh_netns_host_at 9999 >/dev/null 2>&1; then bad "J6 an undeclared port must not resolve"; else ok "J6 an undeclared port does not resolve"; fi
+
+
+# --- K/L: the owner table, and the property it exists to hold ---------------
+# EVERY PROBE CAN GET BACK TO OK (hf7y/realisateur#1207). A row that cannot
+# clear is not an alarm, it is furniture: `fatals` counted FATAL over a
+# never-rotated sweep.log and held DOWN on 25 aborts of which none were current
+# (#1204), and the vault row could not clear until #1164 (#1206). Both were
+# found by hand, in one afternoon, by accident. Unarmed that costs a human
+# glance; armed -- and --cadence files now -- a latched row IS the
+# 10-issues-in-5-days failure that got the previous filing leg cut.
+#
+# So each probe below is driven DOWN (or BLIND) and then OK. The PAIR is the
+# claim: a probe that can only be made to fail does not appear here as a
+# passing row, it does not appear at all, and section K catches that.
+TSV="$HERE/../lib/ausculte-owner.tsv"
+# Off monkey for every row: there `hosts`, `pullable`, `promote` and
+# `propagation` take their NOT-MINE branch, which is neither of the two states
+# these pairs are about.
+krun() { PATH="$TMP/stub:$PATH" SELFDEV_LOCAL_HOSTNAME=mandark \
+         AUSCULTE_FLEET_HOSTS=monkey bash "$TMP/bin/ausculte.sh" "$@" >/dev/null 2>&1; }
+part_stub() { printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\nexit %s\n' "${3:-}" "$2" > "$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
+curl_json() { printf '#!/usr/bin/env bash\ncat <<'"'"'J'"'"'\n%s\nJ\n' "$1" > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }
+curl_rc()   { printf '#!/usr/bin/env bash\nexit %s\n' "$1" > "$TMP/stub/curl"; chmod +x "$TMP/stub/curl"; }
+ssh_out()   { printf '#!/usr/bin/env bash\ncat <<'"'"'R'"'"'\n%s\nR\n' "$1" > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
+ssh_rc()    { printf '#!/usr/bin/env bash\nexit %s\n' "$1" > "$TMP/stub/ssh"; chmod +x "$TMP/stub/ssh"; }
+broke() { krun "$1"; case "$?" in 5|6) ok "$2" ;; *) bad "$2" "wanted DOWN or BLIND, got exit $?" ;; esac; }
+clear() { krun "$1"; case "$?" in 0) ok "$2" ;; *) bad "$2" "wanted OK, got exit $?" ;; esac; }
+
+section "K. the table names every probe, and every row can be acted on"
+# The list comes from ausculte.sh itself, never a second copy: a probe added
+# without a destination is the finding, and a hand-kept list cannot see one.
+probes="$(grep -oE '^if want [a-z_]+' "$HERE/../ausculte.sh" | awk '{print $3}' | sort -u | tr '\n' ' ')"
+[ -n "$probes" ] && ok "K1 the probe list is read out of ausculte.sh" \
+  || bad "K1 the probe list is read out of ausculte.sh" "grep found no probes"
+
+rows="$(grep -vE '^[[:space:]]*(#|$)' "$TSV")"
+for p in $probes; do
+  row="$(printf '%s\n' "$rows" | awk -F'\t' -v p="$p" '$1 == p {print; exit}')"
+  if [ -z "$row" ]; then
+    bad "K2 $p has a row in ausculte-owner.tsv" "no row -- a DOWN $p row has nowhere to go"
+    continue
+  fi
+  IFS=$'\t' read -r _p owner route after clears <<<"$row"
+  case "$route" in
+    agent|human) [ "$owner" = from-detail ] || case "$owner" in */*) ;; *)
+        bad "K3 $p names a repo or from-detail" "route $route with owner_repo [$owner]" ;; esac ;;
+    zaxon-only) [ "$owner" = '--' ] \
+        || bad "K3 $p files nothing, so it names no repo" "route zaxon-only with owner_repo [$owner]" ;;
+    *) bad "K3 $p declares a known route" "route [$route] is not agent/human/zaxon-only" ;;
+  esac
+  case "$after" in ''|*[!0-9]*) bad "K4 $p declares escalate_after in ticks" "got [$after]" ;;
+    *) [ "$after" -ge 1 ] || bad "K4 $p waits at least one tick" "escalate_after is $after" ;; esac
+  # THE PHASE 1 COLUMN. Without it nothing states what would end the alarm, and
+  # "is this row latched?" is answerable only by reading the probe's source.
+  [ -n "$clears" ] && ok "K5 $p says what would put it back to OK" \
+    || bad "K5 $p says what would put it back to OK" "clears_when is empty"
+done
+
+# And no row for a probe that does not exist: a destination for a finding that
+# cannot arrive reads as coverage and is not.
+while IFS=$'\t' read -r p _rest; do
+  [ -n "$p" ] || continue
+  case " $probes " in *" $p "*) ;;
+    *) bad "K6 every row names a probe ausculte emits" "$TSV has a row for [$p], which ausculte does not probe" ;;
+  esac
+done <<<"$rows"
+ok "K6 every row names a probe ausculte emits"
+
+section "L. every probe reaches OK from broken"
+
+# channel -- the relay answers, or it does not.
+curl_rc 1; broke channel "L1 channel is DOWN with no relay"
+curl_rc 0; clear channel "L1 ...and OK when one answers"
+
+# hosts -- the published monkey-watch verdict, from dexter.
+future="$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)"
+curl_json "{\"watcher\":{\"verdict\":\"BAD\",\"valid_until\":\"$future\",\"why\":\"a unit is dead\"}}"
+broke hosts "L2 hosts is DOWN on a bad published verdict"
+curl_json "{\"watcher\":{\"verdict\":\"OK\",\"valid_until\":\"$future\"}}"
+clear hosts "L2 ...and OK once dexter publishes OK inside its own freshness"
+
+# routes -- the port at dexter's address is what selects the host.
+ADDR=dexter.tail893f2c.ts.net
+cat > "$TMP/stub/ssh" <<'SSHSTUB'
+#!/usr/bin/env bash
+conf=""; alias=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -G) ;;
+    -F) shift; conf="$1" ;;
+    -*) ;;
+    *)  alias="$1" ;;
+  esac
+  shift
+done
+awk -v want="$alias" '
+  tolower($1)=="host" { inblk=0; for(i=2;i<=NF;i++) if ($i==want) inblk=1; next }
+  inblk && tolower($1)=="hostname" { h=$2 }
+  inblk && tolower($1)=="port"     { p=$2 }
+  END { printf "hostname %s\nport %s\n", (h?h:want), (p?p:22) }
+' "$conf"
+SSHSTUB
+chmod +x "$TMP/stub/ssh"
+printf 'Host dexter-staging\n  HostName %s\n  User zach\n' "$ADDR" > "$TMP/portless"
+SSH_ROUTE_CONFIG="$TMP/portless" krun routes; rc=$?
+[ "$rc" = 5 ] && ok "L3 routes is DOWN on an alias that omits the port" \
+  || bad "L3 routes is DOWN on an alias that omits the port" "got exit $rc"
+printf 'Host dexter-staging\n  HostName %s\n  Port 2223\n' "$ADDR" > "$TMP/portful"
+SSH_ROUTE_CONFIG="$TMP/portful" krun routes; rc=$?
+[ "$rc" = 0 ] && ok "L3 ...and OK once it names the port that selects dexter" \
+  || bad "L3 ...and OK once it names the port" "got exit $rc"
+ssh_rc 1
+
+# arming -- what the accounts did, off the published status.
+recent="$(date -u -d '-1 hour' +%Y-%m-%dT%H:%M:%SZ)"
+stale="$(date -u -d '-9 days' +%Y-%m-%dT%H:%M:%SZ)"
+curl_json "{\"accounts\":[{\"account\":\"a\",\"armed\":true,\"last_run\":{\"started_at\":\"$stale\"}}]}"
+broke arming "L4 arming is DOWN on an armed account that stopped dispatching"
+curl_json "{\"accounts\":[{\"account\":\"a\",\"armed\":true,\"last_run\":{\"started_at\":\"$recent\"}}]}"
+clear arming "L4 ...and OK once it dispatches again"
+
+# roster_read -- the arming AUTHORITY, not what the accounts did with it.
+curl_json '{"roster_read":false,"accounts":[{"account":"a","armed":true,"roster_state":null}]}'
+broke roster_read "L5 roster_read is DOWN when the collector could not read the authority"
+curl_json '{"roster_read":true,"accounts":[{"account":"a","armed":true,"roster_state":"live"}]}'
+clear roster_read "L5 ...and OK once it can"
+
+# pullable -- can a rebuilt dexter recover from its compose files alone?
+# pullssh is the fixture the pullable section above already defines.
+pullssh 'groc-browser:local' 1 'pull access denied for groc-browser'
+broke pullable "L6 pullable is DOWN on an image no registry serves"
+pullssh 'ghcr.io/hf7y/roster:latest' 0
+clear pullable "L6 ...and OK once every declared image resolves"
+
+# promote -- cycling, not merely up.
+now="$(date -u +%FT%TZ)"
+ssh_out "INTERVAL 300
+APPLY 1
+STATE exited"
+broke promote "L7 promote is DOWN with the container stopped"
+ssh_out "INTERVAL 300
+APPLY 1
+STATE running
+LAST wtul-dexter-promote: cycle ok, $now"
+clear promote "L7 ...and OK once it logs a completed cycle inside its interval"
+ssh_rc 1
+
+# hygiene -- containment and credential shape, off the same published status.
+CLEAN='{"account":"a","uid":1,"containment":{"foreign_clones":[],"outside_home":[],"sudoers":[]},"credentials":{"claude_settings":"0o600"}}'
+DIRTY='{"account":"b","uid":2,"containment":{"foreign_clones":[{"path":"/home/b/x","origin":"https://github.com/hf7y/x.git"}],"outside_home":[],"sudoers":[]},"credentials":{"claude_settings":"0o600"}}'
+curl_json "{\"schema\":2,\"accounts\":[$CLEAN,$DIRTY]}"
+broke hygiene "L8 hygiene is DOWN on an account holding a foreign clone"
+curl_json "{\"schema\":2,\"accounts\":[$CLEAN]}"
+clear hygiene "L8 ...and OK once every account is contained and shares one credential shape"
+
+# propagation -- the channel's verdict, then who adopted the build.
+fresh="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+curl_json "{\"decision\":\"ERROR\",\"blocked_streak\":3,\"cadence_hours\":24,\"grace_hours\":4,\"last_cut\":{\"at\":\"$fresh\",\"build_id\":\"B\"}}"
+broke propagation "L9 propagation is DOWN with the channel refusing"
+ssh_out '/usr/local/share/verb-builds/B'
+curl_json "{\"decision\":\"CUT\",\"build_id\":\"B\",\"blocked_streak\":0,\"cadence_hours\":24,\"grace_hours\":4,\"last_cut\":{\"at\":\"$fresh\",\"build_id\":\"B\"}}"
+clear propagation "L9 ...and OK once it cuts and every host pin is on the cut"
+ssh_rc 1
+
+# rot / landing / unarmed / handoff -- composed probes, graded by exit code.
+part_stub decision-rot.sh 1 "answered and still open"
+broke rot "L10 rot is DOWN with an answered decision still open"
+part_stub decision-rot.sh 0
+clear rot "L10 ...and OK once none is"
+
+part_stub landing-drift.sh 1 "realisateur 3 2026-09-01 x stranded"
+broke landing "L11 landing is DOWN with green work unlanded"
+part_stub landing-drift.sh 0
+clear landing "L11 ...and OK once every repo can land what it opens"
+
+part_stub unarmed.sh 1 "EXPIRED promote-witness"
+broke unarmed "L12 unarmed is DOWN with a row past its own window"
+part_stub unarmed.sh 0
+clear unarmed "L12 ...and OK once the floor holds"
+
+part_stub reprise.sh 1 "reprise: hf7y/senechal#4 MERGED but the deletion it owes is outstanding"
+broke handoff "L13 handoff is DOWN with a merged handoff uncollected"
+part_stub reprise.sh 0 "reprise: 0 rows collectable"
+clear handoff "L13 ...and OK once nothing is outstanding"
+
+# fleet -- the reason an account gives for stopping.
+ssh_out "2026-08-20	monkey	wtul	wtul	batch	0	DONE	fine
+FLEET-GATE-ERR realisateur 4
+FLEET-LEDGERS 1"
+broke fleet "L14 fleet is DOWN with the usage gate erroring"
+ssh_out "2026-08-20	monkey	wtul	wtul	batch	0	DONE	fine
+FLEET-LEDGERS 1"
+clear fleet "L14 ...and OK once the gate paces again"
+
+# fatals -- a hard abort before `claude` starts writes no ledger row at all.
+ssh_out "FATALS-FOUND dcp-gate-site 69
+FATALS-CHECKED 3"
+broke fatals "L15 fatals is DOWN with an account aborting every dispatch"
+ssh_out "FATALS-CHECKED 3"
+clear fatals "L15 ...and OK once none has aborted since its last run marker"
 
 summary
