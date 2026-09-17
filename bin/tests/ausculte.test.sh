@@ -18,6 +18,10 @@ cp "$HERE/../lib/propagation-set.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/estate-set.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/cron-lock.sh" "$TMP/bin/lib/"
 cp "$HERE/../lib/fleet-hosts-set.sh" "$TMP/bin/lib/"
+cp "$HERE/../lib/roster-set.sh" "$TMP/bin/lib/"
+# NOT lib/ausculte-owner.tsv: --cadence finds it beside itself, and sections A-F
+# below grade the SINCE record with the filing leg off. Section G points
+# AUSCULTE_OWNER_TSV at the real table and grades the leg with it on.
 
 stub() { printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\nexit %s\n' "${3:-}" "$2" > "$TMP/bin/$1"; chmod +x "$TMP/bin/$1"; }
 
@@ -826,7 +830,7 @@ stub_cad_json() { # <json> [exit]
   chmod +x "$TMP/bin/cad-source.sh"
 }
 runcad() { OUT="$(PATH="$TMP/stub:$PATH" AUSCULTE_BIN="$TMP/bin/cad-source.sh" \
-                  AUSCULTE_CADENCE_STATE="$CADSTATE" \
+                  AUSCULTE_CADENCE_STATE="$CADSTATE" AUSCULTE_CADENCE_FILE=0 \
                   bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
 
 DOWN_ROW='[{"probe":"arming","status":"DOWN","detail":"two accounts stopped"}]'
@@ -897,52 +901,145 @@ has "F1 it prints the line it would install" "$OUT" "realisateur:ausculte:CADENC
 has "...naming --cadence, not the retired standalone script" "$OUT" "--cadence"
 eq "F2 the crontab is untouched" "$(crontab -l 2>/dev/null | md5sum)" "$before"
 
-section "cadence G. it files nothing at anybody, and reaches no human on its own"
-# Same guard #894 carried over from ausculte-cadence.sh: 47 zaxon questions
-# sent/0 answered, 10 issues/5 days over 5 rows, both cut for cause. The
-# `channel` probe still legitimately reaches zaxon (it is what answers
-# "can Zach be reached at all") -- what must stay gone is the CADENCE layer
-# escalating on its own, so the check is for zaxon_ask/issue-create/-close
-# specifically, not for zaxon.sh being sourced anywhere in the file.
-cat > "$TMP/bin/gh" <<'STUB'
+section "cadence G. the filing leg (#1207) -- it files LATE, ONCE, and shuts what it opened"
+# The leg this rebuilds was cut for cause: 47 questions sent/0 answered, and 10
+# issues in 5 days over 5 rows. Each half of that is a case below -- a
+# transient must not file (G1), the same condition must not file twice (G4),
+# and an issue nothing is working must stop the leg rather than feed it (G6).
+cat > "$TMP/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_LOG"
-case "$*" in *"issue list"*) echo 654 ;; esac
+case "$*" in
+  *"issue create"*)          cat > "$GH_BODY_OUT"; printf 'https://github.com/%s/issues/777\n' "${GH_CREATE_REPO:-hf7y/scheduler}" ;;
+  *"milestones?state=open"*) printf '%s\n' "${GH_MILESTONE-v2}" ;;
+  *"issue list"*)            printf '%s\n' "${GH_FOUND-}" ;;
+  *"--json body"*)           printf '%s\n' "${GH_BODY-}" ;;
+  *"--json state"*)          printf '%s\n' "${GH_STATE-OPEN}" ;;
+  *"--json updatedAt"*)      printf '%s\n' "${GH_UPDATED-2099-01-01T00:00:00Z}" ;;
+esac
 exit 0
 STUB
-chmod +x "$TMP/bin/gh"
-ghruncad() { OUT="$(PATH="$TMP/stub:$PATH" GH_LOG="$TMP/gh.log" \
-                    AUSCULTE_BIN="$TMP/bin/cad-source.sh" AUSCULTE_CADENCE_STATE="$CADSTATE" \
-                    bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
+chmod +x "$TMP/stub/gh"
+filecad() { OUT="$(PATH="$TMP/stub:$PATH" GH_LOG="$TMP/gh.log" GH_BODY_OUT="$TMP/gh.body" \
+                   AUSCULTE_BIN="$TMP/bin/cad-source.sh" AUSCULTE_CADENCE_STATE="$CADSTATE" \
+                   AUSCULTE_OWNER_TSV="$HERE/../lib/ausculte-owner.tsv" \
+                   bash "$TMP/bin/ausculte.sh" --cadence 2>&1)"; RC=$?; }
 
-: > "$TMP/gh.log"; rm -f "$CADSTATE"/*.down "$CADSTATE"/*.blind
+# `arming` is hf7y/scheduler, route agent, escalate_after 3 in the real table.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
 stub_cad_json "$DOWN_ROW"
-ghruncad; ghruncad
+filecad; filecad
 check "G1 a row DOWN twice running still exits 5" "$RC" "5"
 case "$(cat "$TMP/gh.log")" in
-  *"issue create"*) bad "G2 no issue is ever created" "it called gh issue create" ;;
-  *)                ok  "G2 no issue is ever created" ;;
+  *"issue create"*) bad "G2 nothing is filed below the row's escalate_after" "it filed on reading 2 of 3" ;;
+  *)                ok  "G2 nothing is filed below the row's escalate_after" ;;
 esac
+
+filecad
+has "G3 the third consecutive reading files" "$OUT" "FILED"
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) ok "...with gh issue create" ;;
+  *)                bad "G3 it files with gh issue create" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+# FILING WITHOUT A MILESTONE IS NOT FILING: the milestone gate is what turns a
+# filed issue into a dispatch, and #1180-#1184 were filed without one and sat.
+case "$(cat "$TMP/gh.log")" in
+  *"--milestone v2"*) ok "...onto the nearest open milestone, or nothing dispatches to it" ;;
+  *)                  bad "G3 the create names a milestone" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+body="$(cat "$TMP/gh.body")"
+has "G3a the body carries this row's marker, which is what makes the next tick idempotent" \
+  "$body" '<!-- ausculte-row: arming -->'
+has "G3b an agent-route body declares NO-DECISION, so it is not parked on a human" "$body" 'NO-DECISION:'
+has "G3c it says what would put the row back to OK" "$body" 'reads OK again when:'
+# The detail is FENCED: it is prose a probe built and can hold a closing keyword
+# or a leading bullet, either of which the grammar would read as structure.
+case "$body" in *'```'*"two accounts stopped"*'```'*) ok "G3d the probe's detail is fenced, not loose in the body" ;;
+  *) bad "G3d the detail is fenced" "got: $body" ;; esac
+
+: > "$TMP/gh.log"
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+has "G4 the next tick finds the same issue instead of filing a second" "$OUT" "not filed twice"
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "G4 nothing is filed twice for one row" "it created a second issue" ;;
+  *)                ok  "G4 nothing is filed twice for one row" ;;
+esac
+
+# A CHANGE OF REASON IS A NEW ROW: carrying the old count would file on a
+# condition seen once. Same rule the paced runner's pull-block already uses.
+: > "$TMP/gh.log"
+stub_cad_json '[{"probe":"arming","status":"DOWN","detail":"a different account stopped"}]'
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+has "G5 a changed reason restarts the count" "$OUT" "since now (1 reading(s))"
+
+# THE CIRCUIT BREAKER the previous leg did not have.
+: > "$TMP/gh.log"
+stub_cad_json "$DOWN_ROW"
+for _ in 1 2 3; do GH_BODY='<!-- ausculte-row: arming -->' GH_UPDATED='2001-01-01T00:00:00Z' filecad; done
+has "G6 an issue open and untouched for three windows latches the row" "$OUT" "LATCH"
+GH_BODY='<!-- ausculte-row: arming -->' GH_UPDATED='2001-01-01T00:00:00Z' filecad
+has "G6a and a latched row files nothing further" "$OUT" "LATCHED"
 
 : > "$TMP/gh.log"
 stub_cad_json "$OK_ROW"
-ghruncad
-check "G3 a recovery exits 0" "$RC" "0"
+GH_BODY='<!-- ausculte-row: arming -->' filecad
+check "G7 a recovery exits 0" "$RC" "0"
 case "$(cat "$TMP/gh.log")" in
-  *"issue close"*) bad "G4 no issue is ever closed" "it called gh issue close" ;;
-  *)               ok  "G4 no issue is ever closed" ;;
+  *"issue close"*) ok "G8 the row that filed it shuts it once the row reads OK" ;;
+  *)               bad "G8 an OK row shuts its issue" "gh.log: $(cat "$TMP/gh.log")" ;;
 esac
+# gh-sign REFUSES a completed close naming nothing to go and look at (#752), so
+# the close comment has to carry a reference or the recovery silently fails.
+case "$(cat "$TMP/gh.log")" in
+  *'`bin/ausculte.sh`'*) ok "...citing something a check can go and look at" ;;
+  *) bad "G8 the close names a landing reference" "gh.log: $(cat "$TMP/gh.log")" ;;
+esac
+
+section "cadence H. the routes the table declares"
+# A `human` row must NOT become an agent run: a needs-human-only milestone is
+# not permission (hf7y/scheduler#587), and the previous leg's 47 unanswered
+# questions were the cost of asking a person through a channel nobody read.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"hygiene","status":"DOWN","detail":"monkey:holding something it should not: svc-x"}]'
+GH_CREATE_REPO=hf7y/realisateur filecad; GH_CREATE_REPO=hf7y/realisateur filecad
+has "H1 a human-route row files DECISION: on line 1, which is what derives needs-human" \
+  "$(cat "$TMP/gh.body")" 'DECISION: @zach'
+has "...and declares a DEFAULT-AFTER, without which the grammar refuses the body" \
+  "$(cat "$TMP/gh.body")" 'DEFAULT-AFTER 0d:'
+
+# zaxon-only files nothing at all. `channel` DOWN means the relay itself is
+# down, so there is nothing to file at and nothing that would reach a human.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"channel","status":"DOWN","detail":"no zaxon relay answered"}]'
+filecad
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "H2 a zaxon-only row files no issue" "it filed one" ;;
+  *)                ok  "H2 a zaxon-only row files no issue" ;;
+esac
+
+# A PROBE WITH NO ROW HAS NO DESTINATION, and a guessed one is worse than none.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json '[{"probe":"invented","status":"DOWN","detail":"nothing owns this"}]'
+filecad
+has "H3 a probe the table does not name is not filed anywhere, and says so" "$OUT" "NOROW"
+
+# THE ONE-COMMAND REVERSAL. Arming this was a decision; un-arming it must not
+# need an edit.
+: > "$TMP/gh.log"; rm -rf "$CADSTATE"; mkdir -p "$CADSTATE"
+stub_cad_json "$DOWN_ROW"
+runcad; runcad; runcad
+case "$(cat "$TMP/gh.log")" in
+  *"issue create"*) bad "H4 AUSCULTE_CADENCE_FILE=0 files nothing" "it filed anyway" ;;
+  *)                ok  "H4 AUSCULTE_CADENCE_FILE=0 files nothing" ;;
+esac
+has "...and still records the row" "$OUT" "arming"
 
 live="$(grep -vE '^[[:space:]]*#' "$HERE/../ausculte.sh")"
 case "$live" in
-  *zaxon_ask*) bad "H1 no live call to zaxon_ask" "it is back -- 47 sent, 0 answered" ;;
-  *)           ok  "H1 no live call to zaxon_ask" ;;
+  *zaxon_ask*) bad "H5 no live call to the relay's question path" "it is back -- 47 sent, 0 answered" ;;
+  *)           ok  "H5 no live call to the relay's question path" ;;
 esac
-case "$live" in
-  *"issue create"*) bad "H2 the issue-filing leg is gone from the source too" "gh issue create is back" ;;
-  *)                ok  "H2 the issue-filing leg is gone from the source too" ;;
-esac
-has "H3 a DOWN row still exits 5, so a caller can still see it" "$live" 'exit 5'
+has "H6 a DOWN row still exits 5, so a caller can still see it" "$live" 'exit 5'
 
 section "I. routes -- the port carries the identity at dexter's address (#1189)"
 # The distros share ONE network namespace and Windows sshd holds 22, so an
