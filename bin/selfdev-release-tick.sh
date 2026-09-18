@@ -16,8 +16,9 @@ CLI_USAGE='  selfdev-release-tick.sh                  --check (default): pin vs 
   selfdev-release-tick.sh --apply          adopt the newest build (delegates to install-verb-build.sh)
   selfdev-release-tick.sh --install-cadence  print (with --apply, install) THIS ACCOUNT'"'"'s cron entry
   selfdev-release-tick.sh --retire-cadence   print (with --apply, remove) THIS ACCOUNT'"'"'s cron entry and private pin, once the host-wide channel resolves
-  selfdev-release-tick.sh --survey         read-only fleet view: every account'"'"'s pin vs latest'
-CLI_FLAGS='--check --apply --install-cadence --retire-cadence --survey'
+  selfdev-release-tick.sh --survey         read-only fleet view: every account'"'"'s pin vs latest
+  selfdev-release-tick.sh --identity       report (with --apply, REPAIR) every account'"'"'s declared git identity'
+CLI_FLAGS='--check --apply --install-cadence --retire-cadence --survey --identity'
 CLI_POSITIONAL=none
 CLI_EXITS='  0  on the current build and the clock is alive
   1  findings: a newer build exists, the clock is dead, or bootstrap incomplete
@@ -56,6 +57,13 @@ SURVEY_HOST="${TICK_SURVEY_HOST:-monkey}"
 SURVEY_PASSWD="${TICK_SURVEY_PASSWD:-/etc/passwd}"
 UID_MIN="${TICK_UID_MIN:-3000}"
 UID_MAX="${TICK_UID_MAX:-3099}"
+# The identity every self-dev account must DECLARE, which is already the one it
+# commits as: selfdev-gh-app.sh's account_identity(). Same default domain.
+SELFDEV_EMAIL_DOMAIN="${SELFDEV_EMAIL_DOMAIN:-selfdev.invalid}"
+# How this reaches another account. Empty runs git directly with HOME pointed
+# at the fixture home, which is the seam the test uses -- it must never touch
+# the running user's own global config.
+TICK_SUDO="${TICK_SUDO-sudo -n}"
 
 # The host-wide link directory a retired account must resolve verbs from.
 # Overridable so bin/tests/propagation.test.sh can point it at a fixture.
@@ -67,7 +75,7 @@ HOST_PROBE_VERB="${TICK_HOST_PROBE_VERB:-dose}"
 # This account's own bin directory -- the one whose entries shadow $HOST_BIN.
 LOCAL_BIN="${TICK_LOCAL_BIN:-$HOME/.local/bin}"
 
-MODE=check; CADENCE=0; RETIRE=0; SURVEY=0
+MODE=check; CADENCE=0; RETIRE=0; SURVEY=0; IDENTITY=0
 for a in "$@"; do
   case "$a" in
     --check) MODE=check ;;
@@ -75,6 +83,7 @@ for a in "$@"; do
     --install-cadence) CADENCE=1 ;;
     --retire-cadence) RETIRE=1 ;;
     --survey) SURVEY=1 ;;
+    --identity) IDENTITY=1 ;;
   esac
 done
 
@@ -188,6 +197,61 @@ sync_host_tools() {  # #517: the payload half of prop_host_tools, refreshed on t
       bad "could not install $dst from $src"
     fi
   done <<<"$rows"
+}
+
+acct_git() {  # <account> <home> <git args...> -- as that account, against ITS global config
+  local u="$1" h="$2"; shift 2
+  if [ -n "$TICK_SUDO" ]; then $TICK_SUDO -u "$u" -H git "$@"
+  else HOME="$h" git "$@"; fi
+}
+
+# WHY THIS REPAIRS INSTEAD OF REPORTING (2026-09-18, Zach: "I'm tired of loud
+# warnings that just get ignored. the loops need to complete").
+# 13 of 19 accounts on monkey DECLARED `test@example.com` in their global
+# ~/.gitconfig while committing correctly as <acct>@selfdev.invalid. So
+# monkey-status-collect.py's identity_drift() graded every real commit foreign
+# and hf7y.com/monkey carried a red "7 ACCOUNTS NOT COMMITTING AS ITSELF"
+# banner for weeks -- right that something was wrong, wrong about what, and
+# wired to nothing. The declaration is the one thing that probe cannot verify
+# by reading more commits, and a fourteenth report would have changed nothing.
+# This is the clock that already runs as root on the host every morning.
+# The previous value is preserved under selfdev.previous* BEFORE any write,
+# once, so a re-run cannot overwrite the original with this function's own --
+# the same rule selfdev-gh-app.sh:315 already follows.
+reconcile_identities() {
+  [ "$IDENTITY" = 1 ] || [ "$TICK_LINK" = 1 ] || return 0   # host-wide tick, or asked for by name
+  echo
+  echo "-- declared git identity (#1231) ---------------------------------------"
+  local user uid home want_name want_mail have_name have_mail got_name got_mail
+  while IFS=: read -r user _ uid _ _ home _; do
+    [ "$uid" -ge "$UID_MIN" ] 2>/dev/null || continue
+    [ "$uid" -le "$UID_MAX" ] || continue
+    want_name="$user"; want_mail="$user@$SELFDEV_EMAIL_DOMAIN"
+    have_name="$(acct_git "$user" "$home" config --global --get user.name  2>/dev/null)"
+    have_mail="$(acct_git "$user" "$home" config --global --get user.email 2>/dev/null)"
+    if [ "$have_name" = "$want_name" ] && [ "$have_mail" = "$want_mail" ]; then
+      ok "$user declares itself: $have_name <$have_mail>"; continue
+    fi
+    if [ "$MODE" != apply ]; then
+      gap "$user declares ${have_name:-<unset>} <${have_mail:-<unset>}>, commits as $want_mail -- repair: $0 --identity --apply"
+      continue
+    fi
+    if [ -z "$(acct_git "$user" "$home" config --global --get selfdev.previousUserEmail 2>/dev/null)" ]; then
+      acct_git "$user" "$home" config --global selfdev.previousUserName    "$have_name"
+      acct_git "$user" "$home" config --global selfdev.previousUserEmail   "$have_mail"
+      acct_git "$user" "$home" config --global selfdev.previousUserSavedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    fi
+    acct_git "$user" "$home" config --global user.name  "$want_name"
+    acct_git "$user" "$home" config --global user.email "$want_mail"
+    # WITNESS: read it back out of git, never out of the variable just written.
+    got_name="$(acct_git "$user" "$home" config --global --get user.name  2>/dev/null)"
+    got_mail="$(acct_git "$user" "$home" config --global --get user.email 2>/dev/null)"
+    if [ "$got_name" = "$want_name" ] && [ "$got_mail" = "$want_mail" ]; then
+      ok "$user REPAIRED: was ${have_name:-<unset>} <${have_mail:-<unset>}>, now $got_name <$got_mail>"
+    else
+      bad "$user: the write was accepted but re-reading gives $got_name <$got_mail>"
+    fi
+  done < "$SURVEY_PASSWD"
 }
 
 # ---------------------------------------------------------------------------
@@ -393,6 +457,14 @@ if [ "$SURVEY" = 1 ]; then
   exit 0
 fi
 
+if [ "$IDENTITY" = 1 ]; then
+  reconcile_identities
+  echo
+  printf '%d ok, %d gap, %d bad\n' "$PASS" "$GAPS" "$BAD"
+  [ "$GAPS" -eq 0 ] && [ "$BAD" -eq 0 ] || exit 1
+  exit 0
+fi
+
 if [ "$CADENCE" = 1 ] && [ "$RETIRE" = 1 ]; then
   echo "--install-cadence and --retire-cadence are opposites; pick one." >&2
   exit 2
@@ -457,6 +529,7 @@ if [ "$MODE" = apply ] && [ "$pin_rc" = 1 ]; then
 fi
 
 sync_host_tools
+reconcile_identities
 
 echo
 summary="$(printf '%d ok, %d gap, %d bad' "$PASS" "$GAPS" "$BAD")"
