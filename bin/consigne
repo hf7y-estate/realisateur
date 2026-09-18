@@ -102,9 +102,10 @@ CONSIGNE_LOCK_TIMEOUT="${CONSIGNE_LOCK_TIMEOUT:-30}"
 CONSIGNE_LOCK_TIMEOUT_RC=66
 vault_locked() { # <vault> <command> [args...] -- runs command holding the lock
   local vault="$1"; shift
-  [ -d "$vault" ] || blind "no clone of the vault at $vault to lock -- the vault
-       itself is the hf7y/ecosystem1-vault remote; clone it there, or set
-       BIBLIOTHECAIRE_VAULT to an existing clone"
+  [ -d "$vault" ] || blind "nothing at $vault to lock, and cloning one here is the
+       WRONG FIX -- see \`consigne status\` on the same host for why
+       (hf7y/realisateur#1164). BIBLIOTHECAIRE_VAULT still takes a clone you are
+       prepared to defend as a read door."
   # NO `--` HERE: unlike most GNU tools, flock's own command-variant syntax is
   # `flock [options] <file> <command> [args...]` with no separator -- a `--`
   # in that position is parsed as the command itself and fails to execve.
@@ -315,12 +316,8 @@ status_field() { # <file> <field> -- first frontmatter value, or empty
 do_status() {
   local diverged_only="${STATUS_DIVERGED_ONLY:-0}"
 
-  # WHAT THIS USED TO ADVISE, AND WHY IT NO LONGER DOES. It said "clone it to
-  # $VAULT", and someone did -- into a home directory on mandark, which is how
-  # a read door hf7y/realisateur#742 exists to close came to be open. That
-  # clone has been removed rather than relocated, and every commit in it was
-  # verified present on the remote first. Telling the next reader to make
-  # another one is this message shipping the defect it reports.
+  # This advised a clone until hf7y/realisateur#1253; someone followed it and
+  # opened hf7y/realisateur#742's third read door.
   [ -d "$VAULT" ] || blind "no vault at $VAULT, and CLONING ONE HERE IS THE WRONG
        FIX (hf7y/realisateur#1164, milestone 'gen-2: no clones'). The vault is
        becoming a service on dexter on the hf7y/scheduler#432 pattern --
