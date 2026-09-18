@@ -15,7 +15,10 @@ printf '2026-08-13T05:49:02Z pin=2026-08-12T183347Z adopted\n' > "$STATUS"
 
 cat > "$T/stub/find" <<'STUB'   # a case says what the sweep saw and its rc
 #!/usr/bin/env bash
-[ -n "${FIND_OUT:-}" ] && printf '%s\n' "$FIND_OUT"
+# ONE sweep answers every account now, so it prints `%U\t%p`: a case gives bare
+# paths in FIND_OUT (all owned by FIND_UID) or uid-owned rows in FIND_ROWS.
+[ -n "${FIND_OUT:-}" ] && printf '%s\n' "$FIND_OUT" | sed "s|^|${FIND_UID:-4242}\t|"
+[ -n "${FIND_ROWS:-}" ] && printf '%s\n' "$FIND_ROWS"
 exit "${FIND_RC:-0}"
 STUB
 chmod +x "$T/stub/find"
@@ -69,6 +72,15 @@ eq "25 hits are capped at 20 plus one line naming the rest" \
   "$(printf '%s' "$out" | jq '.outside_home | length')" "21"
 eq "and the remainder is counted honestly" \
   "$(printf '%s' "$out" | jq -r '.outside_home[-1]')" "... and 5 more"
+
+section "D2. containment: one sweep, and each account gets only its own rows"
+out="$(FIND_ROWS="$(printf '4242\t/srv/mine\n4243\t/srv/theirs')" probe containment)"
+eq "a path owned by another account is not attributed to this one" \
+  "$(printf '%s' "$out" | jq -r '.outside_home | join(",")')" "/srv/mine"
+
+out="$(FIND_UID=4243 FIND_OUT="/srv/only-theirs" probe containment)"
+eq "an account with no rows of its own reports none -- and is not null" \
+  "$(printf '%s' "$out" | jq -r '.outside_home | length')" "0"
 
 section "E. containment: foreign_clones exempts the account's own repo and the one universal bootstrap clone"
 mkdir -p "$T/homes/acct2/Documents/Projects/acct2" \
