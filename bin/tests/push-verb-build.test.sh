@@ -340,10 +340,8 @@ t_has "...BAD, swap refused, matches today's message" "$OUT" \
 t_eq "...and current on the host is unchanged" \
      "$(readlink "$REMOTE/verb-builds-e/current")" "2026-09-05T000000Z"
 
-# REGRESSION (vaporwave, 2026-09-17): a 0700 tree read as a clean push, because
-# readlink cannot see it and the pushing user's own `test -r` passes.
-chmod 700 "$CROOT/2026-09-04T000000Z"          # what a local build dir really is
-rm -rf "$REMOTE/verb-builds/2026-09-04T000000Z" # force a fresh copy at that mode
+chmod 700 "$CROOT/2026-09-04T000000Z"
+rm -rf "$REMOTE/verb-builds/2026-09-04T000000Z"
 OUT="$(STUB_PERMS_STUCK=1 run --build 2026-09-04T000000Z --host fakehost --apply 2>&1)"; RC=$?
 chmod 755 "$CROOT/2026-09-04T000000Z"
 t_rc "--apply when the pushed tree cannot be made readable: exits 1" 1 "$RC"
