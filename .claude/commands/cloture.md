@@ -18,28 +18,25 @@ close ends when a pass finds nothing, not when you explain why not.
 
 **A repeat pass opens by auditing the LAST pass, not by hunting new ground.**
 Re-read what the previous pass asserted -- in issues, in PR bodies, in the
-close itself -- and re-run the command behind each number. Measured 2026-09-18,
-a close that should have taken two passes took six: four passes found new
-ground, and **eight assertions had to be retracted, six of them already written
-into issues** before Zach disproved them. A `find` that did not follow a
-symlink, grep matches counted as dependencies, a dependency between two issues
-that did not exist, a colleague's tree reported "restored, untouched" without
-running the status.
+close itself -- and re-run the command behind every number in it.
 
-That is not "clearing one reveals the next". It is oscillation, and the cost is
-asymmetric: an unfound defect waits, while **a wrong claim in an issue gets
-built on**. Two of those six sent a later pass down a path that did not exist.
+A pass that retracts the pass before it is not "clearing one reveals the next";
+it is oscillation, and the loop does not converge. The cost is asymmetric, which
+is the argument: an unfound defect waits quietly, while **a wrong claim in an
+issue gets built on** -- by the next pass, or by whoever picks the issue up.
+Evidence for the rule belongs in the PR that adds it (hf7y/realisateur#1247),
+not here.
 
-Two habits behind it, both worth checking by name:
+Two habits produce most of it, and neither is answered by "be careful":
 
-- **Verify as the CONSUMER invokes, not as you invoke.** A leg shipped in
-  hf7y/crt#363 and did not run: verified by hand with the env sourced, while
-  its real caller is cron, which sources nothing. `env -i` found it in one
-  command (hf7y/crt#364). Any "I tested it" that used your shell tested your
-  shell.
+- **Verify as the CONSUMER invokes, not as you invoke.** A check verified in
+  your own shell tested your shell. Its caller may be cron, a timer, or a
+  forced command, with no profile and none of your exports -- `env -i` asks the
+  question your invocation cannot (hf7y/crt#363, fixed in hf7y/crt#364).
 - **A convenient number is the likeliest lie.** A `0`, a round figure, a count
-  that confirms the hypothesis -- each deserves the second command that
-  distinguishes a real answer from an artefact of how you asked.
+  that agrees with the hypothesis -- each reads as confirmation, and each wants
+  the second command that separates a real answer from an artefact of how it was
+  asked.
 
 ## 1. Branch reconciliation
 
