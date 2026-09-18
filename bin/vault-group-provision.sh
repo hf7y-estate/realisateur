@@ -138,15 +138,15 @@ if [ -d "$DIR" ]; then
     bad "$DIR is '$m $g', expected '$DIR_MODE_SHUT' -- the read door is open"
   fi
 
-  # THE OBJECTS, NOT JUST THE DOOR (#742, #1248). Shutting the door stops NEW
-  # account-owned files; it reowns nothing already inside. chezz and crt still
-  # owned 27 objects between them from two deposits made direct, before the
-  # spool -- and monkey-status-collect.py's containment() read that, correctly,
-  # as "not contained" on hf7y.com/monkey every single day. This script is that
-  # finding's only actor, so the reown belongs here and not in a one-off chown:
-  # a mode this script owns and an ownership nothing owns is how the row came
-  # back. Same uid band that probe uses. Everything the drain writes from here
-  # is root's, so the target is simply whoever owns $DIR.
+  # THE OBJECTS, NOT JUST THE DOOR (#742). A chmod stops NEW account-owned
+  # files and reowns nothing already inside, so every deposit made direct --
+  # before the spool, or during any window where the door stands open -- leaves
+  # an object monkey-status-collect.py's containment() will read, correctly, as
+  # "not contained" for as long as it sits there. A mode this script owns and
+  # an ownership nothing owns is how that finding comes back, which is why the
+  # reown belongs here and not in a one-off chown. Same uid band that probe
+  # uses. The drain writes as root from here, so the target is whoever owns
+  # $DIR.
   own="$(stat -c '%u:%g' "$DIR" 2>/dev/null)"
   stray="$(find "$DIR" -mindepth 1 -uid "+$((UID_LO - 1))" -uid "-$UID_HI" -print 2>/dev/null)"
   if [ -z "$own" ]; then
