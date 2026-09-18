@@ -10,10 +10,8 @@ CLI_USAGE='  push-verb-build.sh --cut     --host H [--apply]   cut a fresh build
   push-verb-build.sh --rollback ID --host H [--apply]
                                                      no transfer: H already holds ID -- swap to it directly
   push-verb-build.sh --list --build-root DIR        local builds available to push (no host needed)
-  push-verb-build.sh --cut     --here [--apply]     cut a fresh build and adopt it HERE -- no ssh,
-                                                    for the machine you are on, which --host cannot
-                                                    name (it cannot ssh to itself)
-  push-verb-build.sh --build ID --here [--apply]    adopt a build already under --build-root
+  push-verb-build.sh --cut     --here [--apply]     cut and adopt on THIS machine, no ssh
+  push-verb-build.sh --build ID --here [--apply]    adopt a local build by id
 
 --check (default) previews with no writes anywhere, local or remote.
 --build-root, --remote-root, --ssh, --rsync and --ssh-timeout are all
@@ -40,10 +38,7 @@ MODE="--check"
 DO_CUT=0; DO_FETCH=0; DO_LIST=0
 BUILD_ID=""; WANT_LATEST=0; ROLLBACK_ID=""
 HOST=""
-# ADOPT_HERE, not HERE: line 31 already owns $HERE as this script's own
-# directory, and sibling() resolves cut-verb-build.sh through it. A flag named
-# HERE silently broke --cut into "cut-verb-build.sh is not beside this script".
-ADOPT_HERE=0
+ADOPT_HERE=0   # NOT `HERE`: $HERE above is this script's dir, which sibling() needs
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -78,14 +73,9 @@ select_local_build() {
     for d in "$root"/*/; do
       d="${d%/}"; cand="$(basename "$d")"
       [ "$cand" = repo ] && continue
-      # NOT `current`, AND NOT ANY SYMLINK. `$root/*/` matches a symlink that
-      # points at a directory, so the adopted-build link came through this loop
-      # as a candidate named "current" -- and since `current` sorts above every
-      # dated id, it won `latest` every time. That pushed a build literally
-      # named "current" to the remote root and swapped current onto it. Found
-      # 2026-09-18 by --here, where the swap is local and the nonsense is
-      # visible ("would swap current -> current"); the remote path had the same
-      # bug and no way to notice.
+      # `$root/*/` matches a symlink-to-dir, so the adopted-build link entered
+      # here as "current" -- which sorts above every dated id and won `latest`,
+      # pushing a build named "current" to the remote root.
       [ "$cand" = current ] && continue
       [ -L "$d" ] && continue
       [ -f "$d/manifest.tsv" ] || continue
@@ -94,8 +84,7 @@ select_local_build() {
     [ -n "$id" ] || { say "select_local_build: no materialized build under $root (nothing there has a manifest.tsv)"; return 1; }
   else
     id="$want"; dir="$root/$id"
-    # Named explicitly, `current` is still the link and not a build id: pushing
-    # or adopting it would make `current` mean itself.
+    # Named explicitly it is still the link: adopting it means current -> current.
     if [ "$id" = current ] || [ -L "$dir" ]; then
       say "select_local_build: '$id' is the adopted-build link, not a build -- name the dated id it points at ($(readlink "$dir" 2>/dev/null || echo unreadable))"
       return 1
@@ -241,21 +230,16 @@ fi
 sel_n=$((DO_CUT + DO_FETCH + WANT_LATEST + (${#BUILD_ID} > 0 ? 1 : 0) + (${#ROLLBACK_ID} > 0 ? 1 : 0)))
 [ "$sel_n" -gt 0 ] || cli_die "name a build: --cut, --fetch, --build <id>, --latest, or --rollback <id>"
 [ "$sel_n" -eq 1 ] || cli_die "--cut, --fetch, --build, --latest and --rollback are mutually exclusive -- say which build to push"
-# THE HOST YOU ARE ON IS NOT REACHABLE BY --host (realisateur#1164 fallout).
-# Every route here went through ssh, so a verb fix could not reach the machine
-# it was written on: the meta-repo cut is monthly, mandark cannot ssh to itself,
-# and hand-editing the adopted build is both guarded (bin/lib/path-guard.tsv)
-# and discarded by the next adoption. --here closes that: the local cut already
-# lands in $BUILD_ROOT and atomic_swap_local already exists -- only the ssh
-# requirement stood between them.
+# --here: the machine you are on, which --host cannot name because it cannot ssh
+# to itself. Monthly cut, guarded build tree, no self-ssh -- a verb fix had no
+# route home (realisateur#1164).
 if [ "$ADOPT_HERE" -eq 1 ]; then
   [ -z "$HOST" ] || cli_die "--here and --host are the same question answered twice -- --here IS this machine"
 else
   [ -n "$HOST" ] || cli_die "--host is required (the target this pushes to and swaps on), or --here for this machine"
 fi
 
-# --rollback --here is "point current at a build already here", which is what
-# the selection path below does with --build. One code path, not two.
+# --rollback --here IS --build --here: one code path, not two.
 if [ -n "$ROLLBACK_ID" ] && [ "$ADOPT_HERE" -eq 1 ]; then
   BUILD_ID="$ROLLBACK_ID"; ROLLBACK_ID=""
 fi
@@ -324,8 +308,7 @@ if [ "$ADOPT_HERE" -eq 1 ]; then
   fi
   atomic_swap_local "$BUILD_ROOT" "$BUILD_ID" || {
     echo "  BAD     the swap refused -- current is UNCHANGED at ${was:-<unset>}"; exit 1; }
-  # RE-READ, never inferred from an exit code -- the same rule the remote path
-  # follows, and the reason it catches a swap that "succeeded" onto nothing.
+  # RE-READ, not inferred from an exit code -- the remote path's own rule.
   got="$(readlink "$BUILD_ROOT/current" 2>/dev/null || true)"
   if [ "$got" = "$BUILD_ID" ]; then
     echo "  OK      current -> $BUILD_ID (re-read off the link, not asserted)"

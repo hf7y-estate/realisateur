@@ -352,11 +352,7 @@ t_rc "--apply on a normal push: exits 0" 0 "$RC"
 t_has "...and witnesses that a project account can read the build" "$OUT" "readable by a project account"
 
 echo "-- G2. 'current' is a LINK, never a build id (found by --here, 2026-09-18) --"
-# $root/*/ matches a symlink pointing at a directory, so the adopted-build link
-# came through select_local_build as a candidate named "current" -- and
-# "current" sorts above every dated id, so it won `latest` every time. The
-# remote path had this bug too: it pushed a build named "current" and swapped
-# current onto it.
+# "current" sorts above every dated id, so the link won `latest` every time.
 GROOT="$T/G2"; mkdir -p "$GROOT"
 mk_verb "$GROOT/2026-09-05T000000Z" proj v five
 mk_manifest "$GROOT/2026-09-05T000000Z" "proj	v"
@@ -371,8 +367,6 @@ t_has "G2c ...and the refusal names the id it points at, so the caller can retry
   "$OUT" "2026-09-05T000000Z"
 
 echo "-- H. --here: the machine you are on, which --host cannot name --"
-# WHY THIS MODE EXISTS: every other route goes through ssh, and mandark cannot
-# ssh to itself, so a verb fix could not reach the machine it was written on.
 HROOT="$T/H"; mkdir -p "$HROOT"
 mk_verb "$HROOT/2026-09-10T000000Z" proj v old
 mk_manifest "$HROOT/2026-09-10T000000Z" "proj	v"
@@ -409,11 +403,8 @@ OUT="$(hrun --build 2026-09-12T000000Z --here --apply 2>&1)"; RC=$?
 t_rc "H12 --here refuses a build with no manifest.tsv" 1 "$RC"
 t_eq  "H13 ...and current is unchanged" "$(readlink "$HROOT/current")" "2026-09-11T000000Z"
 
-# THE BUG THIS CATCHES: the --here flag was first written as HERE=1, clobbering
-# $HERE -- the script's own directory, which sibling() resolves
-# cut-verb-build.sh through. Every stubbed test above passed, because none of
-# them takes the --cut path. So run the real script from a directory with a
-# STUB cutter beside it: that exercises sibling() with no network.
+# The flag was first HERE=1, clobbering $HERE (sibling()'s base). No stubbed
+# test above takes the --cut path, so run the real script with a stub cutter.
 CUTDIR="$T/Hcut"; mkdir -p "$CUTDIR"
 cp "$SCRIPT" "$CUTDIR/push-verb-build.sh"
 mkdir -p "$CUTDIR/lib"; cp "$(dirname "$SCRIPT")/lib/cli-guard.sh" "$CUTDIR/lib/cli-guard.sh"
