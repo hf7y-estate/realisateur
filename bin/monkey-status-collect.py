@@ -290,16 +290,47 @@ def containment(user, uid):
     return out
 
 
+def _graded(iso, since):
+    """Is this commit date at or after the repair stamp? An UNPARSEABLE date
+    grades, never hides -- a date this cannot read is not evidence of
+    innocence, and a silent drop is the failure mode this file exists to
+    avoid."""
+    try:
+        return datetime.datetime.fromisoformat(iso) >= since
+    except ValueError:
+        return True
+
+
 def identity_drift(user):
     """Not committing as itself (realisateur#841): a local user.email that is
-    not the account's, or an unpushed commit whose COMMITTER is neither."""
+    not the account's, or an unpushed commit whose COMMITTER is neither.
+
+    GRADED FROM THE REPAIR FORWARD (#1230). selfdev-release-tick.sh's morning
+    clock now rewrites a drifted declaration and stamps
+    selfdev.previousUserSavedAt before it writes. A commit OLDER than that
+    stamp was made under a declaration that no longer exists, on an unpushed
+    feature branch nothing will ever rewrite -- grading it republishes a red
+    banner every day for a fault already repaired, which is the
+    report-instead-of-fix loop that ruling closed. A commit AFTER the stamp is
+    NEW drift and still lands. No stamp means no repair ran here: grade
+    everything.
+    """
     home = f"{HOME_ROOT}/{user}"
     rc, mail = sh_rc("git", "config", "--file", f"{home}/.gitconfig",
                      "--get", "user.email")
     mail = mail.strip()
     if rc != 0 or not mail:
         return None
-    out = {"declared": mail, "clones": []}
+    out = {"declared": mail, "repaired_at": None, "clones": []}
+    since = None
+    stamp = sh("git", "config", "--file", f"{home}/.gitconfig",
+               "--get", "selfdev.previousUserSavedAt").strip()
+    if stamp:
+        try:
+            since = datetime.datetime.fromisoformat(stamp)
+            out["repaired_at"] = stamp
+        except ValueError:
+            since = None                      # unreadable stamp grades everything
     projects = f"{home}/Documents/Projects"
     for name in sorted(os.listdir(projects)) if os.path.isdir(projects) else []:
         d = os.path.join(projects, name)
@@ -315,6 +346,8 @@ def identity_drift(user):
         known = {mail, local} - {""}
         bad = [f.split("\x1f") for f in log.splitlines() if f.strip()]
         bad = [f for f in bad if len(f) == 4 and f[2] not in known]
+        if since:
+            bad = [f for f in bad if _graded(f[3], since)]
         if not bad and (not local or local == mail):
             continue
         out["clones"].append({

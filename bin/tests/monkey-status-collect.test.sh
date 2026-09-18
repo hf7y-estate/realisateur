@@ -321,6 +321,34 @@ eq "a clone configured to commit as someone else is one finding" \
 eq "...and its own commits are not counted a second time against it" \
   "$(printf '%s' "$out" | jq '.clones[] | select(.path | endswith("/overridden")) | .count')" "0"
 
+section "F2. identity_drift: the repair stamp is the watershed (#1230)"
+stamp() { git config --file "$IH/.gitconfig" selfdev.previousUserSavedAt "$1"; }
+forged_n() { printf '%s' "$1" | jq '[.clones[] | select(.path | endswith("/forged"))] | length'; }
+
+stamp 2099-01-01T00:00:00Z
+out="$(iprobe)"
+eq "a commit made BEFORE the declaration was repaired is not re-reported daily" \
+  "$(forged_n "$out")" "0"
+eq "...and the stamp that muted it is published, so the page is not silently short" \
+  "$(printf '%s' "$out" | jq -r .repaired_at)" "2099-01-01T00:00:00Z"
+eq "a clone still CONFIGURED to commit as someone else is not muted by the stamp" \
+  "$(printf '%s' "$out" | jq '.clones[] | select(.path | endswith("/overridden")) | .local_identity')" \
+  '"hf7y@example.invalid"'
+
+stamp 1970-01-01T00:00:00Z
+out="$(iprobe)"
+eq "a commit made AFTER the repair is new drift and still lands" "$(forged_n "$out")" "1"
+
+stamp "not-a-date"
+out="$(iprobe)"
+eq "an unreadable stamp grades everything -- it never hides a finding" "$(forged_n "$out")" "1"
+eq "...and repaired_at stays null, so nothing claims a repair it could not read" \
+  "$(printf '%s' "$out" | jq -r .repaired_at)" "null"
+
+git config --file "$IH/.gitconfig" --unset selfdev.previousUserSavedAt
+out="$(iprobe)"
+eq "an account no repair has ever touched is graded in full" "$(forged_n "$out")" "1"
+
 section "G. identity_drift: could-not-look is not clean"
 mkdir -p "$T/homes/noident/Documents/Projects"
 cat > "$T/probe4.py" <<'PY4'
