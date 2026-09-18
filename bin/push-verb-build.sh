@@ -114,16 +114,9 @@ push_tree() {
         "$local_dir/" "$host:$remote_root/$id/" || {
       say "push_tree: rsync to $host:$remote_root/$id failed"; return 1; }
   fi
-  # rsync -a preserves the LOCAL 0700 owner/mode, so `current` ends up naming a
-  # tree no project account can traverse (vaporwave, 2026-09-17: swap verified,
-  # every account locked out). Not done until the accounts can read it.
-  # `|| true`: a normalize that could not run is not a failed push -- the
-  # readable witness refuses, and names what is actually wrong.
   normalize_remote_perms "$sshbin" "$host" "$remote_root/$id" || true
 }
 
-# root:root + a+rX, same plain-then-sudo ladder as the rest of this file. Not
-# fatal on its own -- verify_remote_readable is what refuses.
 normalize_remote_perms() {
   local sshbin="$1" host="$2" dir="$3" q
   q="$(printf '%q' "$dir")"
@@ -133,9 +126,6 @@ normalize_remote_perms() {
       "sudo -n chown -R root:root $q && sudo -n chmod -R a+rX $q" 2>/dev/null
 }
 
-# `readlink current` says where the pointer aims, never whether the account can
-# get in. MODE, not `test -r`: the pushing user owns the tree, so its own read
-# passes at 0700 while every project account is locked out.
 verify_remote_readable() {
   local sshbin="$1" host="$2" dir="$3" mode
   mode="$("$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
