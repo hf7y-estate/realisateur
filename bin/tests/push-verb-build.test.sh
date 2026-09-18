@@ -352,7 +352,6 @@ t_rc "--apply on a normal push: exits 0" 0 "$RC"
 t_has "...and witnesses that a project account can read the build" "$OUT" "readable by a project account"
 
 echo "-- G2. 'current' is a LINK, never a build id (found by --here, 2026-09-18) --"
-# "current" sorts above every dated id, so the link won `latest` every time.
 GROOT="$T/G2"; mkdir -p "$GROOT"
 mk_verb "$GROOT/2026-09-05T000000Z" proj v five
 mk_manifest "$GROOT/2026-09-05T000000Z" "proj	v"
@@ -373,7 +372,6 @@ mk_manifest "$HROOT/2026-09-10T000000Z" "proj	v"
 mk_verb "$HROOT/2026-09-11T000000Z" proj v new
 mk_manifest "$HROOT/2026-09-11T000000Z" "proj	v"
 ln -sfn 2026-09-10T000000Z "$HROOT/current"
-# NO ssh/rsync stub on PATH at all: --here must not reach for either.
 hrun() { PUSH_SSH_BIN=/nonexistent/ssh PUSH_RSYNC_BIN=/nonexistent/rsync \
          PUSH_BUILD_ROOT="$HROOT" "$SCRIPT" "$@"; }
 
@@ -396,29 +394,22 @@ OUT="$(hrun --build 2026-09-11T000000Z --apply 2>&1)"; RC=$?
 t_rc "H10 neither --here nor --host is still a usage error" 2 "$RC"
 t_has "H11 ...and now offers --here as the alternative" "$OUT" "--here"
 
-# A build with no manifest is the shape atomic_swap_local exists to refuse; the
-# --here path must inherit that refusal rather than pointing current at nothing.
 mkdir -p "$HROOT/2026-09-12T000000Z/bin"
 OUT="$(hrun --build 2026-09-12T000000Z --here --apply 2>&1)"; RC=$?
 t_rc "H12 --here refuses a build with no manifest.tsv" 1 "$RC"
 t_eq  "H13 ...and current is unchanged" "$(readlink "$HROOT/current")" "2026-09-11T000000Z"
 
-# The flag was first HERE=1, clobbering $HERE (sibling()'s base). No stubbed
-# test above takes the --cut path, so run the real script with a stub cutter.
 CUTDIR="$T/Hcut"; mkdir -p "$CUTDIR"
 cp "$SCRIPT" "$CUTDIR/push-verb-build.sh"
 mkdir -p "$CUTDIR/lib"; cp "$(dirname "$SCRIPT")/lib/cli-guard.sh" "$CUTDIR/lib/cli-guard.sh"
 cat > "$CUTDIR/cut-verb-build.sh" <<'CUTEOF'
 #!/usr/bin/env bash
-# stub cutter: --assemble <dir> lays down one verb and a BUILD_ID
-[ "${1:-}" = "--assemble" ] || exit 2
+[ "${1:-}" = "--assemble" ] || exit 2   # stub cutter
 d="${2:?}"; mkdir -p "$d/proj/bin"
 printf '#!/bin/sh
 echo cut
 ' > "$d/proj/bin/v"; chmod +x "$d/proj/bin/v"
-printf '# stub
-# project	verb	sha	repo_url
-' > "$d/manifest.tsv"
+printf '%s\n' '# stub' > "$d/manifest.tsv"
 printf 'proj	v	0000000000000000000000000000000000000000	https://example/proj.git
 ' >> "$d/manifest.tsv"
 printf '2026-09-20T000000Z

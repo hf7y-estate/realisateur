@@ -73,18 +73,14 @@ select_local_build() {
     for d in "$root"/*/; do
       d="${d%/}"; cand="$(basename "$d")"
       [ "$cand" = repo ] && continue
-      # `$root/*/` matches a symlink-to-dir, so the adopted-build link entered
-      # here as "current" -- which sorts above every dated id and won `latest`,
-      # pushing a build named "current" to the remote root.
-      [ "$cand" = current ] && continue
-      [ -L "$d" ] && continue
+      [ "$cand" = current ] && continue   # the adopted-build LINK, and it sorts above every dated id
+      [ -L "$d" ] && continue             # $root/*/ matches a symlink-to-dir
       [ -f "$d/manifest.tsv" ] || continue
       if [ -z "$id" ] || [[ "$cand" > "$id" ]]; then id="$cand"; dir="$d"; fi
     done
     [ -n "$id" ] || { say "select_local_build: no materialized build under $root (nothing there has a manifest.tsv)"; return 1; }
   else
     id="$want"; dir="$root/$id"
-    # Named explicitly it is still the link: adopting it means current -> current.
     if [ "$id" = current ] || [ -L "$dir" ]; then
       say "select_local_build: '$id' is the adopted-build link, not a build -- name the dated id it points at ($(readlink "$dir" 2>/dev/null || echo unreadable))"
       return 1
@@ -230,17 +226,13 @@ fi
 sel_n=$((DO_CUT + DO_FETCH + WANT_LATEST + (${#BUILD_ID} > 0 ? 1 : 0) + (${#ROLLBACK_ID} > 0 ? 1 : 0)))
 [ "$sel_n" -gt 0 ] || cli_die "name a build: --cut, --fetch, --build <id>, --latest, or --rollback <id>"
 [ "$sel_n" -eq 1 ] || cli_die "--cut, --fetch, --build, --latest and --rollback are mutually exclusive -- say which build to push"
-# --here: the machine you are on, which --host cannot name because it cannot ssh
-# to itself. Monthly cut, guarded build tree, no self-ssh -- a verb fix had no
-# route home (realisateur#1164).
-if [ "$ADOPT_HERE" -eq 1 ]; then
+if [ "$ADOPT_HERE" -eq 1 ]; then   # this machine: --host cannot name it (no self-ssh)
   [ -z "$HOST" ] || cli_die "--here and --host are the same question answered twice -- --here IS this machine"
 else
   [ -n "$HOST" ] || cli_die "--host is required (the target this pushes to and swaps on), or --here for this machine"
 fi
 
-# --rollback --here IS --build --here: one code path, not two.
-if [ -n "$ROLLBACK_ID" ] && [ "$ADOPT_HERE" -eq 1 ]; then
+if [ -n "$ROLLBACK_ID" ] && [ "$ADOPT_HERE" -eq 1 ]; then   # --rollback --here IS --build --here
   BUILD_ID="$ROLLBACK_ID"; ROLLBACK_ID=""
 fi
 
@@ -308,7 +300,6 @@ if [ "$ADOPT_HERE" -eq 1 ]; then
   fi
   atomic_swap_local "$BUILD_ROOT" "$BUILD_ID" || {
     echo "  BAD     the swap refused -- current is UNCHANGED at ${was:-<unset>}"; exit 1; }
-  # RE-READ, not inferred from an exit code -- the remote path's own rule.
   got="$(readlink "$BUILD_ROOT/current" 2>/dev/null || true)"
   if [ "$got" = "$BUILD_ID" ]; then
     echo "  OK      current -> $BUILD_ID (re-read off the link, not asserted)"
