@@ -81,23 +81,74 @@ cron_lock monkey-watch
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
-# --- host-side: always available --------------------------------------------
-VMSTATE="$(vmhost_state "$VM")"
+# --- guest-side: best effort ------------------------------------------------
+# THE SSH BANNER IS THE PROBE, NOT A TCP CONNECT. A read-only root accepts TCP
+# and then resets at key exchange, so a port check reports green on precisely
+# the failure this watcher exists to catch.
+BANNER="$(timeout 8 bash -c "exec 3<>/dev/tcp/$MONKEY_HOST/$MONKEY_PORT && head -c 12 <&3" 2>/dev/null || true)"
+case "$BANNER" in
+  SSH-2.0*) SSHD="answering" ;;
+  '')       SSHD="silent" ;;
+  *)        SSHD="reset" ;;
+esac
+
+# --- host-side: consulted ONLY when its answer can change the verdict ---------
+# WHY THIS IS NOT A HEARTBEAT (#1226). `wsl.exe` loses the vsock on about a
+# quarter of calls here -- `ERROR: UtilAcceptVsock:273: accept4 failed 110`,
+# ETIMEDOUT, ~40s a miss -- and this tick was spending TWO of those calls every
+# ten minutes, 288 a day, for two facts it did not need:
+#   VM state -- sshd answering IS the distro running. The host is the only
+#     witness in exactly one case: the guest is silent, and someone has to say
+#     whether it is powered off or hung. That case is worth 40s and a retry.
+#   the disk  -- where the vhdx lives changes when a HUMAN moves it. Asking 144
+#     times a day cannot catch it sooner than the next tick, and every ask was
+#     another chance to publish a blind row.
+# So a healthy tick now makes NO interop call at all, and the bug cannot
+# produce a finding on a host that is fine.
+HOST_ASKED=0
+if [ "$SSHD" = "answering" ]; then
+  VMSTATE=running   # proven by the banner, not inferred from it
+else
+  VMSTATE="$(vmhost_state "$VM")"; HOST_ASKED=1
+fi
 
 PSTATUS="$(vmhost_pause_status "$VM" "$NOW")"  # #704: repose only writes the declaration -- THIS TICK is the resume actuator, so a missed one costs at most CADENCE_MIN
 PKIND="${PSTATUS%% *}"; PWHEN="${PSTATUS#* }"
 if [ "$PKIND" = EXPIRED ]; then
   vmhost_start "$VM" >/dev/null 2>&1
   vmhost_pause_mark_resumed "$VM" "$NOW"
-  VMSTATE="$(vmhost_state "$VM")"
+  VMSTATE="$(vmhost_state "$VM")"; HOST_ASKED=1   # the resume actuator just fired: this is the one read worth an interop call on a live guest
   PKIND="RESUMING"; PWHEN="$NOW"
 fi
 
-DISK="$(vmhost_disk_raw "$VM")"
 # WHERE THE DISK LIVES IS A PUBLISHED FACT, not trivia: the whole outage was a
 # virtual disk on an external USB drive that logged 1580 controller errors in a
 # week. If this ever reads EXTERNAL-USB again, someone reverted the fix and the
 # page should say so rather than waiting to be asked.
+# CACHED, WITH THE TIME IT WAS READ. A human moves this, so re-reading every
+# ten minutes buys nothing and costs an interop call. A failed read keeps the
+# last value AND its original timestamp -- it never restamps, so a stale fact
+# cannot present itself as a fresh one (#1226).
+DISK_CACHE="${DISK_CACHE:-$STATE_FILE.disk}"
+DISK_MAX_AGE_H="${DISK_MAX_AGE_H:-24}"
+DISK=""; DISK_AT=""
+[ -r "$DISK_CACHE" ] && IFS=$'\t' read -r DISK_AT DISK < "$DISK_CACHE"
+disk_fresh=0
+if [ -n "$DISK_AT" ]; then
+  then_s="$(date -u -d "$DISK_AT" +%s 2>/dev/null || echo 0)"
+  now_s="$(date -u -d "$NOW" +%s 2>/dev/null || echo 0)"
+  [ "$then_s" -gt 0 ] && [ $(( now_s - then_s )) -lt $(( DISK_MAX_AGE_H * 3600 )) ] && disk_fresh=1
+fi
+if [ "$disk_fresh" = 0 ]; then
+  fresh_disk="$(vmhost_disk_raw "$VM")"
+  if [ -n "$fresh_disk" ]; then
+    DISK="$fresh_disk"; DISK_AT="$NOW"
+    if [ "$APPLY" = 1 ]; then
+      mkdir -p "$(dirname "$DISK_CACHE")"
+      printf '%s\t%s\n' "$DISK_AT" "$DISK" > "$DISK_CACHE"
+    fi
+  fi
+fi
 DISK_HOME="$(vmhost_classify_disk "$DISK")"
 
 # --- host-side: the virtual clock -------------------------------------------
@@ -113,17 +164,6 @@ if [ -n "$LOGDIR" ]; then
       | awk 'length($0)>0 {printf "%.1f", $0/3600000000000}')"
   fi
 fi
-
-# --- guest-side: best effort ------------------------------------------------
-# THE SSH BANNER IS THE PROBE, NOT A TCP CONNECT. A read-only root accepts TCP
-# and then resets at key exchange, so a port check reports green on precisely
-# the failure this watcher exists to catch.
-BANNER="$(timeout 8 bash -c "exec 3<>/dev/tcp/$MONKEY_HOST/$MONKEY_PORT && head -c 12 <&3" 2>/dev/null || true)"
-case "$BANNER" in
-  SSH-2.0*) SSHD="answering" ;;
-  '')       SSHD="silent" ;;
-  *)        SSHD="reset" ;;
-esac
 
 # NOTE THE MISSING -n. `ssh -n` redirects stdin from /dev/null, which silently
 # feeds the collector an EMPTY program -- it ran, printed nothing usable, and
@@ -192,8 +232,12 @@ esac
 # ticks on 2026-09-18, each transition spending a Zaxon alert. The unread
 # fields stay unread and `host_read: blind` publishes the loss; what stops is
 # calling the guest degraded because the observer could not see.
+# guest = the host was never asked, because the banner already answered. It is
+# NOT "live": a field that says it was read when nothing read it is the defect
+# this whole change is about.
 HOST_READ=live; VMSTATE_GRADED="$VMSTATE"
-if [ "$VMSTATE" = "unknown" ] && [ "$SSHD" = "answering" ]; then
+[ "$HOST_ASKED" = 0 ] && HOST_READ=guest
+if [ "$HOST_ASKED" = 1 ] && [ "$VMSTATE" = "unknown" ] && [ "$SSHD" = "answering" ]; then
   HOST_READ=blind; VMSTATE_GRADED=running
 fi
 
@@ -220,6 +264,7 @@ payload="$(GUEST_JSON="$GUEST_JSON" NOW="$NOW" VMSTATE="$VMSTATE" DISK="$DISK" \
   CLOCK_DRIFT_H="$CLOCK_DRIFT_H" LONG_READOUT="$LONG_READOUT" \
   CADENCE_MIN="$CADENCE_MIN" GRACE_MIN="$GRACE_MIN" \
   DISK_HOME="$DISK_HOME" SSHD="$SSHD" UPTIME="$UPTIME" ROOTMOUNT="$ROOTMOUNT" \
+  DISK_AT="$DISK_AT" \
   HOST_READ="$HOST_READ" CLOCK_DRIFT_APPLIES="$([ -n "$LOGDIR" ] && echo 1)" \
   VERDICT="$VERDICT" WHY="$WHY" GUEST_ERR="$GUEST_ERR" SCREENSHOT="$SCREENSHOT" \
   python3 "$HERE/bin/lib/monkey-watch-merge.py")"
