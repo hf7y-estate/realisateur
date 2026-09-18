@@ -48,10 +48,22 @@ vmhost_require() {  # [vm] -- 0 if the active backend can be driven, else 2 and 
 }
 
 _vbm() { "$VMHOST_VBOX" "$@" < /dev/null 2>&1 | tr -d '\0\r'; }
-_wsl() {  # interop's first call in a fresh session can lose the vsock, print `ERROR: UtilAcceptVsock' where the answer goes, and still exit 0 -- retry once so a lost call is not read as an answer
-  local out
-  out="$("$VMHOST_WSL" "$@" < /dev/null 2>&1 | tr -d '\0\r')"
-  case "$out" in *'ERROR: '*) out="$("$VMHOST_WSL" "$@" < /dev/null 2>&1 | tr -d '\0\r')" ;; esac
+# HOW LONG THE WINDOW IS, measured on dexter 2026-09-18 (#1226): sampling every
+# 12s for 7 minutes, 6 of 20 calls printed `ERROR: UtilAcceptVsock:273: accept4
+# failed 110` where the answer goes and still exited 0. 110 is ETIMEDOUT and
+# accept4 waits it out, so a LOST CALL COSTS ~40s and the window outlives it --
+# rows 32s apart both failed, the next one answered. One immediate retry lands
+# inside the same window: it saved 4 of those 6 and monkey-watch published
+# DEGRADED for the other 2, on a host every guest probe said was up.
+VMHOST_WSL_TRIES="${VMHOST_WSL_TRIES:-3}"
+VMHOST_WSL_RETRY_S="${VMHOST_WSL_RETRY_S:-5}"
+_wsl() {  # a lost call must not be read as an answer: try again, with a gap, while the window is open
+  local out i
+  for i in $(seq 1 "$VMHOST_WSL_TRIES"); do
+    out="$("$VMHOST_WSL" "$@" < /dev/null 2>&1 | tr -d '\0\r')"
+    case "$out" in *'ERROR: '*) ;; *) break ;; esac
+    [ "$i" -lt "$VMHOST_WSL_TRIES" ] && sleep "$VMHOST_WSL_RETRY_S"
+  done
   printf '%s\n' "$out"
 }
 _reg() { "$VMHOST_REG" "$@" < /dev/null 2>/dev/null | tr -d '\0\r'; }
