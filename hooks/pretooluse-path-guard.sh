@@ -28,7 +28,8 @@ case "$tool" in
       *ecosystem1-vault*)
         # A deposit front door in the same command means this is a write path.
         case "$payload" in
-          *consigne*|*fonde*|*fauche*|*vault-group-provision*|*vault-spool-drain*|*"vault.sh"*) ;;
+          *consigne*|*fonde*|*fauche*|*vault-group-provision*|*vault-spool-drain*|*"vault.sh"*|\
+          *notify-senechal*) ;;   # notify-senechal is a FRONT DOOR (senechal#323): a filing about the vault is a write to senechal's registry, not a read of the archive -- it was refused for naming the row it corrects
           *) deny "$VAULT_DOOR" ;;
         esac
         ;;
