@@ -236,12 +236,13 @@ fetch("status.json?t="+Date.now()).then(r=>r.json()).then(d=>{
   // ---- 3. what only the VM host can see -----------------------------------
   const fact=(k,v,c="")=>`<div class="fact"><b>${k}</b><span class="${c}">${H(v)}</span></div>`;
   const hostStrip = w ? `<div class="strip">
-      ${fact("vm",w.vm_state, w.vm_state==="running"?"ok":w.verdict==="PAUSED"?"mut":"bad")}
+      ${fact("vm",w.host_read==="blind"?"unread":w.vm_state, w.host_read==="blind"?"mut":w.vm_state==="running"?"ok":w.verdict==="PAUSED"?"mut":"bad")}
       ${fact("sshd",w.sshd, w.sshd==="answering"?"ok":"bad")}
       ${fact("root fs",w.root_mount||"unknown", w.root_mount==="rw"?"ok":w.root_mount==="ro"?"bad":"mut")}
-      ${fact("disk",w.disk_home, w.disk_home==="internal"?"ok":"bad")}
+      ${fact("disk",w.host_read==="blind"?"unread":w.disk_home, w.host_read==="blind"?"mut":w.disk_home==="internal"?"ok":"bad")}
       ${fact("uptime",w.uptime||"unknown","mut")}
-      ${fact("clock drift", w.clock_drift_hours==null ? "unreadable"
+      ${fact("clock drift", w.clock_drift_applies===false ? "n/a (no VMM)"
+              : w.clock_drift_hours==null ? "unreadable"
               : `${w.clock_drift_hours} h`,
              w.clock_drift_hours==null ? "mut"
               : w.clock_drift_hours>=24 ? "bad"
@@ -265,6 +266,13 @@ fetch("status.json?t="+Date.now()).then(r=>r.json()).then(d=>{
      the deficit belongs to the VMM process, so the VM itself has to be
      stopped and started.`);
   if (w && w.verdict!=="OK") items.push(`${el(cls,H(w.verdict))} &mdash; ${H(w.why)}`);
+  // realisateur#1226: NOT folded into the verdict. sshd answering and a root
+  // collection prove the distro is up, so this is not monkey degraded -- but a
+  // probe that did not answer is never allowed to read as nothing wrong.
+  if (w && w.host_read==="blind") items.push(
+    `${el("blind","host-side read BLIND")} &mdash; dexter's <code>wsl.exe</code> lost interop
+     (<code>UtilAcceptVsock: accept4 failed 110</code>), so <b>vm state and disk are unread this
+     tick</b>. The guest answered: sshd, root mount and the account rows below are live.`);
   if (w && w.screenshot) items.push(`<a href="console.png">console screenshot</a>, captured this run`);
   reach.forEach(a=>{
     const c=a.containment, bits=[];

@@ -185,17 +185,28 @@ case "$PKIND" in
     ;;
 esac
 
+# A LOST HOST-SIDE CALL IS NOT A SICK GUEST (#1226). `VMSTATE" = "unknown"`
+# while sshd answers means wsl.exe lost the vsock -- and sshd answering, plus a
+# root collection that returned accounts, is the very thing the host read was
+# reaching for. The watcher graded monkey on its own blindness for it: 30 of 40
+# ticks on 2026-09-18, each transition spending a Zaxon alert. The unread
+# fields stay unread and `host_read: blind` publishes the loss; what stops is
+# calling the guest degraded because the observer could not see.
+HOST_READ=live; VMSTATE_GRADED="$VMSTATE"
+if [ "$VMSTATE" = "unknown" ] && [ "$SSHD" = "answering" ]; then
+  HOST_READ=blind; VMSTATE_GRADED=running
+fi
+
 # --- verdict ----------------------------------------------------------------
 # read-only root is called out separately from "down": it is the specific
 # recurring failure here, and it looks like up from most angles.
 if   [ "$PAUSE_ACTIVE" = 1 ];           then VERDICT="PAUSED";   WHY="$PAUSE_WHY"
-elif [ "$VMSTATE" = "unknown" ] && [ "$SSHD" = "answering" ];
-                                        then VERDICT="DEGRADED"; WHY="the host could not read the VM state, but sshd answers -- it is up"
-elif [ "$VMSTATE" != "running" ];       then VERDICT="DOWN";     WHY="VM is $VMSTATE"
+elif [ "$VMSTATE_GRADED" != "running" ]; then VERDICT="DOWN";    WHY="VM is $VMSTATE"
 elif [ "$SSHD" != "answering" ];        then VERDICT="DOWN";     WHY="VM running but sshd is $SSHD"
 elif [ "$ROOTMOUNT" = "ro" ];           then VERDICT="DEGRADED"; WHY="root is mounted READ-ONLY"
 elif [ "$DISK_HOME" = "EXTERNAL-USB" ]; then VERDICT="DEGRADED"; WHY="disk is back on the external USB drive"
 elif [ -z "$GUEST_JSON" ];              then VERDICT="DEGRADED"; WHY="${GUEST_ERR:-guest detail unavailable}"
+elif [ "$HOST_READ" = blind ];          then VERDICT="OK";       WHY="sshd answering, root rw, guest collection returned -- the host-side read lost interop, so vm_state and disk are unread (#1226)"
 else                                         VERDICT="OK";       WHY="running, sshd answering, root rw, disk internal"
 fi
 
@@ -209,6 +220,7 @@ payload="$(GUEST_JSON="$GUEST_JSON" NOW="$NOW" VMSTATE="$VMSTATE" DISK="$DISK" \
   CLOCK_DRIFT_H="$CLOCK_DRIFT_H" LONG_READOUT="$LONG_READOUT" \
   CADENCE_MIN="$CADENCE_MIN" GRACE_MIN="$GRACE_MIN" \
   DISK_HOME="$DISK_HOME" SSHD="$SSHD" UPTIME="$UPTIME" ROOTMOUNT="$ROOTMOUNT" \
+  HOST_READ="$HOST_READ" CLOCK_DRIFT_APPLIES="$([ -n "$LOGDIR" ] && echo 1)" \
   VERDICT="$VERDICT" WHY="$WHY" GUEST_ERR="$GUEST_ERR" SCREENSHOT="$SCREENSHOT" \
   python3 "$HERE/bin/lib/monkey-watch-merge.py")"
 [ -n "$payload" ] || die "payload builder produced nothing -- publishing nothing."
