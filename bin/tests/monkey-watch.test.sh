@@ -382,4 +382,29 @@ case "$(code "$W")" in
 esac
 has "R2 alerting goes through zaxon_send instead" "$(code "$W")" 'zaxon_send'
 
+section "S. the WINDOWS channel refuses loudly when it is not wired (#1232)"
+# The second watcher is RUNNING on dexter's Windows side -- it wrote
+# `2026-09-18T13:21:50Z OK` while the WSL-side watcher was blind -- but
+# $HOME/.ssh/id_dexter_win does not exist, so its installer could not reach it
+# and said so as an ssh permission error blamed on dexter's sshd. A live
+# mechanism whose installer cannot reach it can never be updated or retired.
+WIN="$REPO/bin/monkey-watch-win.sh"
+if [ -f "$WIN" ]; then
+  out="$(DEXTER_WIN_KEY=/nonexistent bash "$WIN" --status 2>&1)"; wrc=$?
+  rc "S1 a missing key is a refusal, not an attempt" 2 "$wrc"
+  has "S2 it names the key path on THIS host, not the far end" "$out" "/nonexistent"
+  has "S3 ...and says explicitly that this is not dexter's sshd refusing" "$out" "not dexter's sshd refusing"
+  has "S4 ...and routes to the remedy, which is a human placing the public half" "$out" "realisateur#1232"
+  key_ln="$(grep -n 'WIN_KEY" \]' "$WIN" | head -1 | cut -d: -f1)"
+  ssh_ln="$(grep -n '^case "\$MODE" in' "$WIN" | head -1 | cut -d: -f1)"
+  if [ -n "$key_ln" ] && [ -n "$ssh_ln" ] && [ "$key_ln" -lt "$ssh_ln" ]; then
+    ok "S5 checked BEFORE any mode runs -- no ssh is attempted to produce the diagnosis"
+  else
+    bad "S5 the channel check precedes the modes" "a check after the first ssh reports the far end's error instead"
+  fi
+else
+  ok "S1 bin/monkey-watch-win.sh is gone -- nothing to grade"
+fi
+
+
 summary

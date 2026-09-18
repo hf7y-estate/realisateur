@@ -59,6 +59,22 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$MODE" ] || { usage; exit 2; }
 
+# THE CHANNEL IS CHECKED BEFORE IT IS USED (#1232, found 2026-09-18).
+# $HOME/.ssh/id_dexter_win does not exist on dexter, so every mode here fails
+# as an ssh permission error blamed on the far end -- and the Scheduled Task
+# this installs is RUNNING (it wrote `2026-09-18T13:21:50Z OK` while the WSL
+# side was blind). A live mechanism whose installer cannot reach it is worse
+# than a dead one: nothing can update, re-point or retire it, and the only
+# symptom is a message about someone else's sshd.
+WIN_KEY="${DEXTER_WIN_KEY:-$HOME/.ssh/id_dexter_win}"
+[ -r "$WIN_KEY" ] || die "no key at $WIN_KEY -- the Windows channel is not wired here.
+  This is not dexter's sshd refusing: the key is absent on THIS host. Port 22 at
+  dexter is OpenSSH_for_Windows and reads C:\\Users\\zach\\.ssh\\authorized_keys,
+  which holds no key of ours (measured 2026-09-18). Until a pair exists, this
+  installer cannot deploy, re-read or retire the task -- and hf7y/realisateur#1232
+  carries the remedy, because placing the public half is a human's act on the
+  Windows side."
+
 PS_PATH="$WIN_DIR\\monkey-watch-win.ps1"
 ACTION_ARGS="-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"$PS_PATH\""
 
