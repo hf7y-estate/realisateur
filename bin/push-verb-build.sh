@@ -114,6 +114,23 @@ push_tree() {
         "$local_dir/" "$host:$remote_root/$id/" || {
       say "push_tree: rsync to $host:$remote_root/$id failed"; return 1; }
   fi
+  normalize_remote_perms "$sshbin" "$host" "$remote_root/$id" || true
+}
+
+normalize_remote_perms() {
+  local sshbin="$1" host="$2" dir="$3" q
+  q="$(printf '%q' "$dir")"
+  "$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "chmod -R a+rX $q" 2>/dev/null && return 0
+  "$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "sudo -n chown -R root:root $q && sudo -n chmod -R a+rX $q" 2>/dev/null
+}
+
+verify_remote_readable() {
+  local sshbin="$1" host="$2" dir="$3" mode
+  mode="$("$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "stat -c %a $(printf '%q' "$dir")" 2>/dev/null)"
+  case "${mode: -1}" in 5|7) return 0 ;; *) return 1 ;; esac
 }
 
 remote_atomic_swap() {
@@ -283,6 +300,15 @@ if ! remote_atomic_swap "$SSH_BIN" "$HOST" "$REMOTE_ROOT" "$BUILD_ID"; then
 fi
 if verify_remote_current "$SSH_BIN" "$HOST" "$REMOTE_ROOT" "$BUILD_ID"; then
   echo "  OK      $HOST's current -> $BUILD_ID (re-read off the host, not inferred from an exit code)$(via_suffix "$SWAP_VIA")"
+  if verify_remote_readable "$SSH_BIN" "$HOST" "$REMOTE_ROOT/$BUILD_ID"; then
+    echo "  OK      $BUILD_ID is readable by a project account on $HOST (mode read off the host)"
+  else
+    echo "  BAD     current -> $BUILD_ID, but $REMOTE_ROOT/$BUILD_ID is not world-traversable on $HOST."
+    echo "          Every project account dispatches out of this tree and cannot enter it, which"
+    echo "          reads as a healthy swap and a dead host. Fix: sudo chown -R root:root and"
+    echo "          sudo chmod -R a+rX on $REMOTE_ROOT/$BUILD_ID, then re-run."
+    exit 1
+  fi
   exit 0
 else
   echo "  BAD     the swap ran but $HOST's current does NOT read back as $BUILD_ID"
