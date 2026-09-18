@@ -87,8 +87,33 @@ not the coverage.
 
 A thing that exists and nothing reaches. Ask it of **what THIS session stood
 up, on the host that runs it** — a service with no consumer, a merged read no
-build carries, an unarmed row. Name each and the consumer reaching it: a check
-that cannot see its target reports clean. On mandark the target is
+build carries, an unarmed row.
+
+**Barking is not wiring.** A detector that reports is not wired; it is wired
+when it reaches **the thing that repairs it**. Naming the consumer is what this
+section used to ask for, and naming is the failure it exists to catch: the row
+gets written down, the reader nods, nothing is repaired, and the next session
+finds it again. Measured 2026-09-18 — senechal's `auto-apply-remedies` ran
+**1295 times and applied nothing**, while its reporting timers stayed armed and
+the fixing timer sat `disabled` for three weeks (hf7y/senechal#933). An estate
+of alarms wired to no remedy trains the person to ignore alarms.
+
+So separate the two, because only one of them is a defect:
+
+- **A mechanism** claims to act — a check, a watchdog, a guard, a timer. Two
+  outcomes are permitted and no third: **wired to its repair in this session,
+  or deleted in this session.** A mechanism whose remedy already exists one
+  file over (`… ensure`, `… deploy.sh`, `compose up -d`) is a row you can
+  reach, so the opening rule applies: fix it here.
+- **A diagnostic** claims only to record — a log, a snapshot, a measurement.
+  Its consumer is a person or agent answering a **named open issue**, on
+  demand, and that is a real consumer. It needs no watcher, no summary and no
+  second file; adding one is how a diagnostic grows into an unread mechanism.
+  No open issue naming it means it is not a diagnostic, it is litter.
+
+Then the answer is a URL either way — the PR that wired it, or the one that
+removed it. "Named" is not an outcome. A check that cannot see its target
+reports clean. On mandark the target is
 
 ```
 installe list | grep Documents/Projects   # a PATH name resolving into a CLONE
