@@ -116,9 +116,6 @@ if command -v node >/dev/null 2>&1; then
   got="$(itemsrender "{\"accounts\":[],\"watcher\":{$FRESH,\"verdict\":\"DOWN\",\"why\":\"sshd silent\",\"vm_state\":\"running\",\"sshd\":\"silent\",\"disk_home\":\"internal\",\"screenshot\":false}}")"
   hasnt "no screenshot means no dangling link to one" "$got" 'href="console.png"'
 
-  got="$(render "{\"accounts\":[],\"watcher\":{$FRESH,\"verdict\":\"PAUSED\",\"why\":\"declared pause, resumes 2999-01-01T00:00:00Z\",\"vm_state\":\"poweroff\",\"sshd\":\"silent\",\"disk_home\":\"internal\"}}")"
-  case "$got" in warn\ PAUSED*) ok "#704 a declared pause headlines PAUSED, in warn -- not DOWN in red" ;;
-    *) bad "PAUSED renders as its own state, not DOWN" "got [$got]" ;; esac
 
   got="$(render "{\"accounts\":[],\"watcher\":{\"generated\":\"2020-01-01T00:00:00Z\",\"valid_until\":\"2020-01-01T00:00:00Z\",\"verdict\":\"OK\",\"why\":\"fine\",\"vm_state\":\"running\",\"sshd\":\"answering\",\"disk_home\":\"internal\"}}")"
   case "$got" in *UNWATCHED*) ok "a watcher past its own valid_until reads UNWATCHED, not OK" ;;
@@ -271,27 +268,13 @@ eq "I6 the real 2026-08-25 line reads 41.8h, not 0.0" \
 eq "I7 a fresh session reads 0.0" "$(drift_of 'offVirtualSyncGivenUp=0,')" "0.0"
 eq "I8 no such line yields nothing, not a number" "$(drift_of 'nothing here')" ""
 
-section "J. the declared pause and its resume actuator (#704)"
-has "J1 the pause status is read from vmhost's own declaration, not re-derived" \
-  "$(code "$W")" 'vmhost_pause_status "$VM" "$NOW"'
-has "J2 an EXPIRED declaration drives vmhost_start -- THIS TICK is the scheduler" \
-  "$(code "$W")" 'vmhost_start "$VM" >/dev/null 2>&1'
-has "J3 firing the actuator is recorded, so the next tick reads RESUMING not EXPIRED again" \
-  "$(code "$W")" 'vmhost_pause_mark_resumed "$VM" "$NOW"'
-has "J4 a clean resume (vm running, sshd answering) clears the declaration" \
-  "$(code "$W")" 'vmhost_pause_clear "$VM"'
-has "J5 PAUSED is checked first, ahead of the ordinary VM-state chain" \
-  "$(code "$W")" 'if   [ "$PAUSE_ACTIVE" = 1 ];           then VERDICT="PAUSED"'
-has "J6 the boot window after an expired pause is bounded, not open-ended" \
-  "$(code "$W")" 'RESUME_GRACE_MIN="${RESUME_GRACE_MIN:-30}"'
-pause_ln="$(grep -n 'PAUSE_ACTIVE=1; PAUSE_WHY="pause expired' "$W" | head -1 | cut -d: -f1)"  # THE ONE LOUD CASE: past grace, still not up, must fall through to DOWN and page
-grace_ln="$(grep -n '# else: grace exhausted' "$W" | head -1 | cut -d: -f1)"
-if [ -n "$pause_ln" ] && [ -n "$grace_ln" ] && [ "$pause_ln" -lt "$grace_ln" ]; then
-  ok "J7 the grace window is a bound, with the exhausted case named as falling through"
-else
-  bad "J7 grace exhaustion falls through to DOWN" "expected the bound before its exhausted-case comment"
-fi
-
+section "J. the declared pause is GONE (Zach, 2026-09-18: arret replaces repose)"
+# repose.sh wrote the declaration and this tick was its resume actuator. Zach
+# ruled that `arret` replaces repose rather than layering on it, so the whole
+# pause path went with it: no declaration is ever written, so a tick that still
+# read one would be acting on a file nothing produces.
+hasnt "J1 the tick reads no pause declaration" "$(code "$W")" 'vmhost_pause'
+hasnt "J2 ...and publishes no PAUSED verdict" "$(code "$W")" 'VERDICT="PAUSED"'
 
 section "K. the clocksource early warning is guest-side, present under both backends (#805)"
 has "K1 read from the guest's own kernel log, not a hypervisor artifact" \

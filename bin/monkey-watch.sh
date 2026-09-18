@@ -112,15 +112,6 @@ else
   VMSTATE="$(vmhost_state "$VM")"; HOST_ASKED=1
 fi
 
-PSTATUS="$(vmhost_pause_status "$VM" "$NOW")"  # #704: repose only writes the declaration -- THIS TICK is the resume actuator, so a missed one costs at most CADENCE_MIN
-PKIND="${PSTATUS%% *}"; PWHEN="${PSTATUS#* }"
-if [ "$PKIND" = EXPIRED ]; then
-  vmhost_start "$VM" >/dev/null 2>&1
-  vmhost_pause_mark_resumed "$VM" "$NOW"
-  VMSTATE="$(vmhost_state "$VM")"; HOST_ASKED=1   # the resume actuator just fired: this is the one read worth an interop call on a live guest
-  PKIND="RESUMING"; PWHEN="$NOW"
-fi
-
 # WHERE THE DISK LIVES IS A PUBLISHED FACT, not trivia: the whole outage was a
 # virtual disk on an external USB drive that logged 1580 controller errors in a
 # week. If this ever reads EXTERNAL-USB again, someone reverted the fix and the
@@ -206,32 +197,13 @@ else
   GUEST_ERR="sshd is $SSHD -- the collector could not be run"
 fi
 
-RESUME_GRACE_MIN="${RESUME_GRACE_MIN:-30}"  # bounds RESUMING after an expired pause; past it and still not up is DOWN, loud -- the resume actuator's own failure mode
-PAUSE_ACTIVE=0; PAUSE_WHY=""
-case "$PKIND" in
-  PAUSED)
-    PAUSE_ACTIVE=1; PAUSE_WHY="declared pause, resumes $PWHEN"
-    ;;
-  RESUMING)
-    if [ "$VMSTATE" = running ] && [ "$SSHD" = answering ]; then
-      vmhost_pause_clear "$VM"   # the pause cycle is complete
-    else
-      resumed_s="$(date -u -d "$PWHEN" +%s 2>/dev/null || echo 0)"
-      now_s="$(date -u -d "$NOW" +%s 2>/dev/null || echo 0)"
-      if [ $(( now_s - resumed_s )) -lt $(( RESUME_GRACE_MIN * 60 )) ]; then
-        PAUSE_ACTIVE=1; PAUSE_WHY="pause expired, resume triggered $PWHEN -- waiting for boot"
-      fi  # else: grace exhausted and still not up -- fall through to DOWN, loud
-    fi
-    ;;
-esac
-
 # A LOST HOST-SIDE CALL IS NOT A SICK GUEST (#1226). `VMSTATE" = "unknown"`
 # while sshd answers means wsl.exe lost the vsock -- and sshd answering, plus a
 # root collection that returned accounts, is the very thing the host read was
 # reaching for. The watcher graded monkey on its own blindness for it: 30 of 40
-# ticks on 2026-09-18, each transition spending a Zaxon alert. The unread
-# fields stay unread and `host_read: blind` publishes the loss; what stops is
-# calling the guest degraded because the observer could not see.
+# ticks, each transition spending a Zaxon alert. The unread fields stay unread
+# and `host_read: blind` publishes the loss; what stops is calling the guest
+# degraded because the observer could not see.
 # guest = the host was never asked, because the banner already answered. It is
 # NOT "live": a field that says it was read when nothing read it is the defect
 # this whole change is about.
@@ -244,8 +216,7 @@ fi
 # --- verdict ----------------------------------------------------------------
 # read-only root is called out separately from "down": it is the specific
 # recurring failure here, and it looks like up from most angles.
-if   [ "$PAUSE_ACTIVE" = 1 ];           then VERDICT="PAUSED";   WHY="$PAUSE_WHY"
-elif [ "$VMSTATE_GRADED" != "running" ]; then VERDICT="DOWN";    WHY="VM is $VMSTATE"
+if   [ "$VMSTATE_GRADED" != "running" ]; then VERDICT="DOWN";    WHY="VM is $VMSTATE"
 elif [ "$SSHD" != "answering" ];        then VERDICT="DOWN";     WHY="VM running but sshd is $SSHD"
 elif [ "$ROOTMOUNT" = "ro" ];           then VERDICT="DEGRADED"; WHY="root is mounted READ-ONLY"
 elif [ "$DISK_HOME" = "EXTERNAL-USB" ]; then VERDICT="DEGRADED"; WHY="disk is back on the external USB drive"

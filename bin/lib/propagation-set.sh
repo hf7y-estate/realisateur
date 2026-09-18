@@ -194,7 +194,6 @@ PROP_LOCAL_SCRIPTS="
 arret.sh
 monkey-watch.sh
 monkey-status-collect.py
-repose.sh
 landing-drift.sh
 vault-spool-drain.sh
 stale-paths.sh

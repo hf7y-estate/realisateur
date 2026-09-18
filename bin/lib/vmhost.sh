@@ -184,58 +184,6 @@ vmhost_start() {  # <vm> -- resume from a saved state or cold-boot; $VMHOST_STAR
   esac
 }
 
-vmhost_pause_dir() {  # -> the directory pause declarations live in, overridable for tests
-  printf '%s\n' "${VMHOST_PAUSE_DIR:-$HOME/.local/state}"
-}
-
-vmhost_pause_file() {  # <vm> -> the path of that vm's declaration, if any
-  printf '%s/vmhost-pause-%s\n' "$(vmhost_pause_dir)" "$1"
-}
-
-vmhost_pause_field() {  # <vm> <field> -> the field's value, or empty if no declaration or no such field
-  local f; f="$(vmhost_pause_file "$1")"
-  [ -f "$f" ] || return 0
-  sed -n "s/^$2=//p" "$f" | head -1
-}
-
-vmhost_pause_declare() {  # <vm> <until-iso8601> -- record the absolute expiry; does not touch the VM
-  local vm="$1" until="$2" f
-  f="$(vmhost_pause_file "$vm")"
-  mkdir -p "$(dirname "$f")"
-  printf 'until=%s\ndeclared_at=%s\n' "$until" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$f"
-}
-
-vmhost_pause_mark_resumed() {  # <vm> <now-iso8601> -- the actuator fired; keep `until` for the record, add `resumed_at`
-  local vm="$1" now="$2" until f
-  until="$(vmhost_pause_field "$vm" until)"
-  [ -n "$until" ] || return 0
-  f="$(vmhost_pause_file "$vm")"
-  printf 'until=%s\nresumed_at=%s\n' "$until" "$now" > "$f"
-}
-
-vmhost_pause_clear() {  # <vm> -- remove the declaration outright: the pause cycle is over
-  rm -f "$(vmhost_pause_file "$1")"
-}
-
-vmhost_pause_eval() {  # <until> <resumed_at> <now-iso8601> -- split out of vmhost_pause_status so ssh-fetched fields and monkey-watch.sh's file-read fields share one comparison
-  local until="$1" resumed_at="$2" now="$3" now_s until_s
-  [ -n "$until" ] || { printf 'NONE\n'; return 0; }
-  if [ -n "$resumed_at" ]; then printf 'RESUMING %s\n' "$resumed_at"; return 0; fi
-  now_s="$(date -u -d "$now" +%s 2>/dev/null)"
-  until_s="$(date -u -d "$until" +%s 2>/dev/null)"
-  if [ -z "$now_s" ] || [ -z "$until_s" ]; then printf 'NONE\n'; return 0; fi  # unparseable is NONE, not a guess either way -- caller falls through to vmhost_state
-  if [ "$now_s" -lt "$until_s" ]; then
-    printf 'PAUSED %s\n' "$until"
-  else
-    printf 'EXPIRED %s\n' "$until"
-  fi
-}
-
-vmhost_pause_status() {  # <vm> <now-iso8601> -> vmhost_pause_eval, fed from this vm's own declaration file
-  local vm="$1" now="$2"
-  vmhost_pause_eval "$(vmhost_pause_field "$vm" until)" "$(vmhost_pause_field "$vm" resumed_at)" "$now"
-}
-
 vmhost_logdir() {  # <vm> -> the VM's log directory, as a path THIS host can read
   # The backend answers in its own coordinates -- VirtualBox on a Windows host
   # says `C:\Users\...`, which is not a path dexter's WSL side can open. The
