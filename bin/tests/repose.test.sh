@@ -35,10 +35,6 @@ rc "C2 cancelling off-host also refuses (2)" 2 "$rc"
 
 section "D. against a fake VBoxManage: declare, status, resume, cancel"
 FAKE="$T/VBoxManage.exe"; CALLS="$T/calls"
-# THE STUB MODELS STATE, because repose now re-reads it: a fake that only
-# records the call cannot tell a pause that happened from one that did not, and
-# that gap is the bug this suite exists to catch (realisateur, 2026-09-18 --
-# `repose monkey 4h` printed "paused" while monkey kept running).
 STATE="$T/vmstate"; echo running > "$STATE"
 cat > "$FAKE" <<STUB
 #!/usr/bin/env bash
@@ -73,11 +69,6 @@ out="$(bash "$R" monkey --status)"
 eq "D7 after --cancel the declaration is gone" "$out" "NONE"
 
 section "D3. a pause that did not happen declares NOTHING (2026-09-18)"
-# MEASURED BY HAND on dexter while WSL interop was wedged: `_wsl` returned the
-# exit status of its own printf, so it was 0 even when every attempt lost the
-# vsock. repose printed "monkey paused", wrote the declaration, and monkey kept
-# running -- after which monkey-watch's tick reads PAUSED for a live host and
-# schedules a resume for a VM that never stopped.
 rm -rf "$T/pause"; echo running > "$STATE"
 cat > "$FAKE" <<STUB
 #!/usr/bin/env bash
@@ -95,8 +86,7 @@ case "$out" in *paused,*) bad "D3c never claims a pause it did not verify" "got:
 eq "D3d and NOTHING is declared, so no resume is scheduled for a running host" \
   "$(bash "$R" monkey --status)" "NONE"
 
-# put the working stub back for the sections below
-echo running > "$STATE"
+echo running > "$STATE"  # put the working stub back for the sections below
 cat > "$FAKE" <<STUB
 #!/usr/bin/env bash
 case "\$1" in
