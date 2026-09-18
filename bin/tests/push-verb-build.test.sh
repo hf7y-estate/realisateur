@@ -196,6 +196,21 @@ case "\$1" in
     fi
     path="\${1#mkdir -p }"
     mkdir -p "\$REMOTE\$path"; exit \$? ;;
+  "chmod -R a+rX "*)
+    if [ "\${STUB_REQUIRE_SUDO:-0}" = 1 ] || [ "\${STUB_PERMS_STUCK:-0}" = 1 ]; then
+      echo "chmod: Operation not permitted" >&2; exit 1
+    fi
+    path="\${1#chmod -R a+rX }"
+    chmod -R a+rX "\$REMOTE\$path"; exit \$? ;;
+  "sudo -n chown -R root:root "*)
+    if [ "\${STUB_SUDO_ALSO_FAIL:-0}" = 1 ] || [ "\${STUB_PERMS_STUCK:-0}" = 1 ]; then
+      echo "sudo: a password is required" >&2; exit 1
+    fi
+    rest="\${1#sudo -n chown -R root:root }"; path="\${rest%% *}"
+    chmod -R a+rX "\$REMOTE\$path"; exit \$? ;;
+  "stat -c %a "*)
+    path="\${1#stat -c %a }"
+    stat -c %a "\$REMOTE\$path" 2>/dev/null; exit \$? ;;
   "test -f "*)
     path="\${1#test -f }"
     [ -f "\$REMOTE\$path" ]; exit \$? ;;
@@ -324,5 +339,20 @@ t_has "...BAD, swap refused, matches today's message" "$OUT" \
       "BAD     the swap on fakehost failed or refused -- see rows above"
 t_eq "...and current on the host is unchanged" \
      "$(readlink "$REMOTE/verb-builds-e/current")" "2026-09-05T000000Z"
+
+# REGRESSION (vaporwave, 2026-09-17): rsync -a preserved the local 0700 mode, so
+# `current` pointed at a tree no project account could traverse -- and the old
+# witness (readlink) called that a clean push. The pushing user OWNS the tree, so
+# its own `test -r` passes at 0700; only the MODE tells the truth.
+chmod 700 "$CROOT/2026-09-04T000000Z"          # what a local build dir really is
+rm -rf "$REMOTE/verb-builds/2026-09-04T000000Z" # force a fresh copy at that mode
+OUT="$(STUB_PERMS_STUCK=1 run --build 2026-09-04T000000Z --host fakehost --apply 2>&1)"; RC=$?
+chmod 755 "$CROOT/2026-09-04T000000Z"
+t_rc "--apply when the pushed tree cannot be made readable: exits 1" 1 "$RC"
+t_has "...BAD names the unreadable tree instead of reporting a clean swap" "$OUT" "not world-traversable"
+
+OUT="$(run --build 2026-09-04T000000Z --host fakehost --apply 2>&1)"; RC=$?
+t_rc "--apply on a normal push: exits 0" 0 "$RC"
+t_has "...and witnesses that a project account can read the build" "$OUT" "readable by a project account"
 
 summary

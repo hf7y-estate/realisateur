@@ -114,6 +114,36 @@ push_tree() {
         "$local_dir/" "$host:$remote_root/$id/" || {
       say "push_tree: rsync to $host:$remote_root/$id failed"; return 1; }
   fi
+  # rsync -a PRESERVES THE LOCAL OWNER AND MODE, and a local build dir is 0700
+  # <human>:<human>. Landed unchanged, `current` names a tree no project account
+  # can traverse: measured on vaporwave 2026-09-17, where the swap verified, the
+  # re-read passed, and every account still got "Permission denied" on the build
+  # the symlink pointed at. The push is not done until the accounts can read it.
+  # `|| true` IS THE POINT: a normalize that could not run is not a failed push.
+  # verify_remote_readable below refuses, and it names what is actually wrong.
+  normalize_remote_perms "$sshbin" "$host" "$remote_root/$id" || true
+}
+
+# root:root + a+rX, by the same plain-then-sudo ladder the rest of this file
+# uses. Not fatal on its own -- verify_remote_readable below is what refuses.
+normalize_remote_perms() {
+  local sshbin="$1" host="$2" dir="$3" q
+  q="$(printf '%q' "$dir")"
+  "$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "chmod -R a+rX $q" 2>/dev/null && return 0
+  "$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "sudo -n chown -R root:root $q && sudo -n chmod -R a+rX $q" 2>/dev/null
+}
+
+# THE WITNESS THE SYMLINK RE-READ IS NOT. `readlink current` says where the
+# pointer aims, never whether the account that must run it can get in. Read the
+# mode instead of `test -r`: the pushing user OWNS the tree, so its own `test -r`
+# passes at 0700 while every project account is locked out.
+verify_remote_readable() {
+  local sshbin="$1" host="$2" dir="$3" mode
+  mode="$("$sshbin" -o BatchMode=yes -o ConnectTimeout="$SSH_TIMEOUT" "$host" \
+      "stat -c %a $(printf '%q' "$dir")" 2>/dev/null)"
+  case "${mode: -1}" in 5|7) return 0 ;; *) return 1 ;; esac
 }
 
 remote_atomic_swap() {
@@ -283,6 +313,15 @@ if ! remote_atomic_swap "$SSH_BIN" "$HOST" "$REMOTE_ROOT" "$BUILD_ID"; then
 fi
 if verify_remote_current "$SSH_BIN" "$HOST" "$REMOTE_ROOT" "$BUILD_ID"; then
   echo "  OK      $HOST's current -> $BUILD_ID (re-read off the host, not inferred from an exit code)$(via_suffix "$SWAP_VIA")"
+  if verify_remote_readable "$SSH_BIN" "$HOST" "$REMOTE_ROOT/$BUILD_ID"; then
+    echo "  OK      $BUILD_ID is readable by a project account on $HOST (mode read off the host)"
+  else
+    echo "  BAD     current -> $BUILD_ID, but $REMOTE_ROOT/$BUILD_ID is not world-traversable on $HOST."
+    echo "          Every project account dispatches out of this tree and cannot enter it, which"
+    echo "          reads as a healthy swap and a dead host. Fix: sudo chown -R root:root and"
+    echo "          sudo chmod -R a+rX on $REMOTE_ROOT/$BUILD_ID, then re-run."
+    exit 1
+  fi
   exit 0
 else
   echo "  BAD     the swap ran but $HOST's current does NOT read back as $BUILD_ID"
