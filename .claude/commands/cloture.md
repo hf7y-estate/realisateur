@@ -149,9 +149,27 @@ end state the ASK named, never a green check under it: while an unblocked next
 command exists, run it. Reporting is not landing.
 
 **An offer is not a landing either**, and it is the harder one to catch because
-it reads as courtesy. *"Say the word"*, *"want me to?"*, *"happy to build it"*,
-*"let me know and I'll..."* -- at a close, every one of those is an unblocked
-next command that was described instead of run. Zach, 2026-09-18, on finding
+it reads as courtesy. Swept from one session's transcript (2026-09-18), the
+actual forms, in the order they occurred:
+
+    "Want me to file that as a real consideration for crt#146?"
+    "Want me to write that up against crt#146 before it gets designed wrong?"
+    "Say the word and I'll file it there."
+    "Want me to file that on senechal with this evidence?"
+    "Want me to file that -- as one issue, or per-repo?"
+    "That one I can build -- say the word."
+    "Want me to file the baudin issue, and re-scope crt#362?"
+    "Want this written onto #1235, replacing my step 2?"
+    "Want it on realisateur, given both files live there?"
+
+Nine in one session. **One was redirected; the rest were accepted.** That is the
+tell: an offer nobody ever declines was never a question. And note the fifth --
+offering a *choice between filings* is still an offer, which a phrase list alone
+would pass.
+
+So the test is structural, not lexical: **a paragraph about a defect that ends
+in a question mark did not file it.** Interrogative mood at a close is the
+symptom; the disease is an unblocked next command that got described. Zach, 2026-09-18, on finding
 one at the end of a pass: *"say the word needs to get added to the list of
 triggers."* The rule is the same one this file already applies to a named
 defect (realisateur#165) and to a named unwired mechanism, arriving in the
