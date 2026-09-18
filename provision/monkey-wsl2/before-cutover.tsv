@@ -1,0 +1,16 @@
+backend	oracle
+hostname	monkey
+machine_id	25cb8cab33704a2a895f926eda1be501
+ts_ip	100.121.83.23
+ts_nodeid	nyzii8E1C221CNTRL
+runners_enabled	12
+runners_active	0
+accounts	18
+long_readout	5
+soft_lockup	4
+mem_total_mb	5925
+swap_total_mb	4095
+root_used_gb	27
+verbs_on_path	19
+etc_selfdev	4
+crontabs	19
