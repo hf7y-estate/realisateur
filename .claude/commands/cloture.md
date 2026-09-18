@@ -148,6 +148,20 @@ the only thing that stopped is then the agent. The stopping condition is the
 end state the ASK named, never a green check under it: while an unblocked next
 command exists, run it. Reporting is not landing.
 
+**An offer is not a landing either**, and it is the harder one to catch because
+it reads as courtesy. *"Say the word"*, *"want me to?"*, *"happy to build it"*,
+*"let me know and I'll..."* -- at a close, every one of those is an unblocked
+next command that was described instead of run. Zach, 2026-09-18, on finding
+one at the end of a pass: *"say the word needs to get added to the list of
+triggers."* The rule is the same one this file already applies to a named
+defect (realisateur#165) and to a named unwired mechanism, arriving in the
+register that sounds most helpful.
+
+Ask it of the close you are about to write: **does any sentence propose work
+rather than link it?** If the work is blocked, it is a `DECISION:` issue with a
+URL. If it is not blocked, it is not an offer -- do it, and link that. The only
+sentence that may end an unmet goal is one naming what blocks it.
+
 ## 5. Close
 
 Re-read it before you write it: **every clause naming a problem is immediately
