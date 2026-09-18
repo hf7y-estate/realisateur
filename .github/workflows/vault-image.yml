@@ -1,0 +1,41 @@
+# Publish the vault image so dexter needs no repo to come back up. After
+# roster-image.yml; PUBLIC, so no credential is on the recovery path.
+#
+# The IMAGE is public and holds no archive. The CLONE it makes at run time is
+# state in dexter's mount, reachable only through this service's own endpoints.
+name: vault-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'provision/dexter/vault/**'
+      - '.github/workflows/vault-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: provision/dexter/vault
+          push: true
+          tags: |
+            ghcr.io/hf7y/vault:latest
+            ghcr.io/hf7y/vault:${{ github.sha }}
