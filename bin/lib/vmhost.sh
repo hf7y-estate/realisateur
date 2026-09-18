@@ -65,6 +65,22 @@ _wsl() {  # a lost call must not be read as an answer: try again, with a gap, wh
     [ "$i" -lt "$VMHOST_WSL_TRIES" ] && sleep "$VMHOST_WSL_RETRY_S"
   done
   printf '%s\n' "$out"
+  # THE EXIT STATUS USED TO BE printf'S, so it was 0 even when every attempt
+  # lost the vsock. An ACTUATOR cannot read that: `repose monkey 4h` printed
+  # "monkey paused", wrote the declaration, and left monkey running -- measured
+  # by hand on dexter 2026-09-18 while interop was wedged. Readers already parse
+  # the text and are unaffected; callers that ACT now get a false they can test.
+  #
+  # WHY THE CALLER ALSO RE-READS, and why that rule is written here rather than
+  # in repose.sh: repose.sh and its suite carry no comment lines at all (their
+  # headers are trailing comments on code), so they are not prose-bearing files
+  # and a block explaining this would cost the estate two files against the
+  # prose ratchet. The rule: an actuator's own exit code is never the witness.
+  # repose re-reads vmhost_state and accepts only poweroff|saved|paused --
+  # `unknown` is the driver failing to look, and taking it for success declares
+  # a pause on a host nobody can see. bin/tests/repose.test.sh D3a-D3d pin it.
+  case "$out" in *'ERROR: '*) return 1 ;; esac
+  return 0
 }
 _reg() { "$VMHOST_REG" "$@" < /dev/null 2>/dev/null | tr -d '\0\r'; }
 
