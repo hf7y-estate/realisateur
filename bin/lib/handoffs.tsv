@@ -60,6 +60,22 @@
 # broke cron-lock/estate-set/propagation and 15 extra repose.test.sh failures
 # on a green main. Uncomment once repose.sh and propagation-set.sh point at
 # senechal's copies instead of these paths -- #651 stays open until then.
+#
+# THAT BLOCKER IS SPENT; A WORSE ONE REPLACED IT (measured 2026-09-18).
+# senechal now carries bin/lib/{vmhost,cron-lock,zaxon,monkey-watch-alert}.sh
+# and monkey-watch-merge.py, so "point at senechal's copies" is satisfied. But
+# every copy over there is from 2026-09-01 and the estate moved:
+#
+#   bin/lib/vmhost.sh            senechal  94 lines   realisateur 257
+#                                and the word `wsl` appears ZERO times in it
+#   bin/monkey-watch.sh          senechal 143 lines   realisateur ~300
+#   bin/monkey-status-collect.py senechal 168 lines   realisateur 364
+#
+# senechal's vmhost.sh is the pre-migration VirtualBox-only driver. Hand repose
+# over onto it and it reads `unknown` for monkey forever, because monkey has
+# been a WSL2 distro since 2026-08-30. THE HANDOFF IS A RE-SYNC, NOT A MOVE:
+# senechal's five files have to be brought to realisateur's current versions
+# first, or this delivers a mechanism to a driver that cannot see the host.
 # bin/monkey-watch.sh	hf7y/senechal	522	bin/monkey-watch.sh
 # bin/monkey-status-collect.py	hf7y/senechal	522	bin/monkey-status-collect.py
 # bin/lib/monkey-watch-alert.sh	hf7y/senechal	522	bin/lib/monkey-watch-alert.sh
