@@ -386,8 +386,18 @@ section "S. the WINDOWS channel refuses loudly when it is not wired (#1232)"
 # The second watcher is RUNNING on dexter's Windows side -- it wrote
 # `2026-09-18T13:21:50Z OK` while the WSL-side watcher was blind -- but
 # $HOME/.ssh/id_dexter_win does not exist, so its installer could not reach it
-# and said so as an ssh permission error blamed on dexter's sshd. A live
-# mechanism whose installer cannot reach it can never be updated or retired.
+# and said so as an ssh permission error blamed on dexter's sshd. ~/.ssh/config
+# records what that misreading costs: three days concluding "dexter's sshd
+# rejects restrict/command=" from the same shape of message. A live mechanism
+# whose installer cannot reach it can never be updated, re-pointed or retired.
+#
+# THE RATIONALE LIVES HERE, NOT IN THE SUBJECT. bin/monkey-watch-win.sh carries
+# ZERO `#` comment lines -- its header is a usage() heredoc, which is a string
+# -- so it is not a prose-bearing file, and a comment block explaining this
+# would have made it one and cost the estate a file against the prose ratchet.
+# This suite already carries prose, so the explanation is free here. The
+# refusal MESSAGE stays in the subject, where the operator reads it: a string
+# is code, and it is what S2-S4 grade.
 WIN="$REPO/bin/monkey-watch-win.sh"
 if [ -f "$WIN" ]; then
   out="$(DEXTER_WIN_KEY=/nonexistent bash "$WIN" --status 2>&1)"; wrc=$?
