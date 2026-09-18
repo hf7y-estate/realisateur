@@ -153,8 +153,12 @@ has "K6b the no-driver refusal names both drivers it looked for" "$out" "wsl.exe
 has "K6c ...including VBoxManage, so the off-host message stays true either way" "$out" "VBoxManage"
 
 eq "K7 a running distro reads running" "$(vmhost_state monkey)" "running"
+export VMHOST_WSL_RETRY_S=0   # the gap is measured in the driver; the suite does not pay it
 printf '1\n' > "$WFAIL"
 eq "K7b one lost interop call is retried, not published -- monkey was up 5 days when this alarmed" \
+  "$(vmhost_state monkey)" "running"
+printf '2\n' > "$WFAIL"
+eq "K7b2 ...and so is a second, because the vsock window outlives one retry (#1226)" \
   "$(vmhost_state monkey)" "running"
 printf '9\n' > "$WFAIL"
 eq "K7c a driver that never answers reads unknown, NEVER poweroff -- poweroff is what monkey-watch alerts Zach on" \
