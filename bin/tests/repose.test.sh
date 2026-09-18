@@ -35,11 +35,17 @@ rc "C2 cancelling off-host also refuses (2)" 2 "$rc"
 
 section "D. against a fake VBoxManage: declare, status, resume, cancel"
 FAKE="$T/VBoxManage.exe"; CALLS="$T/calls"
+# THE STUB MODELS STATE, because repose now re-reads it: a fake that only
+# records the call cannot tell a pause that happened from one that did not, and
+# that gap is the bug this suite exists to catch (realisateur, 2026-09-18 --
+# `repose monkey 4h` printed "paused" while monkey kept running).
+STATE="$T/vmstate"; echo running > "$STATE"
 cat > "$FAKE" <<STUB
 #!/usr/bin/env bash
 case "\$1" in
-  controlvm) [ "\$3" = savestate ] && printf 'savestate %s\n' "\$2" >> "$CALLS" ;;
-  startvm)   printf 'startvm %s %s %s\n' "\$2" "\$3" "\$4" >> "$CALLS" ;;
+  controlvm)   [ "\$3" = savestate ] && { printf 'savestate %s\n' "\$2" >> "$CALLS"; echo saved > "$STATE"; } ;;
+  startvm)     printf 'startvm %s %s %s\n' "\$2" "\$3" "\$4" >> "$CALLS"; echo running > "$STATE" ;;
+  showvminfo)  printf 'VMState="%s"\n' "\$(cat "$STATE")" ;;
 esac
 STUB
 chmod +x "$FAKE"
@@ -50,8 +56,8 @@ out="$(bash "$R" monkey --status)"
 eq "D1 no declaration yet: --status reads NONE" "$out" "NONE"
 
 out="$(bash "$R" monkey 2h)"
-case "$out" in *"paused, resumes"*) ok "D2 declaring reports the resume time" ;;
-  *) bad "D2 declaring reports the resume time" "got: $out" ;; esac
+case "$out" in *"paused (state re-read: saved), resumes"*) ok "D2 declaring reports the VERIFIED state and the resume time" ;;
+  *) bad "D2 declaring reports the verified state and resume time" "got: $out" ;; esac
 eq "D3 the actuator ran: controlvm savestate, not an ACPI request" "$(cat "$CALLS")" "savestate monkey"
 
 out="$(bash "$R" monkey --status)"
@@ -65,6 +71,41 @@ case "$out" in *"resumed, declaration cleared"*) ok "D5 --cancel reports the res
 eq "D6 --cancel drove startvm" "$(cat "$CALLS")" "startvm monkey --type headless"
 out="$(bash "$R" monkey --status)"
 eq "D7 after --cancel the declaration is gone" "$out" "NONE"
+
+section "D3. a pause that did not happen declares NOTHING (2026-09-18)"
+# MEASURED BY HAND on dexter while WSL interop was wedged: `_wsl` returned the
+# exit status of its own printf, so it was 0 even when every attempt lost the
+# vsock. repose printed "monkey paused", wrote the declaration, and monkey kept
+# running -- after which monkey-watch's tick reads PAUSED for a live host and
+# schedules a resume for a VM that never stopped.
+rm -rf "$T/pause"; echo running > "$STATE"
+cat > "$FAKE" <<STUB
+#!/usr/bin/env bash
+case "\$1" in
+  showvminfo) printf 'VMState="%s"\n' "\$(cat "$STATE")" ;;
+esac
+STUB
+chmod +x "$FAKE"
+out="$(bash "$R" monkey 2h 2>&1)"; drc=$?
+rc "D3a an actuator that changed nothing exits 1" 1 "$drc"
+case "$out" in *"did NOT pause"*) ok "D3b ...and says so, naming the state it re-read" ;;
+  *) bad "D3b names the state it re-read" "got: $out" ;; esac
+case "$out" in *paused,*) bad "D3c never claims a pause it did not verify" "got: $out" ;;
+  *) ok "D3c never claims a pause it did not verify" ;; esac
+eq "D3d and NOTHING is declared, so no resume is scheduled for a running host" \
+  "$(bash "$R" monkey --status)" "NONE"
+
+# put the working stub back for the sections below
+echo running > "$STATE"
+cat > "$FAKE" <<STUB
+#!/usr/bin/env bash
+case "\$1" in
+  controlvm)   [ "\$3" = savestate ] && { printf 'savestate %s\n' "\$2" >> "$CALLS"; echo saved > "$STATE"; } ;;
+  startvm)     printf 'startvm %s %s %s\n' "\$2" "\$3" "\$4" >> "$CALLS"; echo running > "$STATE" ;;
+  showvminfo)  printf 'VMState="%s"\n' "\$(cat "$STATE")" ;;
+esac
+STUB
+chmod +x "$FAKE"
 
 section "E. a failed actuator leaves nothing declared or cleared"
 FAILING="$T/VBoxManage-fail.exe"

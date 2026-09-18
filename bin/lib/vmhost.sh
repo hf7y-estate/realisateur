@@ -65,6 +65,13 @@ _wsl() {  # a lost call must not be read as an answer: try again, with a gap, wh
     [ "$i" -lt "$VMHOST_WSL_TRIES" ] && sleep "$VMHOST_WSL_RETRY_S"
   done
   printf '%s\n' "$out"
+  # THE EXIT STATUS USED TO BE printf'S, so it was 0 even when every attempt
+  # lost the vsock. An ACTUATOR cannot read that: `repose monkey 4h` printed
+  # "monkey paused", wrote the declaration, and left monkey running -- measured
+  # by hand on dexter 2026-09-18 while interop was wedged. Readers already parse
+  # the text and are unaffected; callers that ACT now get a false they can test.
+  case "$out" in *'ERROR: '*) return 1 ;; esac
+  return 0
 }
 _reg() { "$VMHOST_REG" "$@" < /dev/null 2>/dev/null | tr -d '\0\r'; }
 

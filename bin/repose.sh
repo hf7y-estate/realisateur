@@ -46,11 +46,21 @@ case "$1" in
     case "$N" in ''|*[!0-9]*) cli_die "duration must look like <N>h (got '$1')" ;; esac
     vmhost_require "$VM" || { printf '%s: this must run on the VM host (dexter).\n' "$CLI_NAME" >&2; exit 2; }
     UNTIL="$(date -u -d "+${N} hours" +%Y-%m-%dT%H:%M:%SZ)" || cli_die "could not compute +${N}h from now"
-    if vmhost_save "$VM"; then
+    # RE-READ, NEVER TRUST THE ACTUATOR'S OWN EXIT CODE. The declaration is what
+    # monkey-watch's tick later acts on, so declaring a pause that did not happen
+    # leaves the page reading PAUSED for a running host and schedules a resume
+    # for a VM that never stopped.
+    # `!= running` is NOT the test: `unknown` is the driver failing to look, and
+    # accepting it declares a pause on a host nobody can see. Only a state that
+    # POSITIVELY says stopped counts -- poweroff (wsl --terminate, or a powered
+    # off guest), saved (VirtualBox savestate), paused.
+    if vmhost_save "$VM" && { state="$(vmhost_state "$VM")"
+         case "$state" in poweroff|saved|paused) true ;; *) false ;; esac; }; then
       vmhost_pause_declare "$VM" "$UNTIL"
-      printf '%s: %s paused, resumes %s\n' "$CLI_NAME" "$VM" "$UNTIL"
+      printf '%s: %s paused (state re-read: %s), resumes %s\n' "$CLI_NAME" "$VM" "$state" "$UNTIL"
     else
-      printf '%s: vmhost_save %s failed -- nothing declared\n' "$CLI_NAME" "$VM" >&2
+      printf '%s: %s did NOT pause (state reads %s) -- nothing declared\n' \
+        "$CLI_NAME" "$VM" "${state:-unread}" >&2
       exit 1
     fi
     ;;
