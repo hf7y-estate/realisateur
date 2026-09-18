@@ -42,29 +42,18 @@ Prose about the change.
 - host:monkey path:/usr/local/bin/gh via: install-verb-build.sh --link
 <!-- /DELIVERS -->'
 
-section 'A. the declaration is read from the FIRST non-empty line only'
-eq 'A1 DECISION opens it'            "$(grammar_declaration "$GOOD")" decision
-eq 'A2 NO-DECISION is its own kind'  "$(grammar_declaration 'NO-DECISION: nothing to call')" no-decision
-eq 'A3 an ordinary body declares nothing' "$(grammar_declaration 'just a body')" none
-eq 'A4 markdown furniture is stripped' "$(grammar_declaration '## DECISION: still counts')" decision
-eq 'A5 leading blank lines are skipped' "$(grammar_declaration '
-
-DECISION: after two blanks')" decision
-# The word must OPEN the line, or a body QUOTING the convention exempts itself.
-eq 'A6 a mention mid-line is not a declaration' \
-  "$(grammar_declaration 'this PR follows the DECISION: convention')" none
-
-section 'B. a decision buried below line 1 is the failure the convention exists for'
-has 'B1 flagged' "$(codes 'intro paragraph
+# hf7y/scheduler#318: the DECISION:/NO-DECISION: line-1 sentence, and the
+# UNDECLARED/NO-DECIDER/MISPLACED-DECISION codes built only to validate it,
+# are gone -- GitHub's own `assignees` field is the "waiting on a human"
+# signal now. `grammar_declaration` no longer exists; a body that still opens
+# with `DECISION:`/`NO-DECISION:` (like GOOD, below) is ordinary prose to the
+# grammar and earns no special treatment either way.
+section 'A. a DECISION:/NO-DECISION: opener is ordinary prose now -- no code reads it'
+eq 'A1 the well-formed body is clean regardless of what line 1 says' "$(findings "$GOOD")" 0
+eq 'A2 a body burying "DECISION:" below line 1 is clean too -- nothing is buried anymore' \
+  "$(findings 'intro paragraph
 
 DECISION: buried at line 3
-
-<!-- DEFERRED -->
-- none
-<!-- /DEFERRED -->')" MISPLACED-DECISION
-eq  'B2 the well-formed body is clean' "$(findings "$GOOD")" 0
-# #419: NO-DECISION asserts there is nobody to decide, so it names no @handle.
-eq  'B2a NO-DECISION needs no decider' "$(findings 'NO-DECISION: agent work -- tests green, nothing to weigh
 
 <!-- DEFERRED -->
 - none
@@ -73,24 +62,8 @@ eq  'B2a NO-DECISION needs no decider' "$(findings 'NO-DECISION: agent work -- t
 <!-- DELIVERS -->
 - none
 <!-- /DELIVERS -->')" 0
-has 'B2b DECISION still needs one' "$(codes 'DECISION: who links the shim?
-
-<!-- DEFERRED -->
-- none
-<!-- /DEFERRED -->')" NO-DECIDER
-has 'B2c a buried NO-DECISION is still MISPLACED' "$(codes 'intro paragraph
-
-NO-DECISION: buried at line 3
-
-<!-- DEFERRED -->
-- none
-<!-- /DEFERRED -->')" MISPLACED-DECISION
-eq  'B3 a fenced example is not a buried decision' \
-  "$(findings 'NO-DECISION: @zach nothing to weigh
-
-```
-DECISION: this is an example
-```
+eq 'A3 a bare DECISION: with no @handle is clean too -- NO-DECIDER is gone' \
+  "$(findings 'DECISION: who links the shim?
 
 <!-- DEFERRED -->
 - none
@@ -240,11 +213,11 @@ run_shim() { ( PATH="$T/bin:$PATH"; cd "$T" && bash "$SHIM" "$@" 2>&1 ); }
 rm -f "$T/reached"
 
 printf '%s\n' "$GOOD" > "$T/good.md"
-printf 'intro\n\nDECISION: buried\n' > "$T/bad.md"
+printf 'intro\n\nDECISION: buried, and no ledger at all\n' > "$T/bad.md"
 
 out="$(run_shim issue create --title T --body-file "$T/bad.md")"; got=$?
 rc   'S1 a malformed issue body is REFUSED (7): nothing was created' 7 "$got"
-has  'S2 it says what is wrong'          "$out" MISPLACED-DECISION
+has  'S2 it says what is wrong'          "$out" UNLEDGERED
 has  'S3 it prints the block to paste'   "$out" '<!-- DEFERRED -->'
 if [ -f "$T/reached" ]; then bad 'S4 gh was never called' "gh ran: $(cat "$T/reached")"
 else ok 'S4 gh was never called'; fi
@@ -275,7 +248,7 @@ has 'S7 a missing grammar library is announced BLIND, not silently skipped' "$ou
 
 out="$(bash "$SHIM" --check-body "$T/bad.md" 2>&1)"; got=$?
 rc  'S8 --check-body re-runs it offline and FINDS it (1), refusing nothing' 1 "$got"
-has 'S9 --check-body names the same finding'         "$out" MISPLACED-DECISION
+has 'S9 --check-body names the same finding'         "$out" UNLEDGERED
 
 section 'I. the CI backstop is wired to the same grammar'
 hasnt 'I5 the deleted script is really gone' "$(ls "$ROOT")" 'deferral-ledger.sh'
@@ -299,18 +272,20 @@ out="$(grammar_check "$(_da 'DEFAULT-AFTER 14d:')" 2>&1)"
 case "$out" in *BAD-DEFAULT*) ok "a window with no action is BAD-DEFAULT -- a timer to nowhere" ;;
   *) bad "no action is BAD-DEFAULT" "got: $out" ;; esac
 
+# hf7y/scheduler#318: NO-DEFAULT (a `DECISION:` body carrying no DEFAULT-AFTER
+# at all) is gone -- DEFAULT-AFTER was only ever MANDATORY on a DECISION:
+# body, and that convention no longer exists. It stays legal to write, and
+# BAD-DEFAULT above still grades it when written malformed, but no body is
+# required to carry one.
 _nodefault="$(printf 'DECISION: @zach -- q\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
-out="$(grammar_check "$_nodefault" 2>&1)"
-case "$out" in *NO-DEFAULT*) ok "#680: a DECISION with no DEFAULT-AFTER is NO-DEFAULT -- blocking by omission is refused" ;;
-  *) bad "no default is NO-DEFAULT" "got: $out" ;; esac
+out="$(grammar_check "$_nodefault" 2>&1)"; rc_nodefault=$?
+[ "$rc_nodefault" -eq 0 ] \
+  && ok "#318: a body with no DEFAULT-AFTER at all is clean -- nothing requires it now" \
+  || bad "no DEFAULT-AFTER is clean" "got ($rc_nodefault): $out"
 
 grammar_check "$(_da 'DEFAULT-AFTER 0d: block -- irreversible, no default')" >/dev/null 2>&1 \
-  && ok "#680: blocking forever stays legal when DECLARED as 0d, so an irreversible call has a spelling" \
-  || bad "0d blocks forever" "it was refused; irreversible calls lost their spelling"
-
-grammar_check "$(printf 'NO-DECISION: agent work\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')" >/dev/null 2>&1 \
-  && ok "#680: NO-DECISION needs no default -- the rule binds the bodies that ask, not the ones that report" \
-  || bad "NO-DECISION needs no default" "it was refused"
+  && ok "an explicit 0d default still says 'block forever' without tripping BAD-DEFAULT" \
+  || bad "0d blocks forever" "it was refused"
 
 # The reader the actuator consumes.
 got="$(grammar_default_after "$(_da 'DEFAULT-AFTER 14d: close it as declined')")"
@@ -394,11 +369,11 @@ nothing here
 Closes #123')")" 0
 
 # COMPOSITION: every finding, not the first, or the second one is hidden.
-_compose="$(printf 'a body that declares nothing\n\nThis does not close hf7y/scheduler#79.\n')"
-has 'N8 composed: UNDECLARED is still reported'    "$(codes "$_compose")" UNDECLARED
-has 'N9 composed: NEGATED-CLOSE is reported too'   "$(codes "$_compose")" NEGATED-CLOSE
-has 'N10 composed: so is UNSHIPPED'                "$(codes "$_compose")" UNSHIPPED
-eq  'N11 composed: four findings, not one'         "$(findings "$_compose")" 4
+_compose="$(printf 'a body with no ledgers at all\n\nThis does not close hf7y/scheduler#79.\n')"
+has 'N8 composed: UNLEDGERED is still reported'     "$(codes "$_compose")" UNLEDGERED
+has 'N9 composed: NEGATED-CLOSE is reported too'    "$(codes "$_compose")" NEGATED-CLOSE
+has 'N10 composed: so is UNSHIPPED'                 "$(codes "$_compose")" UNSHIPPED
+eq  'N11 composed: three findings, not one'         "$(findings "$_compose")" 3
 
 section 'L. grammar_landing_ref -- what a close names that a check could follow'
 

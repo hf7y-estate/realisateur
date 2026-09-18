@@ -34,31 +34,24 @@ and its meaning. The source column decides who may write the label, and it is
 the point of the file:
 .TP
 .B derived:decision
-Line 1 of the issue body declares
-.BR DECISION: .
-Never typed by hand \(em
-.B --apply
-writes it, reading
-.B bin/lib/body-grammar.sh
-for the declaration and
-.B bin/lib/answered.sh
-for whether anyone has answered, and editing line 1 is how you change it.
-Typed by hand it was wrong three times out of three. This is the same
-declaration
-.BR gh-sign (1)
-enforces when the issue is created, so the label is a view of the body rather
-than a second opinion about it.
-.PP
-An owner who answers OUT LOUD rather than by typing a comment has still
-answered \(em but nothing sees it until an agent relays the ruling. Do that
-with
-.B "<!-- decision-by: <who> -->"
-on the comment carrying the ruling, not with the
-.B answered
-label: that label means the answer lives somewhere this predicate cannot
-see at all, and reaching for it when the ruling is right there in the
-comment you just wrote spends its audit value for nothing
-(hf7y/realisateur#924).
+Historical name only, left as-is in
+.B bin/lib/labels.tsv
+(a different file, out of this verb's scope) \(em nothing derives it anymore.
+.B etiquette
+used to read
+.BR DECISION: / NO-DECISION:
+off line 1 of an issue body and reconcile a
+.B needs-human
+label against it. That grammar was deleted in hf7y/scheduler#318: GitHub's
+own
+.B assignees
+field is the "waiting on a human" signal now, read directly by scheduler's
+.BR tempo (1),
+and needs no body to be read at all.
+.B etiquette
+no longer touches issue bodies or comments \(em it only checks that a
+repository carries the labels the grammar declares, whichever verb writes
+each one.
 .TP
 .BI written: verb
 That verb applies the label at filing time and nothing else should. A person
@@ -77,14 +70,8 @@ Print the file the grammar was read from. Use this to prove which copy a host
 obeyed.
 .TP
 .B --apply
-Create any declared label the repository lacks, and add or remove the derived
-label so it matches each open issue's line 1. Without it, nothing is written.
-.PP
-.B --apply
-never writes a label for an
-.B UNDECLARED
-body \(em one whose line 1 declares neither. That is a finding about the body,
-and the fix is to edit line 1.
+Create any declared label the repository lacks. Without it, nothing is
+written.
 .TP
 .B --all
 Grade every repository named in
@@ -95,31 +82,26 @@ the estate-wide caller, and it is what
 runs daily with
 .BR --apply .
 .PP
-It sweeps the repository set, not the armed set. The derived label used to be
-reconciled only by the per-account dispatch, which grades the repository it is
-dispatching to and no other, so a project whose
+It sweeps the repository set, not the armed set: a project whose
 .B schedule/ROSTER
 row reads
 .B parked
-never acquired the label at all. On 2026-08-31 every one of the eighteen rows
-read
-.BR parked .
+is still swept, and still expected to carry the labels the grammar declares,
+whether or not anything ever dispatches to it.
 .SH EXIT STATUS
 .TP
 .B 0
-The repository carries every declared label and each derived one matches its
-body.
+The repository carries every label the grammar declares.
 .TP
 .B 1
-Findings: a declared label is missing, a derived one disagrees with its body,
-or a body declares neither.
+Findings: a declared label is missing from the repository.
 .TP
 .B 2
 Usage error.
 .TP
 .B 6
-BLIND \(em the grammar or the issue list could not be read. Never 0: an
-unreadable tracker is not a clean one, and a grammar that failed to load is
+BLIND \(em the grammar or the label list could not be read. Never 0: an
+unreadable label list is not a clean one, and a grammar that failed to load is
 not an empty grammar.
 .SH SEE ALSO
 .BR defere (1),

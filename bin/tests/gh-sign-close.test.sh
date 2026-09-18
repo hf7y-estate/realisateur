@@ -20,6 +20,11 @@ printf '%s\n' "$*" >> "$GH_LOG"
 case "${1:-} ${2:-}" in
   'issue view')
     [ "${FAKE_VIEW_RC:-0}" -eq 0 ] || exit "$FAKE_VIEW_RC"
+    case "$*" in
+      *"--json assignees"*)
+        printf '%s\n' "${FAKE_ASSIGNED:-false}"
+        exit 0 ;;
+    esac
     printf '%s\n' "${FAKE_URL:-https://github.com/hf7y/widget/issues/7}"
     cat "$FAKE_BODY"
     exit 0 ;;
@@ -41,6 +46,7 @@ run() {  # run <argv...> -- returns the shim's exit code, stderr in $OUT
   OUT="$(GH_LOG="$T/gh.log" FAKE_BODY="$FAKE_BODY" \
     FAKE_LANDED="${FAKE_LANDED:-0}" FAKE_VIEW_RC="${FAKE_VIEW_RC:-0}" \
     FAKE_API_RC="${FAKE_API_RC:-0}" FAKE_URL="${FAKE_URL:-}" \
+    FAKE_ASSIGNED="${FAKE_ASSIGNED:-false}" \
     PATH="$T/stub:$PATH" "$BASH_BIN" "$GS" "$@" 2>&1)"
 }
 closed() { grep -q '^issue close' "$T/gh.log"; }
@@ -91,10 +97,15 @@ rc "B10 a close naming a file -- passes" 0 "$?"
 run issue close 7 --repo hf7y/widget --comment=closed-by-hf7y/scheduler#118
 rc "B10b --comment=<text>, the other spelling, is read too" 0 "$?"
 
+FAKE_ASSIGNED=true run issue close 7 --repo hf7y/widget --comment 'Answered: monkey, per Zach today.'
+rc "B11 an issue that still carries an assignee closes on the answer -- passes" 0 "$?"
+if closed; then ok "B12 ...and the close happened"; else bad "B12 ...and the close happened" "$OUT"; fi
+FAKE_ASSIGNED=false
+
+section "B'. hf7y/scheduler#318: assignees replaced the DECISION: sentence -- the sentence alone no longer bypasses the guard"
 printf 'DECISION: @hf7y -- which host?\nDEFAULT-AFTER 14d: pick monkey\n' > "$FAKE_BODY"
 run issue close 7 --repo hf7y/widget --comment 'Answered: monkey, per Zach today.'
-rc "B11 an answered DECISION: closes on the answer -- passes" 0 "$?"
-if closed; then ok "B12 ...and the close happened"; else bad "B12 ...and the close happened" "$OUT"; fi
+rc "B'1 a DECISION:-shaped body with NO assignee is refused -- the text alone means nothing now" 7 "$?"
 printf 'NO-DECISION: shipped, nothing to weigh\n\nsome issue.\n' > "$FAKE_BODY"
 
 section "C. fail open -- a guard that wedges 18 accounts is worse than the leak"

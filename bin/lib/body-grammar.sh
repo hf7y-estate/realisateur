@@ -3,9 +3,6 @@
 # Sourced by bin/gh-sign.sh, which refuses a noncompliant body at the write.
 # Pure bash: gh-sign runs under cron's PATH, where sed and grep were not found.
 #
-#   UNDECLARED          line 1 is neither DECISION: nor NO-DECISION:
-#   NO-DECIDER          DECISION: named no @handle. NO-DECISION: is exempt (#419)
-#   MISPLACED-DECISION  a declaration below line 1
 #   UNLEDGERED          no <!-- DEFERRED --> block
 #   MULTI-LEDGER        more than one
 #   UNCLOSED            opened, never closed
@@ -17,14 +14,14 @@
 #   UNTYPED-DELIVERY    an entry naming no <kind>:<value>
 #   BAD-DEFAULT         a DEFAULT-AFTER line that is not `<n>d: <action>`
 #   BAD-ANSWERED-BY     an ANSWERED-BY line that is not `<owner>/<repo>#<n>`
-#   NO-DEFAULT          a DECISION: body carrying no DEFAULT-AFTER at all
 #   NEGATED-CLOSE       a closing keyword + reference in a sentence DENYING it
 #
-# DEFAULT-AFTER -- MANDATORY ON A DECISION SINCE #680 (Zach, 2026-08-28),
-# because 21 of 45 open `needs-human` blocked by omission. Past the window the
-# owning account applies it, says so, and leaves the issue open to be
-# reversed; `0d: block` keeps blocking forever legal once DECLARED. Only
-# gh-sign's SIGNING path reaches this, so it binds agents, not Zach.
+# hf7y/scheduler#318: the DECISION:/NO-DECISION: line-1 sentence and the
+# UNDECLARED/NO-DECIDER/MISPLACED-DECISION/NO-DEFAULT codes built on it are
+# GONE -- GitHub's native `assignees` field is the signal now (read directly
+# by tempo.sh and, once vim-arcade lands its side, by decision-rot.sh).
+# DEFAULT-AFTER itself stays: BAD-DEFAULT still grades any DEFAULT-AFTER line
+# a body chooses to write, it is simply no longer MANDATORY on anything.
 #
 # NO-OWNER: is not a destination -- #327 lost two that way. `defere` files one.
 #
@@ -34,7 +31,6 @@
 # shuts nothing, so the remedy is to drop the verb -- which is why this is NOT
 # a ban (Zach 2026-08-04: batch agents shut shipped issues automatically).
 
-GRAMMAR_DECIDER_RE='@[A-Za-z0-9][-A-Za-z0-9_/]*'
 GRAMMAR_CLOSING_WORDS=' close closes closed closing fix fixes fixed fixing resolve resolves resolved resolving '
 
 grammar_negated_close() {  # <line> <heading-negates> -- print "<keyword> <ref>", 1 if clean
@@ -193,14 +189,13 @@ grammar_answered_by() {  # <body> -- print the ref (#568), 1 if none; shape of g
 # PLACEHOLDERS: a truncated fence must not read as another repo's ledger (#627).
 grammar_template() {
   cat <<'EOF'
-DECISION: @hf7y -- may a verb build claim /usr/local/bin/gh on monkey?
-NO-DECISION: @hf7y asked for this exact change; tests green, nothing to weigh
+Whatever the change is, said plainly. Nothing about this convention requires
+a particular opening line -- if a person is meant to weigh in, assign them.
 
-...and on a DECISION, say what happens if nobody answers. REQUIRED, because an
-unanswered question brakes the repo that asked. To block forever, declare it:
+DEFAULT-AFTER is optional and says what happens if nobody answers:
+`DEFAULT-AFTER 14d: ship it unsigned and open a follow-up; reverse by saying
+so`. To block forever, say so rather than omitting the line:
 `DEFAULT-AFTER 0d: block -- irreversible, no default`.
-
-DEFAULT-AFTER 14d: ship it unsigned and open a follow-up; reverse by saying so
 
 <!-- DEFERRED -->
 - none
@@ -218,28 +213,12 @@ DEFAULT-AFTER 14d: ship it unsigned and open a follow-up; reverse by saying so
 EOF
 }
 
-# decision | no-decision | none, from the first non-empty line. The word must
-# OPEN the line, or a body quoting the convention exempts itself.
-grammar_declaration() {
-  local line stripped
-  while IFS= read -r line; do
-    case "$line" in *[![:space:]]*) ;; *) continue ;; esac
-    stripped="${line#"${line%%[![:space:]#>*_-]*}"}"
-    case "$stripped" in
-      [Nn][Oo]-[Dd][Ee][Cc][Ii][Ss][Ii][Oo][Nn]:*) printf 'no-decision\n'; return ;;
-      [Dd][Ee][Cc][Ii][Ss][Ii][Oo][Nn]:*)          printf 'decision\n';    return ;;
-    esac
-    printf 'none\n'; return
-  done <<<"$1"
-  printf 'none\n'
-}
-
 # Prints `CODE  message` per violation; returns the count. Never exits.
 grammar_check() {
-  local body="$1" line stripped n=0 lineno=0 first_seen=0
+  local body="$1" line stripped n=0 lineno=0
   local open=0 in_block=0 entries=0 entry='' fenced=0
   local sopen=0 in_ship=0 ships=0 ship='' indent=''
-  local has_default=0 head_neg=0 nc=''
+  local head_neg=0 nc=''
 
   _find() { printf '%s  %s\n' "$1" "$2"; n=$((n + 1)); }
 
@@ -326,19 +305,8 @@ grammar_check() {
     fi
 
     case "$line" in *[![:space:]]*) ;; *) continue ;; esac
-    [ "$sopen" -gt 0 ] && [ "$first_seen" -eq 0 ] && first_seen=0
     local decl="${stripped#"${stripped%%[![:space:]#>*_-]*}"}"
     case "$decl" in
-      [Nn][Oo]-[Dd][Ee][Cc][Ii][Ss][Ii][Oo][Nn]:*)
-        [ "$first_seen" -eq 1 ] && _find MISPLACED-DECISION \
-          "line $lineno declares, but line 1 did not. The convention reads line 1 only." ;;
-      [Dd][Ee][Cc][Ii][Ss][Ii][Oo][Nn]:*)
-        if [ "$first_seen" -eq 1 ]; then
-          _find MISPLACED-DECISION "line $lineno declares, but line 1 did not. The convention reads line 1 only."
-        else
-          [[ $decl =~ $GRAMMAR_DECIDER_RE ]] || _find NO-DECIDER \
-            'the declaration names no decider. Line 1: "DECISION: @who -- <the call>".'
-        fi ;;
       [Dd][Ee][Ff][Aa][Uu][Ll][Tt]-[Aa][Ff][Tt][Ee][Rr]*)
         # A malformed default is worse than none: it reads as a timer to a
         # human and is invisible to grammar_default_after, so the issue looks
@@ -350,11 +318,9 @@ grammar_check() {
         case "$_da_days" in
           ''|*[!0-9]*) _find BAD-DEFAULT \
             "line $lineno: DEFAULT-AFTER needs a day count -- \`DEFAULT-AFTER 14d: <reversible action>\`." ;;
-          *) if [ -n "$_da_act" ]; then has_default=1; else _find BAD-DEFAULT \
-               "line $lineno: DEFAULT-AFTER names a window but no action. Say what happens when nobody answers."; fi ;;
-        esac
-        [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
-          'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
+          *) [ -n "$_da_act" ] || _find BAD-DEFAULT \
+               "line $lineno: DEFAULT-AFTER names a window but no action. Say what happens when nobody answers." ;;
+        esac ;;
       [Aa][Nn][Ss][Ww][Ee][Rr][Ee][Dd]-[Bb][Yy]*)
         _ab_ref="${decl#* }"  # malformed reads as settled to a human, unresolved to grammar_answered_by
         _ab_ref="${_ab_ref%% *}"
@@ -365,20 +331,9 @@ grammar_check() {
             esac ;;
           *) _find BAD-ANSWERED-BY \
                "line $lineno: ANSWERED-BY needs \`<owner>/<repo>#<n>\` -- got: ${decl:0:60}" ;;
-        esac
-        [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
-          'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
-      *) [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
-           'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
+        esac ;;
     esac
-    first_seen=1
   done <<<"$body"
-
-  # A body that is entirely a ledger never reached the check above.
-  [ "$first_seen" -eq 0 ] && _find UNDECLARED 'no first line to declare on.'
-
-  [ "$has_default" -eq 0 ] && [ "$(grammar_declaration "$body")" = decision ] && _find NO-DEFAULT \
-    'a DECISION needs `DEFAULT-AFTER <n>d: <action>`. To block forever, declare it: `DEFAULT-AFTER 0d: block -- irreversible, no default`.'
 
   [ "$in_block" -eq 1 ] && { _judge_entry; _find UNCLOSED 'the DEFERRED block is never closed.'; }
   [ "$open" -eq 0 ] && _find UNLEDGERED 'no <!-- DEFERRED --> block. Say what was left behind, or "- none".'

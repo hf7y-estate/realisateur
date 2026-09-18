@@ -248,6 +248,35 @@ GH="$(real_gh)" || {
   exit 127
 }
 
+# hf7y/scheduler#318: assignees replaced the DECISION:/NO-DECISION: sentence
+# as the "waiting on a human" signal -- so an agent clearing the assignment is
+# the same act the old grammar's NO-DECIDER family existed to catch, and it
+# gets refused the same way: nothing written, exit 7. Checked ahead of
+# `signable` below because this is not a body-content rule and carries no
+# body at all; `--remove-assignee` is the one native way to clear it, and
+# only Zach's own keypress (a real TTY, never an agent or cron) may.
+if ! human_at_keyboard; then
+  case "${1:-} ${2:-}" in
+    'issue edit'|'pr edit')
+      unassigns_hf7y=0
+      _ua_argv=("$@")
+      for ((_ua_i = 0; _ua_i < ${#_ua_argv[@]}; _ua_i++)); do
+        case "${_ua_argv[$_ua_i]}" in
+          --remove-assignee=*) _ua_val="${_ua_argv[$_ua_i]#--remove-assignee=}" ;;
+          --remove-assignee)   _ua_val="${_ua_argv[$((_ua_i + 1))]:-}" ;;
+          *) continue ;;
+        esac
+        case ",${_ua_val,,}," in *,hf7y,*) unassigns_hf7y=1 ;; esac
+      done
+      if [ "$unassigns_hf7y" -eq 1 ]; then
+        printf 'gh-sign: REFUSED -- an agent may not unassign hf7y from %s %s.\n' "$1" "${2:-}" >&2
+        printf 'gh-sign: assignment is the native "waiting on a human" signal now\n' >&2
+        printf 'gh-sign: (hf7y/scheduler#318); only Zach clears it himself. Nothing was changed.\n' >&2
+        exit 7
+      fi ;;
+  esac
+fi
+
 # Only these carry a body an agent writes for another agent to read; a PR body
 # is where a cross-repo handoff lands.
 signable=0
@@ -351,7 +380,7 @@ case "$(origin)" in *STALE*) demand_refresh ;; esac
 # FAIL OPEN ON EVERYTHING -- no grammar, no number, no API, no answer, no
 # refusal. Refusing closes when GitHub is slow wedges 18 accounts.
 close_check() {
-  local comment="$1" i skip=0 sel='' reason='' out url rest o r n body landed
+  local comment="$1" i skip=0 sel='' reason='' out url rest o r n body landed assigned
   local -a view=()
 
   [ "$grammar_ok" -eq 1 ] || return 0
@@ -378,13 +407,18 @@ close_check() {
   [ -n "$sel" ] || return 0
 
   # `gh issue view` resolves the repo exactly as `gh issue close` just did, so
-  # this never reimplements that; one call also answers what line 1 declares.
+  # this never reimplements that.
   out="$("$GH" issue view "$sel" "${view[@]}" --json url,body --jq '.url, .body' 2>/dev/null)" || return 0
   url="${out%%$'\n'*}"
   body="${out#*$'\n'}"
   case "$url" in *://*/*/*/issues/[0-9]*) ;; *) return 0 ;; esac
 
-  [ "$(grammar_declaration "$body")" = decision ] && return 0   # closes on an answer
+  # hf7y/scheduler#318: a nonempty `assignees` array is what `DECISION: @who`
+  # used to mean -- still waiting on a human. Closing it is presumed to be
+  # that human's own call landing, so it needs no separate landing evidence.
+  assigned="$("$GH" issue view "$sel" "${view[@]}" --json assignees \
+    --jq '(.assignees // []) | length > 0' 2>/dev/null)"
+  [ "$assigned" = true ] && return 0   # closes on an answer
 
   n="${url##*/}"; rest="${url%/issues/*}"
   r="${rest##*/}"; rest="${rest%/*}"; o="${rest##*/}"

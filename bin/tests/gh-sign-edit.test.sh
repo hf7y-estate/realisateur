@@ -134,4 +134,58 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
   issue edit 5 --repo hf7y/widget --body "$BAD" </dev/null >/dev/null 2>&1
 check "a malformed edit from cron is still REFUSED (7)" "$?" "7"
 
+# --- E. hf7y/scheduler#318: an agent may not unassign hf7y -----------------
+# Assignment is the native "waiting on a human" signal now (the field, not a
+# body sentence); only Zach's own act -- a real TTY at the keyboard -- may
+# clear it. Additive: it must not touch anything above.
+section "E. hf7y/scheduler#318: an agent may not unassign hf7y"
+reset
+run issue edit 5 --repo hf7y/widget --remove-assignee hf7y >/dev/null 2>&1
+check "an agent removing hf7y as assignee is REFUSED (7)" "$?" "7"
+check "...and nothing reached gh -- the unassign never happened" "$(cat "$TMP/gh.log")" ""
+
+reset
+run pr edit 5 --repo hf7y/widget --remove-assignee hf7y >/dev/null 2>&1
+check "the same guard applies to pr edit" "$?" "7"
+
+reset
+run issue edit 5 --repo hf7y/widget --remove-assignee=hf7y >/dev/null 2>&1
+check "the --remove-assignee=<login> spelling is caught too" "$?" "7"
+
+reset
+run issue edit 5 --repo hf7y/widget --remove-assignee someoneelse,hf7y >/dev/null 2>&1
+check "hf7y named in a comma-separated --remove-assignee list is still caught" "$?" "7"
+
+reset
+run issue edit 5 --repo hf7y/widget --remove-assignee HF7Y >/dev/null 2>&1
+check "the login match is case-insensitive" "$?" "7"
+
+reset
+run issue edit 5 --repo hf7y/widget --remove-assignee someoneelse >/dev/null 2>&1
+check "removing a DIFFERENT assignee is unaffected -- this guard names hf7y only" "$?" "0"
+
+reset
+run issue edit 5 --repo hf7y/widget --add-assignee hf7y --body "$GOOD" >/dev/null 2>&1
+check "ADDING hf7y as assignee is unaffected -- the guard is about removal only" "$?" "0"
+
+reset
+env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+  GH_LOG="$TMP/gh.log" GH_LAST_BODY="$TMP/gh.body" \
+  PATH="$TMP/stub:$PATH" "$BASH_BIN" "$GS" \
+  issue edit 5 --repo hf7y/widget --remove-assignee hf7y </dev/null >/dev/null 2>&1
+check "cron (no CLAUDECODE, no TTY) is refused too -- cron is not Zach's own act" "$?" "7"
+
+# The human path needs a pty, same as gh-sign.test.sh's own human-at-keyboard case.
+if command -v script >/dev/null 2>&1; then
+  reset
+  script -qec "env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT \
+    GH_LOG='$TMP/gh.log' GH_LAST_BODY='$TMP/gh.body' \
+    PATH='$TMP/stub:$PATH' '$BASH_BIN' '$GS' \
+    issue edit 5 --repo hf7y/widget --remove-assignee hf7y" /dev/null >/dev/null 2>&1
+  check "a human at a real TTY still clears it -- only Zach's own act may" \
+    "$(grep -c '^issue edit 5' "$TMP/gh.log")" "1"
+else
+  echo "  SKIP  human-at-keyboard: no \`script\` to allocate a pty" >&2
+fi
+
 summary
