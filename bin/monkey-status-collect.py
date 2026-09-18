@@ -215,6 +215,37 @@ def own_repo_url(user):
     return url or None
 
 
+_OWNED = None   # uid -> [paths]; the sweep below, run once per collection
+
+
+def owned_paths():
+    """uid -> every path in the shared trees owned by a self-dev account.
+
+    ONE walk for all of them. It was one `find` over $HOME_ROOT /etc /usr/local
+    /srv /var PER ACCOUNT: measured 2026-09-18, ~6s each warm, 19 accounts,
+    ~110s of a 126s collection -- and monkey-watch.sh feeds this over an ssh
+    deadlined at 180s, so a busy monkey published DEGRADED "the session
+    stalled" for a host that was answering fine. The cost is the WALK, not the
+    account, and the walk answers every account at once.
+
+    TRAP: find exits non-zero on an unreadable tree and sh() read that as
+    "found nothing"; -quit made the list 0 or 1 long, so ARGUMENT ORDER chose.
+    A failed walk is None -- BLIND for every account, never a clean estate.
+    """
+    global _OWNED
+    if _OWNED is None:
+        rc, found = sh_rc("find", HOME_ROOT, "/etc", "/usr/local", "/srv", "/var",
+                          "-xdev", "-uid", f"+{UID_LO - 1}", "-uid", f"-{UID_HI}",
+                          "-printf", "%U\t%p\n")
+        _OWNED = {} if rc == 0 else False
+        if rc == 0:
+            for line in found.splitlines():
+                u, _, path = line.partition("\t")
+                if path and u.isdigit():
+                    _OWNED.setdefault(int(u), []).append(path)
+    return None if _OWNED is False else _OWNED
+
+
 def containment(user, uid):
     """What this account reaches outside its own home. Three lists, and a
     null when the probe itself could not run -- an unreadable tree is not an
@@ -239,14 +270,12 @@ def containment(user, uid):
         if url and not named and url != declared_repo_url(home, name):
             out["foreign_clones"].append({"path": d, "origin": url})
 
-    # TRAP: find exits non-zero on an unreadable tree and sh() read that as
-    # "found nothing"; -quit made the list 0 or 1 long, so ARGUMENT ORDER chose.
-    rc, found = sh_rc("find", HOME_ROOT, "/etc", "/usr/local", "/srv", "/var", "-xdev",
-                      "-uid", str(uid), "-not", "-path", home, "-not", "-path", f"{home}/*",
-                      "-not", "-path", f"/var/spool/cron/crontabs/{user}", "-print")
-    if rc != 0:
+    owned = owned_paths()
+    if owned is None:
         return None                           # could not look: BLIND, not clean
-    hits = [l for l in found.splitlines() if l.strip()]
+    hits = [p for p in owned.get(uid, [])
+            if p != home and not p.startswith(f"{home}/")
+            and p != f"/var/spool/cron/crontabs/{user}"]
     out["outside_home"] = hits[:OUTSIDE_MAX]
     if len(hits) > OUTSIDE_MAX:
         out["outside_home"].append(f"... and {len(hits) - OUTSIDE_MAX} more")
