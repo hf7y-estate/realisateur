@@ -77,6 +77,10 @@ def main() -> int:
         "vm_state": os.environ["VMSTATE"],
         "disk": os.environ["DISK"],
         "disk_home": os.environ["DISK_HOME"],
+        # WHEN the disk fact was read, which is not this tick: it is cached on
+        # purpose (#1226). None means it has never been read successfully --
+        # not "just now", and not zero.
+        "disk_read_at": os.environ.get("DISK_AT") or None,
         "sshd": os.environ["SSHD"],
         "screenshot": bool(os.environ.get("SCREENSHOT")),
         "uptime": os.environ.get("UPTIME") or None,

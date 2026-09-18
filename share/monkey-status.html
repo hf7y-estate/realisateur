@@ -239,7 +239,8 @@ fetch("status.json?t="+Date.now()).then(r=>r.json()).then(d=>{
       ${fact("vm",w.host_read==="blind"?"unread":w.vm_state, w.host_read==="blind"?"mut":w.vm_state==="running"?"ok":w.verdict==="PAUSED"?"mut":"bad")}
       ${fact("sshd",w.sshd, w.sshd==="answering"?"ok":"bad")}
       ${fact("root fs",w.root_mount||"unknown", w.root_mount==="rw"?"ok":w.root_mount==="ro"?"bad":"mut")}
-      ${fact("disk",w.host_read==="blind"?"unread":w.disk_home, w.host_read==="blind"?"mut":w.disk_home==="internal"?"ok":"bad")}
+      ${fact("disk", w.disk_home==="unknown"||w.host_read==="blind" ? "unread" : w.disk_home,
+             w.disk_home==="internal" ? "ok" : w.disk_home==="EXTERNAL-USB" ? "bad" : "mut")}
       ${fact("uptime",w.uptime||"unknown","mut")}
       ${fact("clock drift", w.clock_drift_applies===false ? "n/a (no VMM)"
               : w.clock_drift_hours==null ? "unreadable"

@@ -296,14 +296,18 @@ fi
 section "K. the clocksource early warning is guest-side, present under both backends (#805)"
 has "K1 read from the guest's own kernel log, not a hypervisor artifact" \
   "$(code "$W")" 'Long readout interval'
+# ANCHORED ON THE GUEST CALL ITSELF, not on the first `if [ "$SSHD" ... ]` in
+# the file: #1226 put an earlier one above (the host state read, which now runs
+# only when the guest does NOT answer), and matching by first-occurrence
+# silently moved this assertion onto that block instead.
 lr_ssh_ln="$(grep -n 'LONG_READOUT="\$(mssh_n' "$W" | head -1 | cut -d: -f1)"
-sshd_if_ln="$(grep -n 'if \[ "\$SSHD" = "answering" \]; then' "$W" | head -1 | cut -d: -f1)"
-sshd_else_ln="$(grep -n '^else$' "$W" | head -1 | cut -d: -f1)"
-if [ -n "$lr_ssh_ln" ] && [ -n "$sshd_if_ln" ] && [ -n "$sshd_else_ln" ] \
-   && [ "$lr_ssh_ln" -gt "$sshd_if_ln" ] && [ "$lr_ssh_ln" -lt "$sshd_else_ln" ]; then
-  ok "K2 read only when sshd is answering -- unlike the host-side VMM-log drift probe"
+guest_ln="$(grep -n 'GUEST_JSON="\$(mssh ' "$W" | head -1 | cut -d: -f1)"
+guest_else_ln="$(grep -n 'GUEST_ERR="sshd is \$SSHD' "$W" | head -1 | cut -d: -f1)"
+if [ -n "$lr_ssh_ln" ] && [ -n "$guest_ln" ] && [ -n "$guest_else_ln" ] \
+   && [ "$lr_ssh_ln" -gt "$guest_ln" ] && [ "$lr_ssh_ln" -lt "$guest_else_ln" ]; then
+  ok "K2 read only when sshd is answering -- it is a guest probe and costs an ssh"
 else
-  bad "K2 read only when sshd is answering" "expected the mssh_n call between the SSHD-answering if and its else"
+  bad "K2 read only when sshd is answering" "expected the mssh_n call inside the guest-answering branch"
 fi
 has "K3 the count reaches the payload builder" "$(code "$W")" 'LONG_READOUT="$LONG_READOUT"'
 has "K4 merge publishes it" "$(code "$REPO/bin/lib/monkey-watch-merge.py")" 'clocksource'
@@ -374,6 +378,27 @@ if [ -n "$guest_ln" ] && [ -n "$blind_ln" ] && [ "$guest_ln" -lt "$blind_ln" ]; 
 else
   bad "Q5 the guest rung outranks the blind rung" "a lost host call would mask a failed collection"
 fi
+
+# #1226: the tick was spending two interop calls every ten minutes, 288 a day,
+# on a driver that loses the vsock about a quarter of the time -- for two facts
+# a healthy tick does not need.
+vm_read_ln="$(grep -n 'VMSTATE="\$(vmhost_state' "$W" | head -1 | cut -d: -f1)"
+banner_ln="$(grep -n 'BANNER="\$(timeout' "$W" | head -1 | cut -d: -f1)"
+if [ -n "$vm_read_ln" ] && [ -n "$banner_ln" ] && [ "$banner_ln" -lt "$vm_read_ln" ]; then
+  ok "Q6 the guest is asked FIRST -- the banner is the cheaper and better witness"
+else
+  bad "Q6 the guest is asked before the host" "an unconditional wsl.exe call is back at the top of every tick"
+fi
+has "Q7 sshd answering IS the VM running, with no interop call to confirm it" \
+  "$(code "$W")" 'VMSTATE=running   # proven by the banner'
+has "Q7b and the payload says GUEST, never `live` -- a field claiming a read nothing performed is the defect itself" \
+  "$(code "$W")" '[ "$HOST_ASKED" = 0 ] && HOST_READ=guest'
+has "Q8 the disk fact is cached, so a human-paced fact is not re-read 144 times a day" \
+  "$(code "$W")" 'DISK_CACHE'
+case "$(code "$W")" in
+  *'DISK_AT="$NOW"'*) ok "Q9 ...and only a SUCCESSFUL read restamps it" ;;
+  *) bad "Q9 only a successful read restamps the cache" "a failed read that restamps makes a stale fact look fresh" ;;
+esac
 
 section "R. alerts are fire-and-forget, not a question (2026-09-09: 113 asks, 0 answers)"
 case "$(code "$W")" in
