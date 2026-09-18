@@ -352,14 +352,28 @@ has "P5 zaxon reports the relay's OWN refusal reason, not 'no relay answered'" "
 
 section "Q. an unread probe is not an outage (2026-09-06: OK -> DOWN, \"VM is poweroff\", on a distro up 5 days)"
 unk_ln="$(grep -n 'VMSTATE" = "unknown"' "$W" | head -1 | cut -d: -f1)"
-down_ln="$(grep -n 'VMSTATE" != "running"' "$W" | head -1 | cut -d: -f1)"
+down_ln="$(grep -n 'VMSTATE_GRADED" != "running"' "$W" | head -1 | cut -d: -f1)"
 if [ -n "$unk_ln" ] && [ -n "$down_ln" ] && [ "$unk_ln" -lt "$down_ln" ]; then
   ok "Q1 an unreadable VM state with sshd answering is caught BEFORE the DOWN rung"
 else
   bad "Q1 unknown+answering is caught before DOWN" "a lost wsl.exe call pages Zach as poweroff again"
 fi
-has "Q2 ...and it does not claim OK either -- the watcher lost a probe" \
-  "$(code "$W")" 'VERDICT="DEGRADED"; WHY="the host could not read the VM state'
+has "Q2 ...and the graded state, not the published one, is what the DOWN rung reads" \
+  "$(code "$W")" 'HOST_READ=blind; VMSTATE_GRADED=running'
+
+# #1226: the watcher spent 30 of 40 ticks calling monkey DEGRADED because its
+# OWN wsl.exe call lost interop, alerting Zach on each transition.
+has "Q3 a blind host read with the guest answering is OK, and the WHY says what went unread" \
+  "$(code "$W")" 'HOST_READ" = blind ];          then VERDICT="OK"'
+has "Q4 ...and the blindness is PUBLISHED, so the page can show what was not seen" \
+  "$(code "$W")" 'HOST_READ="$HOST_READ"'
+guest_ln="$(grep -n 'z "$GUEST_JSON" \];' "$W" | head -1 | cut -d: -f1)"
+blind_ln="$(grep -n 'HOST_READ" = blind \];' "$W" | head -1 | cut -d: -f1)"
+if [ -n "$guest_ln" ] && [ -n "$blind_ln" ] && [ "$guest_ln" -lt "$blind_ln" ]; then
+  ok "Q5 a guest that did not answer still outranks it -- blind never buys an OK on its own"
+else
+  bad "Q5 the guest rung outranks the blind rung" "a lost host call would mask a failed collection"
+fi
 
 section "R. alerts are fire-and-forget, not a question (2026-09-09: 113 asks, 0 answers)"
 case "$(code "$W")" in
