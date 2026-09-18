@@ -191,8 +191,8 @@ PROP_LEAK_BOUND=7
 # runs it from a live `git pull --ff-only` clone, not a pinned build.
 # Before cutting anything in this list, ask what invokes it FROM SOMEWHERE ELSE.
 PROP_LOCAL_SCRIPTS="
+arret.sh
 monkey-watch.sh
-monkey-watch-win.sh
 monkey-status-collect.py
 repose.sh
 landing-drift.sh
