@@ -16,6 +16,28 @@ row one edit away — an unwired hook, a matcher that does not deliver — close
 here, with a PR, and **run it again**: clearing one reveals the next, and a
 close ends when a pass finds nothing, not when you explain why not.
 
+**A repeat pass opens by auditing the LAST pass, not by hunting new ground.**
+Re-read what the previous pass asserted -- in issues, in PR bodies, in the
+close itself -- and re-run the command behind every number in it.
+
+A pass that retracts the pass before it is not "clearing one reveals the next";
+it is oscillation, and the loop does not converge. The cost is asymmetric, which
+is the argument: an unfound defect waits quietly, while **a wrong claim in an
+issue gets built on** -- by the next pass, or by whoever picks the issue up.
+Evidence for the rule belongs in the PR that adds it (hf7y/realisateur#1247),
+not here.
+
+Two habits produce most of it, and neither is answered by "be careful":
+
+- **Verify as the CONSUMER invokes, not as you invoke.** A check verified in
+  your own shell tested your shell. Its caller may be cron, a timer, or a
+  forced command, with no profile and none of your exports -- `env -i` asks the
+  question your invocation cannot (hf7y/crt#363, fixed in hf7y/crt#364).
+- **A convenient number is the likeliest lie.** A `0`, a round figure, a count
+  that agrees with the hypothesis -- each reads as confirmation, and each wants
+  the second command that separates a real answer from an artefact of how it was
+  asked.
+
 ## 1. Branch reconciliation
 
 **Prune first** -- a worktree whose directory is gone still pins its branch, and
