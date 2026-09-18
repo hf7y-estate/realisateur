@@ -10,12 +10,14 @@ CLI_USAGE='  push-verb-build.sh --cut     --host H [--apply]   cut a fresh build
   push-verb-build.sh --rollback ID --host H [--apply]
                                                      no transfer: H already holds ID -- swap to it directly
   push-verb-build.sh --list --build-root DIR        local builds available to push (no host needed)
+  push-verb-build.sh --cut     --here [--apply]     cut and adopt on THIS machine, no ssh
+  push-verb-build.sh --build ID --here [--apply]    adopt a local build by id
 
 --check (default) previews with no writes anywhere, local or remote.
 --build-root, --remote-root, --ssh, --rsync and --ssh-timeout are all
 overridable so bin/tests/push-verb-build.test.sh can run with no real ssh,
 no real host and no network -- same posture as install-verb-build.sh.'
-CLI_FLAGS='--cut --fetch --build --latest --rollback --list --host --build-root --remote-root --ssh --rsync --ssh-timeout --check --apply'
+CLI_FLAGS='--cut --fetch --build --latest --rollback --list --host --here --build-root --remote-root --ssh --rsync --ssh-timeout --check --apply'
 CLI_POSITIONAL=any
 CLI_EXITS='  0  pushed and the swap verified on re-read (or, under --check, could be)
   1  refused: an incomplete local build, a push/swap step failed, or the swap did not verify on re-read
@@ -36,6 +38,7 @@ MODE="--check"
 DO_CUT=0; DO_FETCH=0; DO_LIST=0
 BUILD_ID=""; WANT_LATEST=0; ROLLBACK_ID=""
 HOST=""
+ADOPT_HERE=0   # NOT `HERE`: $HERE above is this script's dir, which sibling() needs
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,6 +49,7 @@ while [ $# -gt 0 ]; do
     --rollback)     ROLLBACK_ID="${2:?--rollback needs an id}"; shift ;;
     --list)         DO_LIST=1 ;;
     --host)         HOST="${2:?--host needs a target}"; shift ;;
+    --here)         ADOPT_HERE=1 ;;
     --build-root)   BUILD_ROOT="${2:?--build-root needs a value}"; shift ;;
     --remote-root)  REMOTE_ROOT="${2:?--remote-root needs a value}"; shift ;;
     --ssh)          SSH_BIN="${2:?--ssh needs a binary}"; shift ;;
@@ -69,12 +73,18 @@ select_local_build() {
     for d in "$root"/*/; do
       d="${d%/}"; cand="$(basename "$d")"
       [ "$cand" = repo ] && continue
+      [ "$cand" = current ] && continue   # the adopted-build LINK, and it sorts above every dated id
+      [ -L "$d" ] && continue             # $root/*/ matches a symlink-to-dir
       [ -f "$d/manifest.tsv" ] || continue
       if [ -z "$id" ] || [[ "$cand" > "$id" ]]; then id="$cand"; dir="$d"; fi
     done
     [ -n "$id" ] || { say "select_local_build: no materialized build under $root (nothing there has a manifest.tsv)"; return 1; }
   else
     id="$want"; dir="$root/$id"
+    if [ "$id" = current ] || [ -L "$dir" ]; then
+      say "select_local_build: '$id' is the adopted-build link, not a build -- name the dated id it points at ($(readlink "$dir" 2>/dev/null || echo unreadable))"
+      return 1
+    fi
     [ -f "$dir/manifest.tsv" ] || { say "select_local_build: no local build '$id' at $dir (manifest.tsv missing)"; return 1; }
   fi
   while IFS=$'\t' read -r project verb _ _; do
@@ -216,7 +226,15 @@ fi
 sel_n=$((DO_CUT + DO_FETCH + WANT_LATEST + (${#BUILD_ID} > 0 ? 1 : 0) + (${#ROLLBACK_ID} > 0 ? 1 : 0)))
 [ "$sel_n" -gt 0 ] || cli_die "name a build: --cut, --fetch, --build <id>, --latest, or --rollback <id>"
 [ "$sel_n" -eq 1 ] || cli_die "--cut, --fetch, --build, --latest and --rollback are mutually exclusive -- say which build to push"
-[ -n "$HOST" ] || cli_die "--host is required (the target this pushes to and swaps on)"
+if [ "$ADOPT_HERE" -eq 1 ]; then   # this machine: --host cannot name it (no self-ssh)
+  [ -z "$HOST" ] || cli_die "--here and --host are the same question answered twice -- --here IS this machine"
+else
+  [ -n "$HOST" ] || cli_die "--host is required (the target this pushes to and swaps on), or --here for this machine"
+fi
+
+if [ -n "$ROLLBACK_ID" ] && [ "$ADOPT_HERE" -eq 1 ]; then   # --rollback --here IS --build --here
+  BUILD_ID="$ROLLBACK_ID"; ROLLBACK_ID=""
+fi
 
 if [ -n "$ROLLBACK_ID" ]; then
   echo "== push-verb-build --rollback $ROLLBACK_ID -> $HOST ($MODE) =="
@@ -268,6 +286,28 @@ else
 fi
 BUILD_ID="${sel%%$'\t'*}"
 BUILD_DIR="${sel#*$'\t'}"
+
+if [ "$ADOPT_HERE" -eq 1 ]; then
+  echo "== push-verb-build $BUILD_ID -> this machine ($MODE) =="
+  echo "   from $BUILD_DIR"
+  echo "   no transfer: the build is already under $BUILD_ROOT"
+  was="$(readlink "$BUILD_ROOT/current" 2>/dev/null || true)"
+  echo "  ok      current is ${was:-<unset>}"
+  if [ "$MODE" = --check ]; then
+    echo "  would   swap current -> $BUILD_ID (ln -sfn + mv -Tf, atomic)"
+    echo "== nothing done (--check). Next: $0 --build $BUILD_ID --here --apply =="
+    exit 0
+  fi
+  atomic_swap_local "$BUILD_ROOT" "$BUILD_ID" || {
+    echo "  BAD     the swap refused -- current is UNCHANGED at ${was:-<unset>}"; exit 1; }
+  got="$(readlink "$BUILD_ROOT/current" 2>/dev/null || true)"
+  if [ "$got" = "$BUILD_ID" ]; then
+    echo "  OK      current -> $BUILD_ID (re-read off the link, not asserted)"
+    exit 0
+  fi
+  echo "  BAD     the swap ran but current reads back as ${got:-<unset>}, not $BUILD_ID"
+  exit 1
+fi
 
 echo "== push-verb-build $BUILD_ID -> $HOST ($MODE) =="
 echo "   from $BUILD_DIR"
