@@ -14,3 +14,9 @@
 # It arrived untracked-and-unignored on 2026-08-15, one `git add -A` away
 # from a committed secret, in a repo with an autocommit watcher.
 *.pat
+
+# Python bytecode. A .pyc for provision/dexter/vault/vault_server.py rode into
+# the #1254 branch (15868 bytes of build debris in a repo whose discipline is
+# "tree clean of build debris"). The image builds its own.
+__pycache__/
+*.pyc
