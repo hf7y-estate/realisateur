@@ -111,6 +111,21 @@ for d in "$SRV"/*/; do
   # booting it up would fight its own lifecycle (hf7y/groc-mangr#141).
   [ -e "$d/.no-autostart" ] && { log "skipping $name (.no-autostart)"; continue; }
   log "starting $name"
-  (cd "$d" && docker compose up -d) || { rc=1; log "FAILED: $name"; }
+  # --force-recreate: A START IS NOT A PUBLISH. docker may already have tried
+  # these containers and failed to bind, seconds before this unit ran; `up -d`
+  # on an existing container starts it WITHOUT re-attempting the publish, so it
+  # comes up healthy with no bindings at all. Recreating is what re-binds.
+  (cd "$d" && docker compose up -d --force-recreate) || { rc=1; log "FAILED: $name"; }
 done
+
+# GRADE THE BINDINGS, NOT THE START. A running container whose declared ports
+# are unpublished is unreachable while every operator surface -- `docker ps`,
+# an in-container healthcheck, this unit's own exit code -- reads healthy. That
+# is the state this unit exists to make visible, so it is a failure here.
+while read -r c; do
+  [ -n "$c" ] || continue
+  [ "$(docker inspect "$c" --format '{{len .HostConfig.PortBindings}}' 2>/dev/null || echo 0)" -gt 0 ] || continue
+  [ -n "$(docker port "$c" 2>/dev/null)" ] || { rc=1; log "FAILED: $c is running with none of its declared ports published"; }
+done < <(docker ps --format '{{.Names}}' 2>/dev/null)
+
 exit "$rc"
