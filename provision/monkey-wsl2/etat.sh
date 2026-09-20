@@ -32,7 +32,7 @@ else
   elif [ "${a:-0}" -gt 0 ]; then
     step PENDING "2  delivery" "force_cut is in realisateur but NOT deployed to hf7y/verbs -- the deploy is by hand (#650)"
   else
-    step PENDING "2  delivery" "force_cut absent; host tools cannot reach a host before the next 30-day cut"
+    step PENDING "2  delivery" "force_cut absent from both copies -- it gates the FLEET cut only. A single host is delivered with bin/push-verb-build.sh --cut --host H, which skips the release channel"
   fi
 fi
 
