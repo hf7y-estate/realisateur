@@ -175,13 +175,12 @@ clone_or_update() {
 }
 
 # #1138 made this conditional and #350 ruled "no clones on the dispatch path".
-# MEASURED ON MONKEY 2026-09-20, THAT MIGRATION HAS NOT HAPPENED: realisateur
-# and bibliothecaire both hold a scheduler clone and their crontabs dispatch
-# out of it (`/home/<a>/Documents/Projects/scheduler/bin/usage-paced-runner.sh`),
-# and those clones carry 46 confs against the served build's 41. So the
-# served-build fallback below is reached only by an account with NO clone --
-# i.e. a brand-new one, the single case whose conf the served build cannot
-# have. Do not read this comment as state; read the crontabs.
+# THAT MIGRATION IS UNFINISHED, and neither issue describes the machine: an
+# account that dispatches does it out of its own scheduler clone, and that
+# clone -- not the served build -- is where its schedule/<p>.conf comes from.
+# THE INVARIANT: the fallback below is reached only by an account with no
+# clone, which is a new one, which is the case whose conf a served build
+# cannot yet hold. The fallback serves every case but the one it exists for.
 #
 # REALISATEUR IS NOT CLONED HERE (#134, stated in bin/lib/propagation-set.sh):
 # `main` is not a deploy ref. What this script needs it takes from $LIBEXEC
