@@ -27,5 +27,5 @@
 
 /usr/local/bin/gh	that is the gh-sign shim -- edit bin/gh-sign.sh on main in hf7y/realisateur instead
 /usr/local/bin/*	that is an installed copy from a verb build -- edit the source on main and let the nightly cut carry it
-*/verb-builds/current/*	that is an installed copy from a verb build -- edit the source on main and let the nightly cut carry it
+*/verb-builds/current/*	that is an installed copy from a verb build -- edit the source on main. The BUILD runs nightly; the CUT that reaches a host is monthly, so this copy is replaced on that cadence and an edit here is discarded by the next adoption. A single host is delivered off-cadence with bin/push-verb-build.sh --cut --host H (it skips the release channel); a schedule/*.conf that needs a host sooner is hf7y/realisateur#1080, not a forced fleet cut
 */schedule/ROSTER	that file is the DECLARATION (project | account@host | rate) and no longer carries state at all; arming and parking are `dose <project> --arm` and `dose <project> --park`, which a self-dev uid is refused outright. To change what a project IS rather than whether it dispatches, propose it by PR
