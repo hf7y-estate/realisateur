@@ -174,11 +174,14 @@ clone_or_update() {
   fi
 }
 
-# #1138: no longer cloned unconditionally. #350's "no clones on the dispatch
-# path" ruling means every account but scheduler's own reads schedule/<p>.conf
-# from the served build (SCHEDULER_BUILD_ROOT above), never touching a
-# checkout the dispatch path itself does not use. scheduler's own account
-# still clones -- it is the one developing scheduler.
+# #1138 made this conditional and #350 ruled "no clones on the dispatch path".
+# MEASURED ON MONKEY 2026-09-20, THAT MIGRATION HAS NOT HAPPENED: realisateur
+# and bibliothecaire both hold a scheduler clone and their crontabs dispatch
+# out of it (`/home/<a>/Documents/Projects/scheduler/bin/usage-paced-runner.sh`),
+# and those clones carry 46 confs against the served build's 41. So the
+# served-build fallback below is reached only by an account with NO clone --
+# i.e. a brand-new one, the single case whose conf the served build cannot
+# have. Do not read this comment as state; read the crontabs.
 #
 # REALISATEUR IS NOT CLONED HERE (#134, stated in bin/lib/propagation-set.sh):
 # `main` is not a deploy ref. What this script needs it takes from $LIBEXEC
