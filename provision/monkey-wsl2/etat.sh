@@ -25,10 +25,6 @@ else
   if [ "$s" = MERGED ]; then step DONE "1  seam" "PR #745 merged: vmhost.sh carries the wsl backend"
   else                       step PENDING "1  seam" "PR #745 is ${s:-unreadable}, not MERGED"; fi
 
-  # DELIVERY IS THE SINGLE-HOST ROUTE, not a lever on the fleet cut. #793's
-  # force_cut was retired: its only capability was cutting a release
-  # off-cadence, which #602 and #956 rule against, and it was read as the
-  # supported way to reach a host. What delivers a host is push-verb-build.sh.
   d="$(gh api "repos/$R/contents/bin/push-verb-build.sh" --jq .content 2>/dev/null | base64 -d | grep -cE '^[[:space:]]*--(host|here)\)')"
   if [ "${d:-0}" -ge 2 ]; then
     step DONE "2  delivery" "push-verb-build.sh carries --host and --here: a host is delivered without touching the release channel"
