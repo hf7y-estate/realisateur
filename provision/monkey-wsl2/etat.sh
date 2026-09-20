@@ -25,14 +25,15 @@ else
   if [ "$s" = MERGED ]; then step DONE "1  seam" "PR #745 merged: vmhost.sh carries the wsl backend"
   else                       step PENDING "1  seam" "PR #745 is ${s:-unreadable}, not MERGED"; fi
 
-  a="$(gh api "repos/$R/contents/provision/verbs-meta/build-verbs.yml" --jq .content 2>/dev/null | base64 -d | grep -c 'force_cut:')"
-  b="$(gh api repos/hf7y/verbs/contents/.github/workflows/build-verbs.yml --jq .content 2>/dev/null | base64 -d | grep -c 'force_cut:')"
-  if [ "${a:-0}" -gt 0 ] && [ "${b:-0}" -gt 0 ]; then
-    step DONE "2  delivery" "force_cut present in BOTH the realisateur source and the deployed hf7y/verbs copy"
-  elif [ "${a:-0}" -gt 0 ]; then
-    step PENDING "2  delivery" "force_cut is in realisateur but NOT deployed to hf7y/verbs -- the deploy is by hand (#650)"
+  # DELIVERY IS THE SINGLE-HOST ROUTE, not a lever on the fleet cut. #793's
+  # force_cut was retired: its only capability was cutting a release
+  # off-cadence, which #602 and #956 rule against, and it was read as the
+  # supported way to reach a host. What delivers a host is push-verb-build.sh.
+  d="$(gh api "repos/$R/contents/bin/push-verb-build.sh" --jq .content 2>/dev/null | base64 -d | grep -cE '^[[:space:]]*--(host|here)\)')"
+  if [ "${d:-0}" -ge 2 ]; then
+    step DONE "2  delivery" "push-verb-build.sh carries --host and --here: a host is delivered without touching the release channel"
   else
-    step PENDING "2  delivery" "force_cut absent from both copies -- it gates the FLEET cut only. A single host is delivered with bin/push-verb-build.sh --cut --host H, which skips the release channel"
+    step PENDING "2  delivery" "push-verb-build.sh is missing --host or --here -- no route reaches a host off the release channel, whose cut is monthly"
   fi
 fi
 

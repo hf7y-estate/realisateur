@@ -124,10 +124,16 @@ has "...and it says why, distinctly from nothing having moved" \
     "$WFSRC" "waiting on the cut interval"
 has "a first-ever build (no prior tag) is never blocked on an interval that has nothing to measure from" \
     "$WFSRC" "no previous build tag"
-has "a human can force one cut without editing this file or the interval (#793)" \
-    "$WFSRC" "force_cut:"
-has "...and ONLY a dispatch can: the scheduled path cannot reach that expression, so the 30-day cadence stands (#793)" \
-    "$WFSRC" "CUT_INTERVAL_DAYS: \${{ github.event_name == 'workflow_dispatch' && inputs.force_cut"
+# #793 ADDED force_cut; this RETIRES it. A lever whose only capability is
+# cutting a release off-cadence is a lever for doing the one thing #602 and
+# #956 ruled against, and it was read as the supported way to reach a host
+# four separate times. Every host has a route that does not touch the release
+# channel: `push-verb-build.sh --cut --host H`, or `--cut --here`. Asserted as
+# an ABSENCE so it cannot return quietly.
+hasnt "no lever bypasses the cut interval: the cadence is the mechanism (#793 retired)" \
+    "$WFSRC" "force_cut"
+hasnt "...and nothing else overrides the interval from a dispatch either" \
+    "$WFSRC" "CUT_INTERVAL_DAYS: \${{"
 
 # ===========================================================================
 echo
