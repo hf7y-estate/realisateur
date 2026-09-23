@@ -88,6 +88,8 @@ Only this session's own. An open issue whose body opens `DECISION:` is waiting o
 
 The test is structural: **a paragraph about a defect ending in a question mark did not file it.** Ask of the close you are about to write: **does any sentence propose work rather than link it?** If blocked, it is a `DECISION:` issue with a URL. If not blocked, it is not an offer -- do it, and link that.
 
+**No future-tense verb about your own work.** Not "filing that now", "will file", "next I'll land". The question-mark test misses the declarative future, which reads as compliance and lands nothing -- a well-formed sentence discharges the obligation, and "filing now" is indistinguishable from having filed at the moment you write it. If it is not done it gets a URL or it gets named as blocked, never a sentence. Measured 2026-09-23: one session hit this three times in a row, the third time while explaining the first two (#1280).
+
 ## 5. Close
 
 **Answer two questions in plain words before any link:** what needs Zach (usually nothing), and whether this session's own goal landed. A close that has to be decoded has closed nothing -- Zach, 2026-09-23, on one that opened with three issue references: *"what is this... how you landed it was worse than useless"*.
