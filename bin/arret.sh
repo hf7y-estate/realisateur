@@ -27,10 +27,13 @@ CLI_USAGE='  arret                  survey only: what is dispatching, on every h
                          ...and make its disk sparse while it is down, so space
                          freed inside it returns to the Windows volume.
   arret --up   --host H  boot the distro, wait for sshd, start the clocks again
+  arret --up   --host H --clocks-off
+                         ...but leave dispatch off: the host and its CI runners
+                         come back, nothing is dispatched until --start
 
   --host <h>   just one of: monkey vaporwave
   --yes        skip the confirmation prompt'
-CLI_FLAGS='--stop --start --now --down --up --compact --host --yes'
+CLI_FLAGS='--stop --start --now --down --up --compact --clocks-off --host --yes'
 CLI_POSITIONAL=none
 CLI_EXITS='  0  surveyed, or the action was applied and re-read
   1  a host could not be reached, or a stop did not verify on re-read
@@ -50,7 +53,7 @@ SSH_OPTS="${ARRET_SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=10}"
 # one. Listed, marked, and left alone -- `docker stop` them by hand if you mean it.
 PROTECTED='zaxon-relay zaxon-gateway zaxon-watcher roster'
 
-MODE=survey; NOW=0; ONE=''; YES=0; COMPACT=0
+MODE=survey; NOW=0; ONE=''; YES=0; COMPACT=0; CLOCKS_OFF=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --stop)  MODE=stop ;;
@@ -58,6 +61,7 @@ while [ $# -gt 0 ]; do
     --down)  MODE=down ;;
     --up)    MODE=up ;;
     --compact) COMPACT=1 ;;
+    --clocks-off) CLOCKS_OFF=1 ;;
     --now)   NOW=1 ;;
     --host)  ONE="${2:?--host needs a name}"; shift ;;
     --yes)   YES=1 ;;
@@ -83,6 +87,7 @@ case "$MODE" in
     ;;
 esac
 [ "$COMPACT" = 1 ] && [ "$MODE" != down ] && { printf '%s: --compact only means something with --down: the disk cannot be made sparse while the distro is using it.\n' "$CLI_NAME" >&2; exit 2; }
+[ "$CLOCKS_OFF" = 1 ] && [ "$MODE" != up ] && { printf '%s: --clocks-off only means something with --up. To stop clocks that are running, that is --stop.\n' "$CLI_NAME" >&2; exit 2; }
 
 # shellcheck disable=SC2086  # SSH_OPTS is a flag STRING and must word-split
 sshx() { local h="$1"; shift; timeout 45 $SSH $SSH_OPTS "$h" "$@" 2>/dev/null; }
@@ -207,6 +212,16 @@ if [ "$MODE" = up ]; then
     sleep 5
   done
   printf '  ok      %-11s up, sshd answering\n' "$ONE"
+  if [ "$CLOCKS_OFF" = 1 ]; then
+    # DELIBERATELY STILL DOWN. The CI runners came back with the distro; only
+    # dispatch is withheld. Said out loud because a host that is up and not
+    # working looks exactly like a host with nothing to do.
+    state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null || echo unknown')"
+    printf '  ok      %-11s cron left %s, as asked\n' "$ONE" "$state"
+    echo
+    echo "$ONE is up and NOT dispatching. Start it with: $CLI_NAME --start --host $ONE"
+    exit 0
+  fi
   sshx "$ONE" 'sudo -n systemctl start cron' >/dev/null
   state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null || echo unknown')"
   [ "$state" = active ] || { printf '  BAD     %-11s cron reads %s, wanted active\n' "$ONE" "$state" >&2; exit 1; }

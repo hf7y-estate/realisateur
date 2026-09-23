@@ -176,4 +176,14 @@ has "N2 the distro was started"           "$(cat "$LOG")" "-d monkey"
 has "N3 cron was started"                 "$(cat "$LOG")" "systemctl start cron"
 has "N4 and read back"                    "$out" "cron is now active"
 
+section "O. --up --clocks-off brings the host back without dispatch"
+mkvm ""
+out="$(run --up --host monkey --clocks-off --yes)"; got=$?
+rc    "O1 exits 0"                        0 "$got"
+has   "O2 the distro was still started"   "$(cat "$LOG")" "-d monkey"
+hasnt "O3 but cron was NOT started"       "$(cat "$LOG")" "systemctl start cron"
+has   "O4 and it says so out loud"        "$out" "NOT dispatching"
+out="$(run --stop --host monkey --clocks-off --yes)"; got=$?
+rc    "O5 --clocks-off without --up exits 2" 2 "$got"
+
 summary
