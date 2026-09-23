@@ -153,5 +153,37 @@ has "H: delegate was called with --latest --apply" "$(cat "$STUB_LOG")" "--lates
 hasnt "H: verbs-refresh.sh contains no atomic switch of its own" \
       "$(grep -v '^#' "$SCRIPT" | grep -E 'mv -Tf|ln -sfn' || true)" "current"
 
+# --- K: the DELEGATE will not switch a host BACKWARD (#1278 ss1) ------------
+# The real install-verb-build.sh, not the stub: what is under test here is
+# the comparison the stub replaces. It read installed-vs-newest-approved for
+# INEQUALITY, so a host on a build the channel never approved -- what
+# push-verb-build.sh --cut --host leaves on a proving ground -- looked stale,
+# and --apply adopted an id eleven days OLDER. Offline: --remote is local.
+IVB="$REPO_BIN/install-verb-build.sh"
+OLD_ID=2026-09-07T031807Z; NEW_ID=2026-09-18T194557Z
+META="$T/meta"; git init -q "$META"
+git -C "$META" config user.email t@example.com; git -C "$META" config user.name t
+printf 'verb\tpath\nfoo\trealisateur/bin/foo\n' > "$META/manifest.tsv"
+git -C "$META" add -A; git -C "$META" commit -qm build
+git -C "$META" tag "build/$OLD_ID"; git -C "$META" tag "approved/$OLD_ID"
+iroot() { rm -rf "$T/i"; mkdir -p "$T/i/$1"; ln -s "$1" "$T/i/current"; }
+ivb() { "$IVB" --build-root "$T/i" --remote "$META" "$@" 2>&1; }
+
+iroot "$NEW_ID"
+out="$(ivb --check)"; got=$?
+rc    "K: --check on an AHEAD host exits 0"        0 "$got"
+has   "K: it says AHEAD"                           "$out" "AHEAD of the channel"
+hasnt "K: and does not call the older build newer" "$out" "a newer build is available"
+out="$(ivb --latest --apply)"; got=$?
+rc    "K: --latest --apply refuses"                1 "$got"
+has   "K: it says BACKWARD"                        "$out" "BACKWARD"
+eq    "K: current did not move"                    "$(readlink "$T/i/current")" "$NEW_ID"
+
+# and the channel then approves the newer id: BEHIND must still adopt.
+git -C "$META" tag "build/$NEW_ID"; git -C "$META" tag "approved/$NEW_ID"
+iroot "$OLD_ID"
+ivb --check >/dev/null 2>&1
+rc    "K: a BEHIND host still exits 1"             1 "$?"
+
 echo
 summary
