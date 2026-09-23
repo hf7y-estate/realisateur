@@ -37,17 +37,38 @@ _verb_set_repos() {  # every repo to consider; VERB_SET_LOCAL_ROOT (tests only) 
     --json name -q '.[].name'
 }
 
-_verb_set_remote_url() {  # a github.com clone URL, or a VERB_SET_LOCAL_ROOT path for tests
-  if [ -n "${VERB_SET_LOCAL_ROOT:-}" ]; then
-    printf '%s/%s' "$VERB_SET_LOCAL_ROOT" "$1"
-  else
-    printf 'https://github.com/%s/%s.git' "$(_verb_set_owner)" "$1"
-  fi
+_verb_set_remote_url() {  # TESTS ONLY -- the local git dir VERB_SET_LOCAL_ROOT points at.
+                          # The https form this used to return is gone with its only
+                          # caller; see _verb_set_remote_sha below.
+  printf '%s/%s' "$VERB_SET_LOCAL_ROOT" "$1"
 }
 
-_verb_set_remote_sha() {  # the sha `bashified` points to, empty if no such branch; `git ls-remote` needs no clone
-  git ls-remote "$(_verb_set_remote_url "$1")" refs/heads/bashified 2>/dev/null \
-    | awk 'NR==1{print $1}'
+_verb_set_remote_sha() {  # the sha `bashified` points to, empty if no such branch
+  # ASK GITHUB THE WAY THE REST OF THIS FILE DOES (#1283). This was
+  # `git ls-remote https://github.com/<owner>/<repo>.git`, which carries no
+  # credential: a self-dev account resolves PUBLIC repos and gets "Repository
+  # not found" for every private one, so it discovers a partial verb set and
+  # install-verbs.sh stops on "no project declares a verb". Measured on abc@monkey
+  # minutes after provisioning -- `git config --get-all credential.helper` is empty
+  # there, and wire-selfdev-git.sh hands out per-repo SSH ALIASES
+  # (github-<repo>) that an https URL never reaches.
+  # `gh api` already authenticates for _verb_set_repos and _verb_set_tree in this
+  # same file, so this is the odd one out, not a new dependency.
+  if [ -n "${VERB_SET_LOCAL_ROOT:-}" ]; then
+    git ls-remote "$(_verb_set_remote_url "$1")" refs/heads/bashified 2>/dev/null \
+      | awk 'NR==1{print $1}'
+  else
+    # `gh api --jq` prints the 404 BODY to stdout when the ref is absent, where
+    # ls-remote printed nothing -- so an unbashified repo would hand its caller
+    # a JSON blob as a sha. Validate the shape instead of trusting the exit code.
+    local sha
+    sha="$("${VERB_SET_GH:-gh}" api "repos/$(_verb_set_owner)/$1/git/refs/heads/bashified" \
+             --jq '.object.sha' 2>/dev/null)" || return 0
+    case "$sha" in
+      ''|*[!0-9a-f]*) return 0 ;;
+    esac
+    printf '%s' "$sha"
+  fi
 }
 
 _verb_set_remote_tree() {  # "<mode> <path>" for the WHOLE tree at that sha -- empty means the read failed, not that bin/ is absent (#891's VERBLESS-IS-NOT-BLIND lesson)
