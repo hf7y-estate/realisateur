@@ -165,6 +165,23 @@ vmhost_save_cmd() {  # <vm> -- the exact command vmhost_save would run, so a dry
   esac
 }
 
+vmhost_start_cmd() {  # <vm> -- the mirror of vmhost_save_cmd, for a caller that must run the start on the VM HOST rather than here
+  local vm="$1"
+  case "$(vmhost_backend "$vm")" in
+    virtualbox) printf '%s startvm %s --type %s\n' "$VMHOST_VBOX" "$vm" "${VMHOST_START_TYPE:-headless}" ;;
+    wsl)        printf '%s -d %s --exec /bin/true\n' "$VMHOST_WSL" "$vm" ;;
+    *) printf 'vmhost: backend "%s" has no driver\n' "$(vmhost_backend)" >&2; return 2 ;;
+  esac
+}
+
+vmhost_sparse_cmd() {  # <vm> -- make the distro's disk sparse, so space freed INSIDE it returns to the host. wsl only: a VirtualBox VDI reclaims by compacting a medium, which is a different act with a different risk, and pretending one command covers both is how a driver difference becomes an outage
+  local vm="$1"
+  case "$(vmhost_backend "$vm")" in
+    wsl) printf '%s --manage %s --set-sparse true\n' "$VMHOST_WSL" "$vm" ;;
+    *) printf 'vmhost: --set-sparse is a wsl notion; backend "%s" has no equivalent here\n' "$(vmhost_backend)" >&2; return 2 ;;
+  esac
+}
+
 vmhost_running_vms_cmd() {  # -> the command that lists running VM names, one per line, on the VM HOST -- for a payload that runs THERE and so cannot source this file. Every driver present answers: detection picks one ACTUATOR, because savestate and --terminate are exclusive, and a read-only listing is not
   printf '%s\n' "{ [ -x \"$VMHOST_VBOX\" ] && \"$VMHOST_VBOX\" list runningvms | sed 's/\" .*//;s/\"//'; [ -x \"$VMHOST_WSL\" ] && \"$VMHOST_WSL\" -l -q --running; } 2>/dev/null | tr -d '\\0\\r'"
 }

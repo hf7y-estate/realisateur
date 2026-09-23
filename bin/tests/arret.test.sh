@@ -111,4 +111,69 @@ chmod +x "$T/ssh"; : > "$LOG"
 out="$(run)"; got=$?
 rc  "I1 exits 1 rather than reporting a healthy fleet" 1 "$got"
 
+section "J. --down and --up refuse what they cannot do safely"
+mkstub inactive
+out="$(run --down)"; got=$?
+rc  "J1 --down without --host exits 2"    2 "$got"
+has "J2 and says why"                     "$out" "needs --host"
+out="$(run --down --host dexter)"; got=$?
+rc  "J3 --down on the driving host exits 2" 2 "$got"
+has "J4 naming the route out"             "$out" "drives the distros"
+out="$(run --stop --compact --host monkey --yes)"; got=$?
+rc  "J5 --compact without --down exits 2" 2 "$got"
+
+# From here the stub must answer for TWO machines: monkey (its clocks) and
+# dexter (the switch). RUNNING lists what the driver still sees.
+RUNNING="$T/running"
+mkvm() { # $1 = what the VM host lists as running, after the terminate
+  printf '%s\n' "$1" > "$RUNNING"
+  cat > "$T/ssh" <<STUB
+#!/usr/bin/env bash
+host="\$1"; shift; cmd="\$*"
+printf '%s\t%s\n' "\$host" "\$cmd" >> "$LOG"
+case "\$cmd" in
+  *"--running"*)   cat "$RUNNING" ;;
+  *is-active*)     printf 'active\n' ;;
+  *"printf 'cron"*) printf 'cron\tactive\n'; printf 'armed\t7\n' ;;
+esac
+exit 0
+STUB
+  chmod +x "$T/ssh"; : > "$LOG"
+}
+
+section "K. --down stops the clocks, then terminates, then CHECKS"
+mkvm ""                                   # nothing running after the terminate
+out="$(run --down --host monkey --yes)"; got=$?
+rc  "K1 exits 0"                          0 "$got"
+has "K2 the clocks stopped first"         "$(cat "$LOG")" "systemctl stop cron"
+has "K3 the terminate went to the DRIVER" "$(cat "$LOG")" "dexter"
+has "K4 and it was --terminate"           "$(cat "$LOG")" "--terminate monkey"
+hasnt "K5 never --shutdown, which takes every distro" "$(cat "$LOG")" "--shutdown"
+has "K6 it reports terminated"            "$out" "terminated"
+has "K7 and says how to undo it"          "$out" "--up --host monkey"
+
+section "L. a terminate that did not take is a FAILURE"
+mkvm "monkey"                             # still listed as running
+out="$(run --down --host monkey --yes)"; got=$?
+rc  "L1 exits 1"                          1 "$got"
+has "L2 says BAD"                         "$out" "BAD"
+has "L3 and did nothing further"          "$out" "NOTHING further"
+
+section "M. --compact only runs while the distro is down"
+mkvm ""
+out="$(run --down --host monkey --compact --yes)"; got=$?
+rc  "M1 exits 0"                          0 "$got"
+has "M2 the sparse call was sent"         "$(cat "$LOG")" "--set-sparse true"
+mkvm "monkey"
+run --down --host monkey --compact --yes >/dev/null 2>&1
+hasnt "M3 and is never sent when the terminate failed" "$(cat "$LOG")" "--set-sparse"
+
+section "N. --up boots, waits for SSHD, and starts the clocks"
+mkvm ""
+out="$(run --up --host monkey --yes)"; got=$?
+rc  "N1 exits 0"                          0 "$got"
+has "N2 the distro was started"           "$(cat "$LOG")" "-d monkey"
+has "N3 cron was started"                 "$(cat "$LOG")" "systemctl start cron"
+has "N4 and read back"                    "$out" "cron is now active"
+
 summary
