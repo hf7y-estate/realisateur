@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 set -uo pipefail
+#
+# arret.sh -- the stop switch, and the thing to reach for before any window
+# that takes a host down (a VHDX compact, a reboot, a distro migration).
+#
+# KIND: verb -- Zach types it, and so does an agent that needs the fleet still
+# RUNNER: no -- it is a front door, never on a clock. Nothing schedules a stop.
+# GUARD-TEST: bin/tests/arret.test.sh, offline behind a stubbed ssh
+# GATE: none. The survey is read-only; --stop and --start need passwordless
+#   sudo on each host and verify by RE-READING, never by the exit code of the
+#   command they just sent.
+# TRAP: a stop leaves no deadline behind it. Nothing restarts these clocks but
+#   `arret --start`, and a fleet with cron down looks exactly like a fleet with
+#   nothing to do -- see the survey's `armed BLIND` row for the same shape one
+#   level down.
 
 CLI_NAME='arret'
 CLI_SUMMARY="Zach's stop switch for self-dev: what is running, and stop it"
@@ -41,6 +55,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$ONE" ] && HOSTS="$ONE"
 
+# shellcheck disable=SC2086  # SSH_OPTS is a flag STRING and must word-split
 sshx() { local h="$1"; shift; timeout 45 $SSH $SSH_OPTS "$h" "$@" 2>/dev/null; }
 
 # The runner a dispatch tick actually execs. Matched by its cron TAG, not by the
