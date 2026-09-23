@@ -172,10 +172,8 @@ mkvm ""
 out="$(run --down --host monkey --compact --yes)"; got=$?
 rc  "M1 exits 0"                          0 "$got"
 has "M2 the sparse call was sent"         "$(cat "$LOG")" "--set-sparse true"
-# A REFUSAL IS NOT A SUCCESS. WSL answers a disabled sparse conversion in text
-# and the interop layer returns no useful status, so the words are the verdict.
-# Measured 2026-09-23: this reported "sparse requested while down" over
-# "Sparse VHD support is currently disabled ... Error code: Wsl/Service/E_INVALIDARG".
+# A REFUSAL IS NOT A SUCCESS. wsl.exe answers a disabled sparse conversion in
+# text and interop returns no useful status, so the words are the verdict.
 mkvm "" active "Sparse VHD support is currently disabled due to potential data corruption.
 Error code: Wsl/Service/E_INVALIDARG"
 out="$(run --down --host monkey --compact --yes)"; got=$?
@@ -196,9 +194,8 @@ has "N3 cron was started"                 "$(cat "$LOG")" "systemctl start cron"
 has "N4 and read back"                    "$out" "cron is now active"
 
 section "O. --up --clocks-off brings the host back without dispatch"
-# A booted distro starts its own enabled units, so the flag has to STOP cron,
-# not merely decline to start it. Measured 2026-09-23: it reported "cron left
-# active, as asked" and dispatch was running.
+# A booted distro starts its own enabled units, so the flag has to STOP cron
+# rather than decline to start it.
 mkvm "" inactive
 out="$(run --up --host monkey --clocks-off --yes)"; got=$?
 rc    "O1 exits 0"                        0 "$got"

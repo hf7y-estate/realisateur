@@ -191,14 +191,10 @@ if [ "$MODE" = down ]; then
     if distro_running "$ONE"; then
       printf '  BAD     %-11s came back up during the compact; treat the disk as unconverted\n' "$ONE" >&2; exit 1
     fi
-    # READ THE ANSWER, DO NOT ANNOUNCE THE REQUEST. This printed "sparse
-    # requested while down" over a refusal on 2026-09-23 and the caller spent
-    # a trim and a measurement finding out: WSL answers
-    #   "Sparse VHD support is currently disabled due to potential data
-    #    corruption ... Error code: Wsl/Service/E_INVALIDARG"
-    # and exits 0-ish through the interop layer, so only the TEXT says no.
-    # --allow-unsafe is the documented override and is ruled OUT: it is the
-    # fleet's disk.
+    # READ THE ANSWER, DO NOT ANNOUNCE THE REQUEST. wsl.exe refuses a sparse
+    # conversion in TEXT and still exits 0 through interop, so the words are
+    # the only verdict there is. --allow-unsafe is the documented override and
+    # is ruled out: it is the fleet's disk.
     case "$out" in
       *"Error code:"*|*"E_INVALIDARG"*|*"disabled"*)
         printf '  BAD     %-11s the driver REFUSED the sparse conversion, disk unchanged:\n' "$ONE" >&2
@@ -225,11 +221,10 @@ if [ "$MODE" = up ]; then
   done
   printf '  ok      %-11s up, sshd answering\n' "$ONE"
   if [ "$CLOCKS_OFF" = 1 ]; then
-    # STOPS cron, it does not merely decline to start it. A distro that boots
-    # brings its own enabled units up with it, so "leave the clocks alone"
-    # means dispatch resumes the moment the host does -- measured 2026-09-23,
-    # when this printed "cron left active, as asked" and meant the opposite.
-    # The CI runners still come back with the distro; only dispatch is withheld.
+    # STOPS cron, it does not merely decline to start it: a distro that boots
+    # brings its own enabled units up with it, so leaving the clocks alone
+    # means dispatch resumes the moment the host does. The CI runners still
+    # come back with the distro; only dispatch is withheld.
     sshx "$ONE" 'sudo -n systemctl stop cron' >/dev/null
     state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null')"; [ -n "$state" ] || state=unknown
     if [ "$state" != inactive ]; then
