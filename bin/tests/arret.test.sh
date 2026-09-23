@@ -25,15 +25,17 @@ mkstub() { # $1 = what `systemctl is-active cron` reports AFTER an action
 #!/usr/bin/env bash
 host="\$1"; shift; cmd="\$*"
 printf '%s\t%s\n' "\$host" "\$cmd" >> "$LOG"
+# ORDER MATTERS: the survey payload QUOTES the words "is-active" inside
+# itself, so the survey has to be recognised before the bare query is.
 case "\$cmd" in
-  *"stop cron"*|*"start cron"*|*pkill*) exit 0 ;;
-  *is-active*) printf '$1\n' ;;
-esac
-case "\$cmd" in
-  *"printf 'cron"*)
-    printf 'cron\t$1\n'; printf 'armed\t7\n'; printf 'run\t4242 usage-paced-runner.sh\n' ;;
+  *_c=*|*"printf 'cron"*)
+    printf 'cron\t$1\n'; printf 'armed\t7\n'; printf 'run\t4242 usage-paced-runner.sh\n'; exit 0 ;;
   *"docker ps"*)
-    printf 'roster\tUp 3 days\n'; printf 'ci-sequestria\tUp 20 minutes\n' ;;
+    printf 'roster\tUp 3 days\n'; printf 'ci-sequestria\tUp 20 minutes\n'; exit 0 ;;
+  *"stop cron"*|*"start cron"*|*pkill*) exit 0 ;;
+  *is-active*)
+    # systemd EXITS 3 for an inactive unit and still prints the answer.
+    printf '$1\n'; [ '$1' = inactive ] && exit 3; exit 0 ;;
 esac
 exit 0
 STUB
@@ -125,16 +127,22 @@ rc  "J5 --compact without --down exits 2" 2 "$got"
 # From here the stub must answer for TWO machines: monkey (its clocks) and
 # dexter (the switch). RUNNING lists what the driver still sees.
 RUNNING="$T/running"
-mkvm() { # $1 = what the VM host lists as running, after the terminate
-  printf '%s\n' "$1" > "$RUNNING"
+mkvm() { # $1 = what the VM host lists as running after the terminate
+         # $2 = what `is-active cron` reports on the booted host (default active)
+         # $3 = what the sparse call prints back (default nothing, i.e. accepted)
+  printf '%s\n' "$1" > "$RUNNING"; printf '%s\n' "${2:-active}" > "$T/cronstate"
+  printf '%s' "${3:-}" > "$T/sparseout"
   cat > "$T/ssh" <<STUB
 #!/usr/bin/env bash
 host="\$1"; shift; cmd="\$*"
 printf '%s\t%s\n' "\$host" "\$cmd" >> "$LOG"
 case "\$cmd" in
+  *"--set-sparse"*) cat "$T/sparseout" ;;
   *"--running"*)   cat "$RUNNING" ;;
-  *is-active*)     printf 'active\n' ;;
-  *"printf 'cron"*) printf 'cron\tactive\n'; printf 'armed\t7\n' ;;
+  *_c=*|*"printf 'cron"*) printf 'cron\tactive\n'; printf 'armed\t7\n'; exit 0 ;;
+  *is-active*)
+    c="\$(cat "$T/cronstate")"; printf '%s\n' "\$c"
+    [ "\$c" = inactive ] && exit 3; exit 0 ;;
 esac
 exit 0
 STUB
@@ -164,6 +172,17 @@ mkvm ""
 out="$(run --down --host monkey --compact --yes)"; got=$?
 rc  "M1 exits 0"                          0 "$got"
 has "M2 the sparse call was sent"         "$(cat "$LOG")" "--set-sparse true"
+# A REFUSAL IS NOT A SUCCESS. WSL answers a disabled sparse conversion in text
+# and the interop layer returns no useful status, so the words are the verdict.
+# Measured 2026-09-23: this reported "sparse requested while down" over
+# "Sparse VHD support is currently disabled ... Error code: Wsl/Service/E_INVALIDARG".
+mkvm "" active "Sparse VHD support is currently disabled due to potential data corruption.
+Error code: Wsl/Service/E_INVALIDARG"
+out="$(run --down --host monkey --compact --yes)"; got=$?
+rc  "M1b a refused conversion exits 1"    1 "$got"
+has "M1c and says REFUSED"                "$out" "REFUSED"
+has "M1d quoting what the driver said"    "$out" "E_INVALIDARG"
+mkvm ""
 mkvm "monkey"
 run --down --host monkey --compact --yes >/dev/null 2>&1
 hasnt "M3 and is never sent when the terminate failed" "$(cat "$LOG")" "--set-sparse"
@@ -177,12 +196,20 @@ has "N3 cron was started"                 "$(cat "$LOG")" "systemctl start cron"
 has "N4 and read back"                    "$out" "cron is now active"
 
 section "O. --up --clocks-off brings the host back without dispatch"
-mkvm ""
+# A booted distro starts its own enabled units, so the flag has to STOP cron,
+# not merely decline to start it. Measured 2026-09-23: it reported "cron left
+# active, as asked" and dispatch was running.
+mkvm "" inactive
 out="$(run --up --host monkey --clocks-off --yes)"; got=$?
 rc    "O1 exits 0"                        0 "$got"
 has   "O2 the distro was still started"   "$(cat "$LOG")" "-d monkey"
-hasnt "O3 but cron was NOT started"       "$(cat "$LOG")" "systemctl start cron"
+hasnt "O3 cron was never STARTED"         "$(cat "$LOG")" "systemctl start cron"
+has   "O3b it was stopped instead"        "$(cat "$LOG")" "systemctl stop cron"
 has   "O4 and it says so out loud"        "$out" "NOT dispatching"
+mkvm "" active   # the stop did not take
+out="$(run --up --host monkey --clocks-off --yes)"; got=$?
+rc    "O4b a host that comes up dispatching is a FAILURE" 1 "$got"
+has   "O4c and says dispatch is RUNNING"  "$out" "dispatch is RUNNING"
 out="$(run --stop --host monkey --clocks-off --yes)"; got=$?
 rc    "O5 --clocks-off without --up exits 2" 2 "$got"
 

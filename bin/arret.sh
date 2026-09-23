@@ -100,7 +100,8 @@ RUNNER_PAT="${ARRET_RUNNER_PAT:-usage-paced-runner|scheduler-paced-runner}"
 survey_host() {  # <host> -> prints its block, returns 1 if unreachable
   local h="$1" out
   out="$(sshx "$h" "
-    printf 'cron\t%s\n' \"\$(systemctl is-active cron 2>/dev/null || echo unknown)\"
+    _c=\"\$(systemctl is-active cron 2>/dev/null)\"; [ -n \"\$_c\" ] || _c=unknown
+    printf 'cron\t%s\n' \"\$_c\"
     # CAN WE LOOK AT ALL? A crontab this account cannot read counts 0 RUNNER
     # lines and reports as unarmed -- the estate's signature defect, a blind
     # probe wearing a healthy number. Asked ONCE, and the whole count is BLIND
@@ -186,14 +187,25 @@ if [ "$MODE" = down ]; then
   fi
   printf '  ok      %-11s terminated\n' "$ONE"
   if [ "$COMPACT" = 1 ]; then
-    out="$(sshx "$VMHOST_SSH" "$(vmhost_sparse_cmd "$ONE")")"
-    # A sparse conversion that failed and one that succeeded both print
-    # little; the distro being STILL down is the only thing checked here,
-    # because a half-converted disk that got booted anyway is the bad end.
+    out="$(sshx "$VMHOST_SSH" "$(vmhost_sparse_cmd "$ONE")" 2>&1)"
     if distro_running "$ONE"; then
       printf '  BAD     %-11s came back up during the compact; treat the disk as unconverted\n' "$ONE" >&2; exit 1
     fi
-    printf '  ok      %-11s sparse requested while down %s\n' "$ONE" "${out:+-- $out}"
+    # READ THE ANSWER, DO NOT ANNOUNCE THE REQUEST. This printed "sparse
+    # requested while down" over a refusal on 2026-09-23 and the caller spent
+    # a trim and a measurement finding out: WSL answers
+    #   "Sparse VHD support is currently disabled due to potential data
+    #    corruption ... Error code: Wsl/Service/E_INVALIDARG"
+    # and exits 0-ish through the interop layer, so only the TEXT says no.
+    # --allow-unsafe is the documented override and is ruled OUT: it is the
+    # fleet's disk.
+    case "$out" in
+      *"Error code:"*|*"E_INVALIDARG"*|*"disabled"*)
+        printf '  BAD     %-11s the driver REFUSED the sparse conversion, disk unchanged:\n' "$ONE" >&2
+        printf '%s\n' "$out" | sed 's/^/          /' >&2
+        exit 1 ;;
+    esac
+    printf '  ok      %-11s sparse conversion accepted %s\n' "$ONE" "${out:+-- $out}"
   fi
   echo
   echo "$ONE is down. Bring it back with: $CLI_NAME --up --host $ONE"
@@ -213,17 +225,24 @@ if [ "$MODE" = up ]; then
   done
   printf '  ok      %-11s up, sshd answering\n' "$ONE"
   if [ "$CLOCKS_OFF" = 1 ]; then
-    # DELIBERATELY STILL DOWN. The CI runners came back with the distro; only
-    # dispatch is withheld. Said out loud because a host that is up and not
-    # working looks exactly like a host with nothing to do.
-    state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null || echo unknown')"
-    printf '  ok      %-11s cron left %s, as asked\n' "$ONE" "$state"
+    # STOPS cron, it does not merely decline to start it. A distro that boots
+    # brings its own enabled units up with it, so "leave the clocks alone"
+    # means dispatch resumes the moment the host does -- measured 2026-09-23,
+    # when this printed "cron left active, as asked" and meant the opposite.
+    # The CI runners still come back with the distro; only dispatch is withheld.
+    sshx "$ONE" 'sudo -n systemctl stop cron' >/dev/null
+    state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null')"; [ -n "$state" ] || state=unknown
+    if [ "$state" != inactive ]; then
+      printf '  BAD     %-11s cron reads %s after --clocks-off; dispatch is RUNNING\n' "$ONE" "$state" >&2
+      exit 1
+    fi
+    printf '  ok      %-11s cron is %s, as asked\n' "$ONE" "$state"
     echo
     echo "$ONE is up and NOT dispatching. Start it with: $CLI_NAME --start --host $ONE"
     exit 0
   fi
   sshx "$ONE" 'sudo -n systemctl start cron' >/dev/null
-  state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null || echo unknown')"
+  state="$(sshx "$ONE" 'systemctl is-active cron 2>/dev/null')"; [ -n "$state" ] || state=unknown
   [ "$state" = active ] || { printf '  BAD     %-11s cron reads %s, wanted active\n' "$ONE" "$state" >&2; exit 1; }
   printf '  ok      %-11s cron is now %s\n' "$ONE" "$state"
   echo
@@ -241,7 +260,11 @@ for h in $HOSTS; do
     start) sshx "$h" 'sudo -n systemctl start cron' >/dev/null ;;
   esac
   # RE-READ, never trust the exit code of the thing that was asked to change
-  state="$(sshx "$h" 'systemctl is-active cron 2>/dev/null || echo unknown')"
+  # `systemctl is-active` EXITS 3 when the unit is inactive -- the very answer
+  # a successful --stop is looking for. Appending `|| echo unknown` made every
+  # successful stop read "inactive\nunknown", fail the comparison, and report
+  # BAD with rc=1. The output is the answer; an EMPTY output is the failure.
+  state="$(sshx "$h" 'systemctl is-active cron 2>/dev/null')"; [ -n "$state" ] || state=unknown
   want=inactive; [ "$MODE" = start ] && want=active
   if [ "$state" = "$want" ]; then
     printf '  ok      %-11s cron is now %s\n' "$h" "$state"
