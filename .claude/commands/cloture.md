@@ -17,8 +17,8 @@ answer -- issues are searchable and do not make this repo grow.
 
 - **FIX the rows you can reach; file only what you cannot** (Zach, 2026-09-07). A row one edit away closes here, with a PR.
 - **Then run it again.** Clearing one reveals the next. A close ends when a pass finds nothing, not when you explain why not.
-- **A repeat pass audits the LAST pass before hunting new ground.** Re-read what it asserted and re-run the command behind every number.
-- **Retracting the pass before is oscillation, not progress** (#1247). Cost is asymmetric: an unfound defect waits quietly, a wrong claim in an issue gets built on.
+- **A repeat pass audits the LAST pass first, then hunts new ground** (Zach, 2026-09-23: *"I want both"*). Re-read what it asserted and re-run the command behind every number. The audit is a gate, not an alternative: a close that audits and stops has done half a pass.
+- **An audit failure outranks a new finding.** File the retraction before you report anything new. Cost is asymmetric: an unfound defect waits quietly, a wrong claim in an issue gets built on (#1247). New ground carries the same evidence bar -- the hazard is a convenient number, not new ground as such.
 - **Verify as the CONSUMER invokes.** Your shell has your exports; cron has none. `env -i` asks the real question (crt#363).
 - **A convenient number is the likeliest lie.** A `0`, a round figure, a count agreeing with the hypothesis: run the second command that separates the answer from how you asked.
 - **Evidence for a rule belongs in the PR that adds it, not in this file.**
