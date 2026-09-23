@@ -54,9 +54,13 @@ Did this session change what the ecosystem *believes* -- a rule in `PROSE-REAPIN
 ## 3. What leaves a session
 
 ### Raised but not filed
-Every FLAG, gap or defect named and not fixed needs an issue or PR URL. The rule is **structural, not lexical**: #165 named a real defect as *"Not something I fixed -- flagging it"*, which holds none of the words a sweep looks for.
+Every FLAG, gap or defect named and not fixed needs an issue or PR URL, **subject to the budget below**. The rule is **structural, not lexical**: #165 named a real defect as *"Not something I fixed -- flagging it"*, which holds none of the words a sweep looks for.
 
 **Filed is not dispatchable.** A project runs only while a milestone holds an open issue, so every issue filed OR TOUCHED gets one; if none fits, write that into the issue and give it the nearest anyway. `stop-residue-gate.sh` refuses the turn.
+
+**Not everything noticed is a finding.** File what BLOCKS the end state the session was asked for, or what a person would act on this month. A defect met in passing while debugging something else is noise in a tracker you do not own; note it in the close and let it be re-found by whoever it blocks. #1276, #1281 and #1286 were closed as noise minutes after filing.
+
+**Budget: at most TWO issues into a repo that is not the session's subject.** Past two, consolidate into one issue listing the rest. A session about a film score filed SEVEN into realisateur, each defensible alone, and the total was never looked at because nothing counted it. **The close states the count**, per repo, so the number is visible before it is paid.
 
 ### Layered not replaced
 Did this session add a surface while the one it duplicates stayed? Name what each new file replaces, or why the duplicate remains. A second implementation is the defect, not the coverage.
