@@ -133,6 +133,18 @@ if [ "$CHECK" -eq 1 ]; then
     printf 'verbs: up to date (build %s)\n' "$cur"
     exit 0
   fi
+  # AHEAD IS NOT BEHIND (#1278 ss1). This compared for INEQUALITY, so a host
+  # holding a build the channel has never approved -- which is what
+  # push-verb-build.sh --cut --host writes to a proving ground -- read as
+  # stale. `--apply` then adopted an id eleven days OLDER and bin/ went from
+  # 15 entries to 11, on an operation named refresh. Ids are timestamps and
+  # sort chronologically, so the comparison that answers the question is >.
+  if [ -n "$cur" ] && [ "$cur" \> "$latest_id" ]; then
+    printf 'verbs: AHEAD of the channel (nothing to adopt)\n  yours:           %s\n  newest approved: %s\n' \
+           "$cur" "$latest_id"
+    printf '  adopting that would move you BACKWARD. To do it anyway: --build %s\n' "$latest_id"
+    exit 0
+  fi
   n="$(git -C "$REPO" show "$latest_tag:manifest.tsv" 2>/dev/null | grep -cv '^#' || echo '?')"
   printf 'verbs: a newer build is available\n  yours:  %s\n  latest: %s (%s verbs)\n' \
          "${cur:-<none installed>}" "$latest_id" "$n"
@@ -141,6 +153,15 @@ if [ "$CHECK" -eq 1 ]; then
 fi
 
 [ "$LATEST" -eq 1 ] && BUILD_ID="$latest_id"
+# The same guard on the adoption path: --check is advisory, and a host is one
+# `--latest --apply` away from the backward switch with or without it.
+# `--build <id>` and `--rollback <id>` still go backward -- deliberately, by id.
+if [ "$LATEST" -eq 1 ]; then
+  _cur="$(current_id)"
+  if [ -n "$_cur" ] && [ "$_cur" \> "$BUILD_ID" ]; then
+    die "--latest would move you BACKWARD: you are on $_cur, newest approved is $BUILD_ID. Nothing switched. To do it on purpose: --build $BUILD_ID"
+  fi
+fi
 [ -n "$BUILD_ID" ] || { printf '%s: need --check, --latest, --build <id>, --list or --rollback <id>\n' "$CLI_NAME" >&2; exit 2; }
 
 tag="build/$BUILD_ID"
