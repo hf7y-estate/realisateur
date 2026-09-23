@@ -90,4 +90,8 @@ The test is structural: **a paragraph about a defect ending in a question mark d
 
 ## 5. Close
 
-**Every clause naming a problem is immediately followed by an issue or PR URL.** Links, not descriptions: which branch got which PR, which issues were filed, what was pushed where, what was reaped and its sha. Zach should never have to ask whether something landed.
+**Answer two questions in plain words before any link:** what needs Zach (usually nothing), and whether this session's own goal landed. A close that has to be decoded has closed nothing -- Zach, 2026-09-23, on one that opened with three issue references: *"what is this... how you landed it was worse than useless"*.
+
+Then the evidence: **every clause naming a problem is immediately followed by an issue or PR URL** -- which branch got which PR, which issues were filed, what was pushed where, what was reaped and its sha. Links are the proof, not the report. A URL standing where a sentence belongs fails exactly as a sentence standing where a URL belongs.
+
+Zach should never have to ask whether something landed, **or what you just said**.
