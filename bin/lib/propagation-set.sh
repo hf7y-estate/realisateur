@@ -2,9 +2,11 @@
 # propagation-set.sh -- THE DEV/PROD CONTRACT, in one place.
 # THE DECISION (#134, Zach-directed). Self-dev accounts do NOT pull fresh
 # clones of realisateur. `main` IS NOT A DEPLOY REF; everything they use
-# reaches them through the nightly verb build. The argument is what it buys the
-# DEV side: if live accounts pull `main` on a tick, every commit is a
-# deployment and `main` must turn conservative to protect them.
+# reaches them through the verb build -- which is BUILT nightly but CUT to a
+# host monthly, so this is a month of latency by design, not a night. The
+# argument is what it buys the DEV side: if live accounts pull `main` on a
+# tick, every commit is a deployment and `main` must turn conservative to
+# protect them.
 # PULL, NOT PUSH. The clock lives on the CONSUMER, in the account's own
 # crontab, running as the account. bin/tests/propagation.test.sh asserts this
 # mechanically -- the tick must contain no `sudo -u` and no `ssh` on its apply

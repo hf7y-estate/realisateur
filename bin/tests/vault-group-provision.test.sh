@@ -73,6 +73,29 @@ OUT="$(HOME_ROOT="$T/home2" SUDO='' PATH="$T/fakebin:$PATH" \
        "$SCRIPT" --check --dir "$T/vaultdir" 2>&1)"
 has "F8 2700 is NOT shut -- a preserved setgid bit must not read as the target" "$OUT" "read door is open"
 
+section "H. the objects inside, not just the door (#742, #1248)"
+chmod 0700 "$T/vaultdir"; chmod g-s "$T/vaultdir"
+BAND="VAULT_UID_LO=$(id -u) VAULT_UID_HI=$(( $(id -u) + 1 ))"   # this test's own files ARE the self-dev band
+hprobe() { env HOME_ROOT="$T/home2" SUDO='' PATH="$T/fakebin:$PATH" \
+  VAULT_UID_LO="$1" VAULT_UID_HI="$2" "$SCRIPT" --check --dir "$T/vaultdir" 2>&1; }
+
+OUT="$(hprobe 3000 3100)"
+has "H1 a tree with nothing in the band is reported clean, by measurement" "$OUT" "nothing inside"
+
+mkdir -p "$T/vaultdir/.git/objects/ad"
+: > "$T/vaultdir/.git/objects/ad/7c23a9"
+OUT="$(hprobe "$(id -u)" "$(( $(id -u) + 1 ))")"
+has "H2 an object owned by a band account is a finding -- shutting the door reowns nothing" \
+  "$OUT" "owned by a self-dev account"
+has "H3 and it is COUNTED, so a reader knows the size of what is left" "$OUT" "4 object(s)"
+hasnt "H4 --check reowned nothing" "$OUT" "reowned"
+
+OUT="$(hprobe 3000 3100)"
+has "H5 the same tree is clean again outside the band -- the band decides, not the path" "$OUT" "nothing inside"
+
+grep -q 'chown -h' "$SCRIPT" && ok "H6 the reown does not follow symlinks out of the vault" \
+                             || bad "H6 chown without -h would follow a symlink out of the tree"
+
 section "G. the drain row it writes cannot fail silently"
 # The guard-free row is the contract: the old `[ -x $DRAIN ] &&` form exited 0 in
 # silence with no drain installed, so it must read as a FINDING, not an ok row.

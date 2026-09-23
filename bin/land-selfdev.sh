@@ -174,17 +174,18 @@ clone_or_update() {
   fi
 }
 
-# #1138: no longer cloned unconditionally. #350's "no clones on the dispatch
-# path" ruling means every account but scheduler's own reads schedule/<p>.conf
-# from the served build (SCHEDULER_BUILD_ROOT above), never touching a
-# checkout the dispatch path itself does not use. scheduler's own account
-# still clones -- it is the one developing scheduler.
+# #1138 made this conditional and #350 ruled "no clones on the dispatch path".
+# THAT MIGRATION IS UNFINISHED, and neither issue describes the machine: an
+# account that dispatches does it out of its own scheduler clone, and that
+# clone -- not the served build -- is where its schedule/<p>.conf comes from.
+# THE INVARIANT: the fallback below is reached only by an account with no
+# clone, which is a new one, which is the case whose conf a served build
+# cannot yet hold. The fallback serves every case but the one it exists for.
 #
-# REALISATEUR IS NOT CLONED HERE (#134, quoted in bin/lib/propagation-set.sh):
-# "Self-dev accounts do NOT pull fresh clones of realisateur ... everything
-# they use reaches them through the nightly verb build." What this script needs
-# it takes from $LIBEXEC below; the account that OWNS realisateur gets its
-# checkout from the derived loop, out of schedule/realisateur.conf's REPO_URL.
+# REALISATEUR IS NOT CLONED HERE (#134, stated in bin/lib/propagation-set.sh):
+# `main` is not a deploy ref. What this script needs it takes from $LIBEXEC
+# below; the account that OWNS realisateur gets its checkout from the derived
+# loop, out of schedule/realisateur.conf's REPO_URL.
 if [ "$(id -un)" = scheduler ]; then
   clone_or_update scheduler "https://github.com/$GH_OWNER/scheduler.git"
 fi

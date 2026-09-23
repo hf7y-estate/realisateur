@@ -26,6 +26,7 @@ DIR_MODE_SHUT='0700'  # the target: no self-dev account reads the vault (#742)
 CRON_D="${VAULT_CRON_D:-/etc/cron.d/vault-spool-drain}"
 DRAIN="${VAULT_DRAIN_BIN:-/usr/local/libexec/selfdev/vault-spool-drain.sh}"
 HOME_ROOT="${HOME_ROOT:-/home}"
+UID_LO="${VAULT_UID_LO:-3000}"; UID_HI="${VAULT_UID_HI:-3100}"  # the self-dev band, same as bin/monkey-status-collect.py's containment(); the two names are fixture seams, unset in production
 SUDO="${SUDO-sudo}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -135,6 +136,32 @@ if [ -d "$DIR" ]; then
       && act "$DIR was '$m $g' -- set to $DIR_MODE_SHUT; the read door is now SHUT (#742)"
   else
     bad "$DIR is '$m $g', expected '$DIR_MODE_SHUT' -- the read door is open"
+  fi
+
+  # THE OBJECTS, NOT JUST THE DOOR (#742). A chmod stops NEW account-owned
+  # files and reowns nothing already inside, so every deposit made direct --
+  # before the spool, or during any window where the door stands open -- leaves
+  # an object monkey-status-collect.py's containment() will read, correctly, as
+  # "not contained" for as long as it sits there. A mode this script owns and
+  # an ownership nothing owns is how that finding comes back, which is why the
+  # reown belongs here and not in a one-off chown. Same uid band that probe
+  # uses. The drain writes as root from here, so the target is whoever owns
+  # $DIR.
+  own="$(stat -c '%u:%g' "$DIR" 2>/dev/null)"
+  stray="$(find "$DIR" -mindepth 1 -uid "+$((UID_LO - 1))" -uid "-$UID_HI" -print 2>/dev/null)"
+  if [ -z "$own" ]; then
+    bad "cannot read $DIR's own ownership -- not reowning anything on a guess"
+  elif [ -z "$stray" ]; then
+    ok "nothing inside $DIR is owned by a self-dev account"
+  elif [ "$MODE" = --apply ]; then
+    n="$(printf '%s\n' "$stray" | grep -c .)"
+    if printf '%s\n' "$stray" | xargs -r -d '\n' chown -h "$own"; then
+      act "$n object(s) in $DIR reowned to $own -- containment() has nothing left to report here"
+    else
+      bad "could not reown $n object(s) in $DIR"
+    fi
+  else
+    gap "$(printf '%s\n' "$stray" | grep -c .) object(s) in $DIR are owned by a self-dev account, not $own"
   fi
 fi
 

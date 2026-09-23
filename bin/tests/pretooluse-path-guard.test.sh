@@ -134,6 +134,9 @@ rc "F6 and passes even when it names the vault explicitly (#762's open question)
 RC="$(bashrc "sudo vault-group-provision.sh --apply")"
 rc "F7 the provisioner that owns the vault's mode is not a reader" 0 "$RC"
 
+RC="$(bashrc "notify-senechal footprint-correction id=ecosystem1-vault-monkey field=notes")"
+rc "F7b a filing through senechal's typed door is a WRITE, not a read of the archive" 0 "$RC"
+
 RC="$(bashrc "ls /home/zach")"
 rc "F8 a Bash command with nothing to do with the vault passes" 0 "$RC"
 

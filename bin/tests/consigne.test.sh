@@ -198,7 +198,17 @@ has "a project absent from the vault is named, not silently skipped" "$OUT" "UNR
 
 OUT="$(PATH="$BASE_PATH" BIBLIOTHECAIRE_VAULT="$TMP/no-such-vault" "$CONSIGNE" status 2>&1)"; rc=$?
 check "status with no vault is BLIND (6), never 'nothing to report'" "$rc" "6"
-has "...and says CLONE, not just 'no vault' (#1061)" "$OUT" "no clone of the vault"
+has "...and names the path it looked at, not just 'no vault' (#1061)" "$OUT" "$TMP/no-such-vault"
+has "...and names where the vault is going, so BLIND is actionable (#1164)" "$OUT" "realisateur#1164"
+
+OUT="$(PATH="$BASE_PATH" BIBLIOTHECAIRE_VAULT="$TMP/no-such-vault" "$CONSIGNE" lock -- true 2>&1)"; rc=$?
+check "the LOCK path is BLIND too, not a crash" "$rc" "6"
+has "...and it also names #1164 rather than advising a clone" "$OUT" "realisateur#1164"
+hasnt "...neither BLIND hands out the shovel that dug #742's third door" "$OUT" "clone it"
+# #1061 asked this message to say CLONE. #742 then found a clone in a home
+# directory, put there by someone following exactly that advice. The message
+# must not hand the next reader the same shovel.
+hasnt "...and does NOT advise cloning one here -- that is how a read door opened (#742)" "$OUT" "clone it to"
 
 # A vault whose projects are all clean must SAY so, not print an empty report
 # that reads as "checked, nothing found" the same way a broken read does.

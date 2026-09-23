@@ -351,4 +351,85 @@ OUT="$(run --build 2026-09-04T000000Z --host fakehost --apply 2>&1)"; RC=$?
 t_rc "--apply on a normal push: exits 0" 0 "$RC"
 t_has "...and witnesses that a project account can read the build" "$OUT" "readable by a project account"
 
+echo "-- G2. 'current' is a LINK, never a build id (found by --here, 2026-09-18) --"
+GROOT="$T/G2"; mkdir -p "$GROOT"
+mk_verb "$GROOT/2026-09-05T000000Z" proj v five
+mk_manifest "$GROOT/2026-09-05T000000Z" "proj	v"
+ln -sfn 2026-09-05T000000Z "$GROOT/current"
+sel="$(select_local_build "$GROOT" latest 2>/dev/null)"
+t_eq "G2a latest skips the current symlink and picks the dated build" \
+  "${sel%%$'\t'*}" "2026-09-05T000000Z"
+select_local_build "$GROOT" current >/dev/null 2>&1
+t_rc "G2b naming 'current' explicitly is refused" 1 "$?"
+OUT="$(select_local_build "$GROOT" current 2>&1)"
+t_has "G2c ...and the refusal names the id it points at, so the caller can retry" \
+  "$OUT" "2026-09-05T000000Z"
+
+echo "-- H. --here: the machine you are on, which --host cannot name --"
+HROOT="$T/H"; mkdir -p "$HROOT"
+mk_verb "$HROOT/2026-09-10T000000Z" proj v old
+mk_manifest "$HROOT/2026-09-10T000000Z" "proj	v"
+mk_verb "$HROOT/2026-09-11T000000Z" proj v new
+mk_manifest "$HROOT/2026-09-11T000000Z" "proj	v"
+ln -sfn 2026-09-10T000000Z "$HROOT/current"
+hrun() { PUSH_SSH_BIN=/nonexistent/ssh PUSH_RSYNC_BIN=/nonexistent/rsync \
+         PUSH_BUILD_ROOT="$HROOT" "$SCRIPT" "$@"; }
+
+OUT="$(hrun --build 2026-09-11T000000Z --here 2>&1)"; RC=$?
+t_rc "H1 --here --check exits 0 with no ssh binary in sight" 0 "$RC"
+t_has "H2 ...and says it will not transfer anything" "$OUT" "no transfer"
+t_has "H3 ...and names the current build it would move off" "$OUT" "2026-09-10T000000Z"
+t_eq  "H4 ...and changed nothing" "$(readlink "$HROOT/current")" "2026-09-10T000000Z"
+
+OUT="$(hrun --build 2026-09-11T000000Z --here --apply 2>&1)"; RC=$?
+t_rc "H5 --here --apply exits 0" 0 "$RC"
+t_eq  "H6 ...and current really moved" "$(readlink "$HROOT/current")" "2026-09-11T000000Z"
+t_has "H7 ...and the OK says it was re-read, not asserted" "$OUT" "re-read off the link"
+
+OUT="$(hrun --build 2026-09-11T000000Z --here --host fakehost --apply 2>&1)"; RC=$?
+t_rc "H8 --here with --host is a usage error, not a silent preference" 2 "$RC"
+t_has "H9 ...and says why" "$OUT" "answered twice"
+
+OUT="$(hrun --build 2026-09-11T000000Z --apply 2>&1)"; RC=$?
+t_rc "H10 neither --here nor --host is still a usage error" 2 "$RC"
+t_has "H11 ...and now offers --here as the alternative" "$OUT" "--here"
+
+mkdir -p "$HROOT/2026-09-12T000000Z/bin"
+OUT="$(hrun --build 2026-09-12T000000Z --here --apply 2>&1)"; RC=$?
+t_rc "H12 --here refuses a build with no manifest.tsv" 1 "$RC"
+t_eq  "H13 ...and current is unchanged" "$(readlink "$HROOT/current")" "2026-09-11T000000Z"
+
+CUTDIR="$T/Hcut"; mkdir -p "$CUTDIR"
+cp "$SCRIPT" "$CUTDIR/push-verb-build.sh"
+mkdir -p "$CUTDIR/lib"; cp "$(dirname "$SCRIPT")/lib/cli-guard.sh" "$CUTDIR/lib/cli-guard.sh"
+cat > "$CUTDIR/cut-verb-build.sh" <<'CUTEOF'
+#!/usr/bin/env bash
+[ "${1:-}" = "--assemble" ] || exit 2   # stub cutter
+d="${2:?}"; mkdir -p "$d/proj/bin"
+printf '#!/bin/sh
+echo cut
+' > "$d/proj/bin/v"; chmod +x "$d/proj/bin/v"
+printf '%s\n' '# stub' > "$d/manifest.tsv"
+printf 'proj	v	0000000000000000000000000000000000000000	https://example/proj.git
+' >> "$d/manifest.tsv"
+printf '2026-09-20T000000Z
+' > "$d/BUILD_ID"
+CUTEOF
+chmod +x "$CUTDIR/cut-verb-build.sh"
+CROOT2="$T/Hcutroot"; mkdir -p "$CROOT2"
+
+OUT="$(PUSH_SSH_BIN=/nonexistent/ssh PUSH_RSYNC_BIN=/nonexistent/rsync \
+       PUSH_BUILD_ROOT="$CROOT2" "$CUTDIR/push-verb-build.sh" --cut --here --apply 2>&1)"; RC=$?
+t_not_has "H16 --cut --here finds its sibling cutter (\$HERE is not the flag)" \
+  "$OUT" "not beside this script"
+t_rc "H17 ...and exits 0" 0 "$RC"
+t_eq "H18 ...and current points at the freshly cut build" \
+  "$(readlink "$CROOT2/current")" "2026-09-20T000000Z"
+t_eq "H19 ...and the cut verb is really there" \
+  "$(cat "$CROOT2/current/proj/bin/v" | tail -1)" "echo cut"
+
+OUT="$(hrun --rollback 2026-09-10T000000Z --here --apply 2>&1)"; RC=$?
+t_rc "H14 --rollback --here works, on the same code path as --build" 0 "$RC"
+t_eq  "H15 ...and current rolled back" "$(readlink "$HROOT/current")" "2026-09-10T000000Z"
+
 summary
