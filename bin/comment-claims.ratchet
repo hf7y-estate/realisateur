@@ -1,0 +1,5 @@
+# comment-claims.ratchet -- findings present when accepted. A run may
+# not add one; --accept is a visible act, and it reports what moved.
+# See bin/comment-claims.sh for the predicate table.
+# accepted 2026-08-29T22:44:31-05:00
+bin/tests/body-grammar.test.sh	header	.github/workflows/deferral-ledger.yml

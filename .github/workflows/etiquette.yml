@@ -1,0 +1,29 @@
+# etiquette.yml -- the ONE trigger that derives `needs-human`, over EVERY repo
+# in bin/lib/roster-set.sh. Why here and not scheduler's dispatch, and why this
+# fails on exit 6 only: etiquette(1), `--all`.
+
+name: etiquette
+
+on:
+  schedule:
+    - cron: '17 11 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  etiquette:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconcile the derived label in every rostered repo
+        env:
+          # GITHUB_TOKEN is scoped to THIS repo and the sweep reads 26 (#313).
+          GH_TOKEN: ${{ secrets.ECOSYSTEM_ISSUES_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          rc=0
+          bash bin/etiquette.sh --all --apply || rc=$?
+          if [ "$rc" = 6 ]; then exit 1; fi

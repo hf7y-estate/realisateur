@@ -1,0 +1,45 @@
+# atteste.yml -- the clock for atteste(1), over every repo in the org. HERE and
+# not on a host because subject mode reads only the GitHub API. REPORTING-ONLY:
+# red on GAP (exit 4) alone, never on BLIND (exit 6), which is the honest answer
+# for 37% of the corpus and would be wallpaper by the second week. See #803.
+
+name: atteste
+
+on:
+  schedule:
+    - cron: '43 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  atteste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Grade what the org's freshly merged PRs said they would deliver
+        env:
+          # GITHUB_TOKEN is scoped to THIS repo and the sweep reads the org.
+          GH_TOKEN: ${{ secrets.ECOSYSTEM_ISSUES_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Two days on a daily clock: a merged PR is graded at its merge
+          # commit, so the overlap costs nothing and covers a missed run.
+          if ! gh search prs --owner hf7y --merged \
+               --merged-at ">=$(date -u -d '2 days ago' +%F)" \
+               --limit 300 --json url --jq '.[].url' > "$RUNNER_TEMP/subjects"; then
+            echo '::error::the PR search failed -- NOTHING was graded'; exit 1
+          fi
+          mapfile -t subjects < "$RUNNER_TEMP/subjects"
+          if [ "${#subjects[@]}" -eq 0 ]; then
+            echo 'nothing merged in the window -- nothing to grade'; exit 0
+          fi
+          if [ "${#subjects[@]}" -ge 300 ]; then
+            echo '::warning::the search hit its 300 cap -- older merges in the window went ungraded'
+          fi
+          rc=0
+          bash bin/atteste.sh "${subjects[@]}" >"$RUNNER_TEMP/atteste.out" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/atteste.out"
+          { echo '```'; cat "$RUNNER_TEMP/atteste.out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" = 4 ]; then exit 1; fi
