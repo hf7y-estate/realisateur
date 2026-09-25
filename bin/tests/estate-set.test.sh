@@ -43,7 +43,11 @@ fi
 
 section "C. the callers resolve through it"
 src() { bash -c "${2:+export $2; }. '$HERE/bin/lib/$3' >/dev/null 2>&1; printf '%s' \"\$$1\""; }
-eq "C1 answered.sh"        "$(src ANSWERED_OWNER     '' answered.sh)"        "hf7y-estate"
+# A LOGIN, so it must NOT track the namespace. If this ever reads the org,
+# answered.jq matches no comment author and every answered DECISION keeps its
+# needs-human label -- silently, because a label that stays looks like a label
+# nobody needed to touch.
+eq "C1 answered.sh reads the HUMAN, not the org" "$(src ANSWERED_OWNER '' answered.sh)" "hf7y"
 eq "C2 roster-set.sh"      "$(src SWEEP_OWNER        '' roster-set.sh)"       "hf7y-estate"
 eq "C3 arming.sh"          "$(src ARMING_ROSTER_URL  '' arming.sh)"          "http://100.107.253.56:8646/roster"
 eq "C4 propagation-set.sh" "$(src PROP_RELEASE_REPO  '' propagation-set.sh)" "hf7y-estate/verbs"

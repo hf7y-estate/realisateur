@@ -14,6 +14,13 @@ GH_ESTATE_SITE_REPO="${GH_ESTATE_SITE_REPO:-hf7y.github.io}"
 # `hf7y-estate/hf7y.github.io`, which does not exist -- the silent-miss class
 # #673 gave these names one home to prevent, caught BY that home.
 GH_ESTATE_SITE_OWNER="${GH_ESTATE_SITE_OWNER:-hf7y}"
+# THE HUMAN IS NOT THE NAMESPACE. Before the cutover both were `hf7y`, so one
+# name served two jobs and nothing noticed. `answered.jq:38` matches
+# `.author.login == $owner` -- Zach's GitHub login -- and flipping the namespace
+# to the org made it match nobody, so every DECISION he had already answered
+# would have kept its `needs-human` label and gone on braking dispatch. Caught
+# by bin/tests/etiquette.test.sh, which went 63/0 to 57/6 on the flip alone.
+GH_ESTATE_HUMAN="${GH_ESTATE_HUMAN:-hf7y}"
 # WHERE THE ARMING AUTHORITY ANSWERS (hf7y/scheduler#429). 100.107.253.56 is
 # dexter's tailnet address AND monkey's own eth0 -- one WSL2 namespace, so one
 # default reaches mandark and monkey both (measured 2026-09-01).
