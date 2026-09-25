@@ -81,33 +81,10 @@ printf '' > "$FAKE_VMINFO"
 eq "G2 no LogFldr line yields nothing, so the caller skips rather than reading /VBox.log" \
   "$(vmhost_logdir monkey)" ""
 
-section "J. vmhost_pause_* -- #704's declared-pause record, pure file+clock logic"
-VMHOST_PAUSE_DIR="$T/pause"
-eq "J1 no declaration reads NONE" "$(vmhost_pause_status monkey 2026-08-29T00:00:00Z)" "NONE"
-vmhost_pause_declare monkey 2026-08-29T18:00:00Z
-eq "J2 before the expiry reads PAUSED with the declared until" \
-  "$(vmhost_pause_status monkey 2026-08-29T10:00:00Z)" "PAUSED 2026-08-29T18:00:00Z"
-eq "J3 at or past the expiry reads EXPIRED, still naming until" \
-  "$(vmhost_pause_status monkey 2026-08-29T18:00:01Z)" "EXPIRED 2026-08-29T18:00:00Z"
-vmhost_pause_mark_resumed monkey 2026-08-29T18:00:05Z
-eq "J4 once the actuator fires it reads RESUMING, not EXPIRED again" \
-  "$(vmhost_pause_status monkey 2026-08-29T18:05:00Z)" "RESUMING 2026-08-29T18:00:05Z"
-eq "J5 \`until\` survives the resumed_at rewrite" "$(vmhost_pause_field monkey until)" "2026-08-29T18:00:00Z"
-vmhost_pause_clear monkey
-eq "J6 clearing removes the declaration outright" "$(vmhost_pause_status monkey 2026-08-29T18:05:00Z)" "NONE"
-[ ! -f "$(vmhost_pause_file monkey)" ] && ok "J6b the file itself is gone" || bad "J6b the file itself is gone"
-
-vmhost_pause_mark_resumed monkey 2026-08-29T18:00:05Z
-eq "J7 marking resumed with no declaration is a no-op, not a fabricated record" \
-  "$(vmhost_pause_status monkey 2026-08-29T18:05:00Z)" "NONE"
-
-vmhost_pause_declare gardien 2026-08-29T18:00:00Z
-eq "J8 declarations are per-vm; a second vm's file does not collide" \
-  "$(vmhost_pause_status monkey 2026-08-29T18:05:00Z)" "NONE"
-eq "J8b the second vm's own declaration is intact" \
-  "$(vmhost_pause_status gardien 2026-08-29T10:00:00Z)" "PAUSED 2026-08-29T18:00:00Z"
-vmhost_pause_clear gardien
-unset VMHOST_PAUSE_DIR
+section "J. the pause vocabulary is GONE with repose (Zach, 2026-09-18)"
+code_vm="$(grep -v "^[[:space:]]*#" "$REPO/bin/lib/vmhost.sh")"
+hasnt "J1 no pause vocabulary remains -- repose was its only caller, and arret replaced repose" "$code_vm" "vmhost_pause"
+has   "J2 ...but the ACTUATORS it wrapped stay, so a future suspend needs no rebuild" "$code_vm" "vmhost_save()"
 
 section "K. the wsl backend -- monkey becomes a distro on dexter and VirtualBox goes away (#704 follow-on)"
 WSL="$T/wsl.exe"; WCALLS="$T/wcalls"; WLIST="$T/wlist"; WRUN="$T/wrun"; WFAIL="$T/wfail"

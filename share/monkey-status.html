@@ -211,8 +211,6 @@ fetch("status.json?t="+Date.now()).then(r=>r.json()).then(d=>{
              : `This document carries no <code>watcher</code> block, so it was not
                 written by the outside observer. Nothing here can report an outage.`;
   } else if (w.verdict==="DOWN")     { cls="bad";  head="DOWN"; }
-  else if (w.verdict==="PAUSED")     { cls="warn"; head="PAUSED";
-    note = `A declared pause (realisateur#704), not an outage: ${H(w.why)}`; }
   else if (w.verdict==="DEGRADED")   { cls="warn"; head="DEGRADED"; }
   else if (!A.length)                { cls="warn"; head="NO ACCOUNTS";
     note = `monkey answered and the collector returned an empty account list.
@@ -236,7 +234,7 @@ fetch("status.json?t="+Date.now()).then(r=>r.json()).then(d=>{
   // ---- 3. what only the VM host can see -----------------------------------
   const fact=(k,v,c="")=>`<div class="fact"><b>${k}</b><span class="${c}">${H(v)}</span></div>`;
   const hostStrip = w ? `<div class="strip">
-      ${fact("vm",w.host_read==="blind"?"unread":w.vm_state, w.host_read==="blind"?"mut":w.vm_state==="running"?"ok":w.verdict==="PAUSED"?"mut":"bad")}
+      ${fact("vm",w.host_read==="blind"?"unread":w.vm_state, w.host_read==="blind"?"mut":w.vm_state==="running"?"ok":"bad")}
       ${fact("sshd",w.sshd, w.sshd==="answering"?"ok":"bad")}
       ${fact("root fs",w.root_mount||"unknown", w.root_mount==="rw"?"ok":w.root_mount==="ro"?"bad":"mut")}
       ${fact("disk", w.disk_home==="unknown"||w.host_read==="blind" ? "unread" : w.disk_home,

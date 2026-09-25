@@ -181,6 +181,23 @@ vmhost_save_cmd() {  # <vm> -- the exact command vmhost_save would run, so a dry
   esac
 }
 
+vmhost_start_cmd() {  # <vm> -- the mirror of vmhost_save_cmd, for a caller that must run the start on the VM HOST rather than here
+  local vm="$1"
+  case "$(vmhost_backend "$vm")" in
+    virtualbox) printf '%s startvm %s --type %s\n' "$VMHOST_VBOX" "$vm" "${VMHOST_START_TYPE:-headless}" ;;
+    wsl)        printf '%s -d %s --exec /bin/true\n' "$VMHOST_WSL" "$vm" ;;
+    *) printf 'vmhost: backend "%s" has no driver\n' "$(vmhost_backend)" >&2; return 2 ;;
+  esac
+}
+
+vmhost_sparse_cmd() {  # <vm> -- make the distro's disk sparse, so space freed INSIDE it returns to the host. wsl only: a VirtualBox VDI reclaims by compacting a medium, which is a different act with a different risk, and pretending one command covers both is how a driver difference becomes an outage
+  local vm="$1"
+  case "$(vmhost_backend "$vm")" in
+    wsl) printf '%s --manage %s --set-sparse true\n' "$VMHOST_WSL" "$vm" ;;
+    *) printf 'vmhost: --set-sparse is a wsl notion; backend "%s" has no equivalent here\n' "$(vmhost_backend)" >&2; return 2 ;;
+  esac
+}
+
 vmhost_running_vms_cmd() {  # -> the command that lists running VM names, one per line, on the VM HOST -- for a payload that runs THERE and so cannot source this file. Every driver present answers: detection picks one ACTUATOR, because savestate and --terminate are exclusive, and a read-only listing is not
   printf '%s\n' "{ [ -x \"$VMHOST_VBOX\" ] && \"$VMHOST_VBOX\" list runningvms | sed 's/\" .*//;s/\"//'; [ -x \"$VMHOST_WSL\" ] && \"$VMHOST_WSL\" -l -q --running; } 2>/dev/null | tr -d '\\0\\r'"
 }
@@ -198,58 +215,6 @@ vmhost_start() {  # <vm> -- resume from a saved state or cold-boot; $VMHOST_STAR
       ;;
     *) printf 'vmhost: backend "%s" has no driver\n' "$(vmhost_backend)" >&2; return 2 ;;
   esac
-}
-
-vmhost_pause_dir() {  # -> the directory pause declarations live in, overridable for tests
-  printf '%s\n' "${VMHOST_PAUSE_DIR:-$HOME/.local/state}"
-}
-
-vmhost_pause_file() {  # <vm> -> the path of that vm's declaration, if any
-  printf '%s/vmhost-pause-%s\n' "$(vmhost_pause_dir)" "$1"
-}
-
-vmhost_pause_field() {  # <vm> <field> -> the field's value, or empty if no declaration or no such field
-  local f; f="$(vmhost_pause_file "$1")"
-  [ -f "$f" ] || return 0
-  sed -n "s/^$2=//p" "$f" | head -1
-}
-
-vmhost_pause_declare() {  # <vm> <until-iso8601> -- record the absolute expiry; does not touch the VM
-  local vm="$1" until="$2" f
-  f="$(vmhost_pause_file "$vm")"
-  mkdir -p "$(dirname "$f")"
-  printf 'until=%s\ndeclared_at=%s\n' "$until" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$f"
-}
-
-vmhost_pause_mark_resumed() {  # <vm> <now-iso8601> -- the actuator fired; keep `until` for the record, add `resumed_at`
-  local vm="$1" now="$2" until f
-  until="$(vmhost_pause_field "$vm" until)"
-  [ -n "$until" ] || return 0
-  f="$(vmhost_pause_file "$vm")"
-  printf 'until=%s\nresumed_at=%s\n' "$until" "$now" > "$f"
-}
-
-vmhost_pause_clear() {  # <vm> -- remove the declaration outright: the pause cycle is over
-  rm -f "$(vmhost_pause_file "$1")"
-}
-
-vmhost_pause_eval() {  # <until> <resumed_at> <now-iso8601> -- split out of vmhost_pause_status so ssh-fetched fields and monkey-watch.sh's file-read fields share one comparison
-  local until="$1" resumed_at="$2" now="$3" now_s until_s
-  [ -n "$until" ] || { printf 'NONE\n'; return 0; }
-  if [ -n "$resumed_at" ]; then printf 'RESUMING %s\n' "$resumed_at"; return 0; fi
-  now_s="$(date -u -d "$now" +%s 2>/dev/null)"
-  until_s="$(date -u -d "$until" +%s 2>/dev/null)"
-  if [ -z "$now_s" ] || [ -z "$until_s" ]; then printf 'NONE\n'; return 0; fi  # unparseable is NONE, not a guess either way -- caller falls through to vmhost_state
-  if [ "$now_s" -lt "$until_s" ]; then
-    printf 'PAUSED %s\n' "$until"
-  else
-    printf 'EXPIRED %s\n' "$until"
-  fi
-}
-
-vmhost_pause_status() {  # <vm> <now-iso8601> -> vmhost_pause_eval, fed from this vm's own declaration file
-  local vm="$1" now="$2"
-  vmhost_pause_eval "$(vmhost_pause_field "$vm" until)" "$(vmhost_pause_field "$vm" resumed_at)" "$now"
 }
 
 vmhost_logdir() {  # <vm> -> the VM's log directory, as a path THIS host can read

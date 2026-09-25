@@ -116,9 +116,6 @@ if command -v node >/dev/null 2>&1; then
   got="$(itemsrender "{\"accounts\":[],\"watcher\":{$FRESH,\"verdict\":\"DOWN\",\"why\":\"sshd silent\",\"vm_state\":\"running\",\"sshd\":\"silent\",\"disk_home\":\"internal\",\"screenshot\":false}}")"
   hasnt "no screenshot means no dangling link to one" "$got" 'href="console.png"'
 
-  got="$(render "{\"accounts\":[],\"watcher\":{$FRESH,\"verdict\":\"PAUSED\",\"why\":\"declared pause, resumes 2999-01-01T00:00:00Z\",\"vm_state\":\"poweroff\",\"sshd\":\"silent\",\"disk_home\":\"internal\"}}")"
-  case "$got" in warn\ PAUSED*) ok "#704 a declared pause headlines PAUSED, in warn -- not DOWN in red" ;;
-    *) bad "PAUSED renders as its own state, not DOWN" "got [$got]" ;; esac
 
   got="$(render "{\"accounts\":[],\"watcher\":{\"generated\":\"2020-01-01T00:00:00Z\",\"valid_until\":\"2020-01-01T00:00:00Z\",\"verdict\":\"OK\",\"why\":\"fine\",\"vm_state\":\"running\",\"sshd\":\"answering\",\"disk_home\":\"internal\"}}")"
   case "$got" in *UNWATCHED*) ok "a watcher past its own valid_until reads UNWATCHED, not OK" ;;
@@ -271,27 +268,13 @@ eq "I6 the real 2026-08-25 line reads 41.8h, not 0.0" \
 eq "I7 a fresh session reads 0.0" "$(drift_of 'offVirtualSyncGivenUp=0,')" "0.0"
 eq "I8 no such line yields nothing, not a number" "$(drift_of 'nothing here')" ""
 
-section "J. the declared pause and its resume actuator (#704)"
-has "J1 the pause status is read from vmhost's own declaration, not re-derived" \
-  "$(code "$W")" 'vmhost_pause_status "$VM" "$NOW"'
-has "J2 an EXPIRED declaration drives vmhost_start -- THIS TICK is the scheduler" \
-  "$(code "$W")" 'vmhost_start "$VM" >/dev/null 2>&1'
-has "J3 firing the actuator is recorded, so the next tick reads RESUMING not EXPIRED again" \
-  "$(code "$W")" 'vmhost_pause_mark_resumed "$VM" "$NOW"'
-has "J4 a clean resume (vm running, sshd answering) clears the declaration" \
-  "$(code "$W")" 'vmhost_pause_clear "$VM"'
-has "J5 PAUSED is checked first, ahead of the ordinary VM-state chain" \
-  "$(code "$W")" 'if   [ "$PAUSE_ACTIVE" = 1 ];           then VERDICT="PAUSED"'
-has "J6 the boot window after an expired pause is bounded, not open-ended" \
-  "$(code "$W")" 'RESUME_GRACE_MIN="${RESUME_GRACE_MIN:-30}"'
-pause_ln="$(grep -n 'PAUSE_ACTIVE=1; PAUSE_WHY="pause expired' "$W" | head -1 | cut -d: -f1)"  # THE ONE LOUD CASE: past grace, still not up, must fall through to DOWN and page
-grace_ln="$(grep -n '# else: grace exhausted' "$W" | head -1 | cut -d: -f1)"
-if [ -n "$pause_ln" ] && [ -n "$grace_ln" ] && [ "$pause_ln" -lt "$grace_ln" ]; then
-  ok "J7 the grace window is a bound, with the exhausted case named as falling through"
-else
-  bad "J7 grace exhaustion falls through to DOWN" "expected the bound before its exhausted-case comment"
-fi
-
+section "J. the declared pause is GONE (Zach, 2026-09-18: arret replaces repose)"
+# repose.sh wrote the declaration and this tick was its resume actuator. Zach
+# ruled that `arret` replaces repose rather than layering on it, so the whole
+# pause path went with it: no declaration is ever written, so a tick that still
+# read one would be acting on a file nothing produces.
+hasnt "J1 the tick reads no pause declaration" "$(code "$W")" 'vmhost_pause'
+hasnt "J2 ...and publishes no PAUSED verdict" "$(code "$W")" 'VERDICT="PAUSED"'
 
 section "K. the clocksource early warning is guest-side, present under both backends (#805)"
 has "K1 read from the guest's own kernel log, not a hypervisor artifact" \
@@ -407,39 +390,17 @@ case "$(code "$W")" in
 esac
 has "R2 alerting goes through zaxon_send instead" "$(code "$W")" 'zaxon_send'
 
-section "S. the WINDOWS channel refuses loudly when it is not wired (#1232)"
-# The second watcher is RUNNING on dexter's Windows side -- it wrote
-# `2026-09-18T13:21:50Z OK` while the WSL-side watcher was blind -- but
-# $HOME/.ssh/id_dexter_win does not exist, so its installer could not reach it
-# and said so as an ssh permission error blamed on dexter's sshd. ~/.ssh/config
-# records what that misreading costs: three days concluding "dexter's sshd
-# rejects restrict/command=" from the same shape of message. A live mechanism
-# whose installer cannot reach it can never be updated, re-pointed or retired.
-#
-# THE RATIONALE LIVES HERE, NOT IN THE SUBJECT. bin/monkey-watch-win.sh carries
-# ZERO `#` comment lines -- its header is a usage() heredoc, which is a string
-# -- so it is not a prose-bearing file, and a comment block explaining this
-# would have made it one and cost the estate a file against the prose ratchet.
-# This suite already carries prose, so the explanation is free here. The
-# refusal MESSAGE stays in the subject, where the operator reads it: a string
-# is code, and it is what S2-S4 grade.
-WIN="$REPO/bin/monkey-watch-win.sh"
-if [ -f "$WIN" ]; then
-  out="$(DEXTER_WIN_KEY=/nonexistent bash "$WIN" --status 2>&1)"; wrc=$?
-  rc "S1 a missing key is a refusal, not an attempt" 2 "$wrc"
-  has "S2 it names the key path on THIS host, not the far end" "$out" "/nonexistent"
-  has "S3 ...and says explicitly that this is not dexter's sshd refusing" "$out" "not dexter's sshd refusing"
-  has "S4 ...and routes to the remedy, which is a human placing the public half" "$out" "realisateur#1232"
-  key_ln="$(grep -n 'WIN_KEY" \]' "$WIN" | head -1 | cut -d: -f1)"
-  ssh_ln="$(grep -n '^case "\$MODE" in' "$WIN" | head -1 | cut -d: -f1)"
-  if [ -n "$key_ln" ] && [ -n "$ssh_ln" ] && [ "$key_ln" -lt "$ssh_ln" ]; then
-    ok "S5 checked BEFORE any mode runs -- no ssh is attempted to produce the diagnosis"
-  else
-    bad "S5 the channel check precedes the modes" "a check after the first ssh reports the far end's error instead"
-  fi
-else
-  ok "S1 bin/monkey-watch-win.sh is gone -- nothing to grade"
-fi
-
+section "S. the WINDOWS watcher is gone (#1232)"
+# monkey-watch-win.sh + its .ps1 were removed on Zach's call 2026-09-18: it read
+# the page this watcher publishes, checked staleness and barked. Its own header
+# conceded that zaxon is served out of WSL2 and so is down in the very case it
+# existed for, leaving the Windows event log -- which nobody reads -- as its
+# only reliable leg. Home Assistant reads the same document for the same
+# coverage. Deleting it also drops the $HOME/.ssh/id_dexter_win dependency that
+# has been unsatisfiable since 2026-08-31.
+[ -e "$REPO/bin/monkey-watch-win.sh" ] \
+  && bad "S1 the Windows watcher is gone" "bin/monkey-watch-win.sh is back without a decision" \
+  || ok "S1 the Windows watcher is gone"
+hasnt "S2 ...and nothing in this watcher still reaches for its key" "$(code "$W")" 'id_dexter_win'
 
 summary
