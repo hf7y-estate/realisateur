@@ -16,7 +16,10 @@ eq "A6 site overrides"        "$(val GH_ESTATE_SITE  GH_ESTATE_SITE=new.example)
 eq "A7 sourcing twice is a no-op" "$(bash -c ". '$LIB'; . '$LIB'; printf '%s' \"\$GH_ESTATE_SITE\"")" "hf7y.com"
 
 section "B. no script re-spells a name the estate owns"
-OWNER_RE='(:-|:=|=)"?hf7y([/"]|$)|github\.com/hf7y'
+# The quote class is ['"], not "?: `GUARD_REF='hf7y/etalon/...'` in
+# registry-standup.sh was a live MATCHING literal that this scanner read as
+# clean for 26 days, because a single-quoted assignment has no double quote.
+OWNER_RE='(:-|:=|=)['"'"'"]?hf7y([/"'"'"']|$)|github\.com/hf7y'
 SITE_RE='hf7y\.com|hf7y\.github\.io'
 offenders=""
 while IFS= read -r f; do

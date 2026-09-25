@@ -24,7 +24,7 @@ REGISTRY_GH="$GH"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/registry-set.sh"
 REGISTRY_MARKER="${REGISTRY_MARKER:-.agent-project}"   # bin/cut-verb-build.sh
 RUNTIME_PATH="${RUNTIME_PATH:-lib/verb.sh}"            # guard.yml's runtime_path default
-GUARD_REF='hf7y/etalon/.github/workflows/guard.yml'
+GUARD_REF="$OWNER/etalon/.github/workflows/guard.yml"
 
 while [ $# -gt 0 ]; do
   case "$1" in
