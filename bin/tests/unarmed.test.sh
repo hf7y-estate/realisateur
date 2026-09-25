@@ -335,4 +335,23 @@ rm -rf "$T/homes/fixture-contraband/.local/libexec"
 runreal "$T/ssh-run" "$T/pin2"
 hasnt "N3 removing the private tree re-reads the disk, clearing it from the per-account count" "$OUT" "account(s) carry ~/.local/libexec"
 
+section "O. a commented-out crontab row is OFF, not armed (Zach, 2026-09-25)"
+# The park that exposed this: root's cadence line was commented in place, and
+# collect()'s raw `grep -c` still matched the string inside the comment, so the
+# only mechanism watching the runner spawner reported it live while it was frozen.
+cat > "$T/stub/crontab" <<'CRONTAB'
+#!/usr/bin/env bash
+echo "#FROZEN 2026-09-25 17 6 * * * /usr/local/libexec/senechal/selfdev-runner-provision.sh --apply # selfdev-runner:CADENCE"
+CRONTAB
+chmod +x "$T/stub/crontab"
+runreal "$T/ssh-run" "$T/pin2"
+has "O1 a commented cadence row reads UNARMED, not armed" "$OUT" \
+    "nothing on root's clock on fixture-host invokes selfdev-runner-provision.sh"
+
+printf '#!/usr/bin/env bash\necho "17 6 * * * /usr/local/libexec/senechal/selfdev-runner-provision.sh --apply # selfdev-runner:CADENCE"\n' > "$T/stub/crontab"
+chmod +x "$T/stub/crontab"
+runreal "$T/ssh-run" "$T/pin2"
+has "O2 and the same row uncommented still reads armed" "$OUT" \
+    "selfdev-runner-provision.sh runs on root's clock on fixture-host"
+
 summary

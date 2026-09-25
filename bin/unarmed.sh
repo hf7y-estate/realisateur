@@ -46,14 +46,17 @@ collect() {
 SUDO=""; sudo -n true 2>/dev/null && SUDO="sudo -n"
 [ -n "$SUDO" ] || { echo "SUDO no"; exit 0; }
 echo "SUDO ok"
-rc="$($SUDO crontab -l 2>/dev/null)"
+# A commented-out row is OFF. Strip comments AT THE READ, not per-grep: the
+# account loop below counts with its own greps, so filtering only in count()
+# would leave a `#FROZEN ...` park reading as armed on every account row.
+rc="$($SUDO crontab -l 2>/dev/null | grep -v "^[[:space:]]*#")"
 count() { printf "%s\n" "$rc" | grep -c -- "$1"; }
 printf "ROOT_PACED %s\n"    "$(count PACED_HOST_MODE=1)"
 printf "ROOT_PROVISION %s\n" "$(count selfdev-runner-provision.sh)"
 printf "ROOT_UNARMED %s\n"   "$(count unarmed.sh)"
 a=0; d=0
 for u in $(getent passwd | awk -F: "\$3>=3000 && \$3<=3099 {print \$1}"); do
-  ct="$($SUDO crontab -l -u "$u" 2>/dev/null)"
+  ct="$($SUDO crontab -l -u "$u" 2>/dev/null | grep -v "^[[:space:]]*#")"
   a=$((a + $(printf "%s\n" "$ct" | grep -c -- PACED_HOST_MODE=1)))
   d=$((d + $(printf "%s\n" "$ct" | grep -c -- scheduler-paced-runner:RUNNER)))
 done
