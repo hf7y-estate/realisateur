@@ -16,12 +16,17 @@ REGISTRY_SCHED_REPO="${REGISTRY_SCHED_REPO:-scheduler}"
 # CALL time: cut-verb-build.sh's --owner would not reach it otherwise.
 registry_owner() { printf '%s' "${REGISTRY_OWNER:-$GH_ESTATE_OWNER}"; }
 
-REGISTRY_SELECT='.data.user.repositories.nodes[] | select(.marker != null and .isArchived == false)'
+# THE OWNER IS AN ORGANIZATION SINCE 2026-09-24 (#672). `user(login:"hf7y-estate")`
+# resolves to null, so this query returned nothing and every marker-derived
+# sweep read the whole estate as absent -- could-not-look reported as a healthy
+# empty registry, the one failure shape this lib returns 6 to prevent.
+# `ownerAffiliations` is a user-only argument and is dropped with the change.
+REGISTRY_SELECT='.data.organization.repositories.nodes[] | select(.marker != null and .isArchived == false)'
 
 # registry_query [extra-node-fields]; registry-standup.sh passes that argument.
 # shellcheck disable=SC2120
 registry_query() {
-  printf 'query($owner:String!){ user(login:$owner){ repositories(first:100, isFork:false, ownerAffiliations:OWNER){ nodes{ name isArchived isPrivate marker: object(expression:"HEAD:%s"){ __typename } %s } } } }' \
+  printf 'query($owner:String!){ organization(login:$owner){ repositories(first:100, isFork:false){ nodes{ name isArchived isPrivate marker: object(expression:"HEAD:%s"){ __typename } %s } } } }' \
     "$REGISTRY_MARKER" "${1:-}"
 }
 

@@ -49,7 +49,7 @@ RUNTIMEY="$(wf runtime.yml 'jobs:
 DECOY="$(wf other.yml 'env:
   runtime: true')"
 
-registry() { jq -s '{data:{user:{repositories:{nodes:.}}}}' > "$1"; }
+registry() { jq -s '{data:{organization:{repositories:{nodes:.}}}}' > "$1"; }
 { node alpha false "$GUARDY" "$RUNTIMEY" false true
   node beta  true  "$GUARDY" null        false false
   node gamma true  null      null        true  false
