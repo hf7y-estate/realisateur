@@ -1,0 +1,154 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>the estate, as its containers report it</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+ :root{--bg:#fbfbfa;--fg:#1a1a19;--mut:#6b6b66;--line:#e3e3df;--card:#f4f4f1;
+       --ok:#1a7f37;--warn:#9a6700;--bad:#b3261e;--blind:#8250df}
+ @media(prefers-color-scheme:dark){:root{--bg:#16161a;--fg:#ececea;--mut:#9a9a94;
+       --line:#2c2c31;--card:#1e1e23;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--blind:#a371f7}}
+ body{background:var(--bg);color:var(--fg);font:16px/1.55 ui-sans-serif,system-ui,sans-serif;
+      margin:0;padding:2rem 1.25rem;display:flex;justify-content:center}
+ main{width:100%;max-width:60rem}
+ h1{font-size:1.05rem;font-weight:600;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--mut);margin:0 0 1.25rem}
+ h2{font-size:.8rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--mut);margin:2.2rem 0 .6rem}
+ h2 span{text-transform:none;letter-spacing:0;font-weight:400}
+ .verdict{font-size:2.3rem;font-weight:700;letter-spacing:-.02em;margin:0}
+ .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+ .blind{color:var(--blind)}.mut{color:var(--mut)}
+ .sub{color:var(--mut);margin:.35rem 0 1.25rem}
+ .strip{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 .5rem}
+ .fact{background:var(--card);border:1px solid var(--line);border-radius:.4rem;
+       padding:.4rem .65rem;font-size:.82rem;line-height:1.3}
+ .fact b{display:block;color:var(--mut);font-weight:500;font-size:.72rem;
+         text-transform:uppercase;letter-spacing:.04em}
+ table{border-collapse:collapse;width:100%;font-size:.9rem}
+ th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
+ th{color:var(--mut);font-weight:500;white-space:nowrap}
+ td.num{text-align:right;font-variant-numeric:tabular-nums}
+ .wrap{overflow-x:auto}
+ code{font-family:ui-monospace,monospace;font-size:.88em}
+ ul.find{margin:.2rem 0 0;padding-left:1.1rem}
+ ul.find li{font-size:.87rem;margin:.15rem 0}
+ .stale{background:var(--bad);color:#fff;padding:.6rem .8rem;border-radius:.4rem;
+        font-size:.9rem;margin:0 0 1.25rem}
+ footer{color:var(--mut);font-size:.85rem;margin-top:2.5rem;border-top:1px solid var(--line);padding-top:1rem}
+ a{color:inherit}
+</style>
+<main>
+<h1>the estate, as its containers report it</h1>
+<div id="app">loading&hellip;</div>
+<footer>
+  Machine-readable: <a href="status.json">status.json</a>. Published by
+  <code>realisateur/bin/estate-watch.sh</code> from <code>bin/estate-status-collect.py</code>,
+  both running <b>on dexter</b>, where docker and <code>/srv</code> are.
+  <b>Services</b> are the long-lived containers, one per <code>/srv/&lt;name&gt;/compose.yaml</code>;
+  a service marked <i>on demand</i> carries <code>.no-autostart</code> and its resting state is
+  stopped, so stopped is not a finding there.
+  <b>Passes</b> are the one-shot <code>--rm</code> containers the nightly dispatcher spawns, one
+  per repo; a pass is graded on <b>what it left</b> &mdash; a REPORT.md and, usually, a PR &mdash;
+  never on its exit code alone, because a pass that reads the queue and honestly writes
+  &ldquo;nothing finishable from here&rdquo; also exits 0.
+  The PR column is read off the report the pass wrote, never off the PR's author: the
+  container pushes with the estate's own token, so every PR it opens is authored
+  <code>hf7y</code>.
+  This page is not a census of the host &mdash; containers no compose file declares are
+  listed but not graded. When dexter is down nothing republishes, so read
+  <b>valid until</b> before you read the verdict.
+</footer>
+</main>
+<script>
+const H=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ago=t=>{if(!t)return"never";const h=(Date.now()-new Date(t))/36e5;
+  return h<1?`${Math.round(h*60)} min ago`:h<48?`${Math.round(h)} h ago`:`${Math.round(h/24)} days ago`;};
+const VC={OK:"ok",DEGRADED:"warn",DOWN:"bad"};
+const dash=v=>v==null?'<span class="mut">&mdash;</span>':H(v);
+const money=v=>v==null?'<span class="mut">&mdash;</span>':"$"+v.toFixed(2);
+
+const stateCell=c=>{
+  if(c.state!=="running") return `<span class="bad">${H(c.state)}${c.exit_code!=null?` (${c.exit_code})`:""}</span>`;
+  if(c.health==="unhealthy") return `<span class="bad">running, unhealthy</span>`;
+  if(c.health==="healthy")   return `<span class="ok">running, healthy</span>`;
+  return `<span class="ok">running</span>`;
+};
+const portsCell=c=>c.ports_published===null?'<span class="mut">declares none</span>'
+  :c.ports_published?'<span class="ok">published</span>':'<span class="bad">NOT published</span>';
+
+const servicesHTML=d=>{
+  if(d.containers===null) return `<p class="bad">The docker daemon did not answer. Nothing below was read.</p>`;
+  const byProject=n=>d.containers.filter(c=>c.project===n||c.name===n);
+  const rows=d.services.map(s=>{
+    const cs=byProject(s.name);
+    if(!cs.length) return `<tr><td><b>${H(s.name)}</b>${s.on_demand?' <span class="mut">on demand</span>':""}</td>
+      <td colspan="4" class="${s.on_demand?"mut":"bad"}">declared in ${H(s.dir)}/compose.yaml, no container</td></tr>`;
+    return cs.map((c,i)=>`<tr>
+      <td>${i?'<span class="mut">&#8226;</span> ':`<b>${H(s.name)}</b>${s.on_demand?' <span class="mut">on demand</span>':""}<br>`}<code>${H(c.name)}</code></td>
+      <td>${stateCell(c)}</td>
+      <td>${c.state==="running"?H(ago(c.started_at)):`<span class="mut">exited ${H(ago(c.finished_at))}</span>`}</td>
+      <td>${portsCell(c)}</td>
+      <td class="num">${c.restarts??0}</td></tr>`).join("");
+  }).join("");
+  return `<div class="wrap"><table><tr><th>service</th><th>state</th><th>up</th>
+    <th>declared ports</th><th>restarts</th></tr>${rows}</table></div>`;
+};
+
+const passesHTML=d=>{
+  const n=d.nightly, run=n.last_run;
+  if(!run) return `<p class="bad">No nightly log on the host &mdash; the dispatcher has never run here.</p>`;
+  const rows=(n.passes||[]).map(p=>{
+    const disp=(run.dispatched||{})[p.repo];
+    const skipped=(run.skipped||[]).includes(p.repo);
+    const pr=p.pr?`<a href="${H(p.pr)}">#${H(p.pr.split("/").pop())}</a>`:
+      (p.report==="present"?'<span class="mut">no PR</span>':'<span class="bad">no report</span>');
+    return `<tr>
+      <td><b>${H(p.repo)}</b></td>
+      <td class="num">${disp?disp.queue:skipped?'<span class="mut">0</span>':dash(null)}</td>
+      <td>${p.at?H(ago(p.at)):'<span class="bad">never dispatched</span>'}</td>
+      <td>${p.result?(p.result==="success"?`<span class="ok">${H(p.result)}</span>`:`<span class="bad">${H(p.result)}</span>`):
+            skipped?'<span class="mut">queue empty, skipped</span>':dash(null)}</td>
+      <td class="num">${dash(p.turns)}</td>
+      <td class="num">${money(p.cost_usd)}</td>
+      <td>${pr}</td></tr>`;
+  }).join("");
+  return `<div class="wrap"><table><tr><th>repo</th><th>runnable</th><th>last pass</th>
+    <th>result</th><th>turns</th><th>cost</th><th>left behind</th></tr>${rows}</table></div>`;
+};
+
+fetch("status.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+  const cls=VC[d.verdict]||"blind";
+  const running=(d.containers||[]).filter(c=>c.state==="running").length;
+  const passes=d.nightly.passes||[];
+  const withPR=passes.filter(p=>p.pr).length;
+  const cost=passes.reduce((a,p)=>a+(p.cost_usd||0),0);
+  const stale=Date.now()>new Date(d.valid_until);
+  document.getElementById("app").innerHTML=`
+    ${stale?`<p class="stale">This page is past its <b>valid until</b> (${H(d.valid_until)}).
+       Nothing has republished it since. Read it as a stopped clock, not as a healthy estate.</p>`:""}
+    <p class="verdict ${cls}">${H(d.verdict)}</p>
+    <p class="sub">${d.findings.length?H(d.findings[0]):"every declared service is running and last night's passes all left a report"}</p>
+    ${d.findings.length>1?`<ul class="find">${d.findings.slice(1).map(f=>`<li>${H(f)}</li>`).join("")}</ul>`:""}
+    <div class="strip" style="margin-top:1.25rem">
+      <div class="fact"><b>host</b>${H(d.host)}</div>
+      <div class="fact"><b>generated</b>${H(ago(d.generated_at))}</div>
+      <div class="fact"><b>valid until</b>${H(d.valid_until)}</div>
+      <div class="fact"><b>containers running</b>${running}</div>
+      <div class="fact"><b>nightly</b>${d.nightly.armed===null?'<span class="blind">crontab unread</span>':
+         d.nightly.armed?'<span class="ok">armed</span>':'<span class="bad">NOT armed</span>'}</div>
+      <div class="fact"><b>last sweep</b>${H(ago(d.nightly.last_run&&d.nightly.last_run.started_at))}</div>
+      <div class="fact"><b>passes that left a PR</b>${withPR} / ${passes.length}</div>
+      <div class="fact"><b>last night cost</b>$${cost.toFixed(2)}</div>
+    </div>
+    <h2>services <span>&mdash; one per <code>/srv/&lt;name&gt;/compose.yaml</code></span></h2>
+    ${servicesHTML(d)}
+    <h2>passes <span>&mdash; one <code>--rm</code> container per repo, ${H(d.nightly.last_run?ago(d.nightly.last_run.started_at):"never")}</span></h2>
+    ${passesHTML(d)}
+    ${(d.unmanaged||[]).length?`<h2>unmanaged <span>&mdash; no compose file under /srv declares these; listed, not graded</span></h2>
+      <p>${d.unmanaged.map(n=>`<code>${H(n)}</code>`).join(", ")}</p>`:""}`;
+}).catch(e=>{
+  document.getElementById("app").innerHTML=
+    `<p class="verdict bad">NO PAYLOAD</p><p class="sub">status.json did not load (${H(e)}).
+     That is a fact about this page, not about the estate.</p>`;
+});
+</script>
