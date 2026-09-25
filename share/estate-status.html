@@ -73,7 +73,11 @@ const stateCell=c=>{
   if(c.health==="healthy")   return `<span class="ok">running, healthy</span>`;
   return `<span class="ok">running</span>`;
 };
-const portsCell=c=>c.ports_published===null?'<span class="mut">declares none</span>'
+// A stopped container publishes nothing BECAUSE it is stopped -- reporting that
+// as a binding failure puts a red cell on the one service whose resting state
+// is stopped. Only a RUNNING container can fail this test.
+const portsCell=c=>c.state!=="running"?'<span class="mut">&mdash;</span>'
+  :c.ports_published===null?'<span class="mut">declares none</span>'
   :c.ports_published?'<span class="ok">published</span>':'<span class="bad">NOT published</span>';
 
 const servicesHTML=d=>{
