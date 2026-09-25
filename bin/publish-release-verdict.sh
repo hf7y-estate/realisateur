@@ -39,7 +39,7 @@ CLI_EXITS='  0  published, or rendered under --dry-run
 cli_guard "$@"
 
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/estate-set.sh"
-PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_OWNER/$GH_ESTATE_SITE_REPO}"
+PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_SITE_OWNER/$GH_ESTATE_SITE_REPO}"
 PUBLISH_DIR="${PUBLISH_DIR:-verbs}"
 STATUS_URL="${RELEASE_STATUS_URL:-https://$GH_ESTATE_SITE/verbs/status.json}"
 PAGE_URL="${RELEASE_STATUS_PAGE:-https://$GH_ESTATE_SITE/verbs/}"

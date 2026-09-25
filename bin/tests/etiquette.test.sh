@@ -271,21 +271,21 @@ ab() { jq -r --arg owner zach --arg era 2026-08-14 \
 
 section "ANSWERED-BY is read from the body AND the comments"
 
-got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y/wtul#34","comments":[]}' | ab)"
-[ "$got" = "hf7y/wtul#34" ] \
+got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y-estate/wtul#34","comments":[]}' | ab)"
+[ "$got" = "hf7y-estate/wtul#34" ] \
   && ok "A: a pointer in the body is found" \
   || bad "A: a pointer in the body is found" "got: $got"
 
 got="$(printf '%s' '{"body":"DECISION: @zach","comments":[
-  {"createdAt":"2026-08-29T10:00:00Z","body":"ANSWERED-BY hf7y/senechal#439"}]}' | ab)"
-[ "$got" = "hf7y/senechal#439" ] \
+  {"createdAt":"2026-08-29T10:00:00Z","body":"ANSWERED-BY hf7y-estate/senechal#439"}]}' | ab)"
+[ "$got" = "hf7y-estate/senechal#439" ] \
   && ok "B: a pointer in a COMMENT is found (senechal#527's case)" \
   || bad "B: a pointer in a COMMENT is found" "got: $got -- body-only again"
 
-got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y/wtul#34","comments":[
-  {"createdAt":"2026-08-30T10:00:00Z","body":"ANSWERED-BY hf7y/senechal#439"},
+got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y-estate/wtul#34","comments":[
+  {"createdAt":"2026-08-30T10:00:00Z","body":"ANSWERED-BY hf7y-estate/senechal#439"},
   {"createdAt":"2026-08-29T10:00:00Z","body":"noise"}]}' | ab)"
-[ "$got" = "hf7y/senechal#439" ] \
+[ "$got" = "hf7y-estate/senechal#439" ] \
   && ok "C: the newest pointer wins over the body's" \
   || bad "C: the newest pointer wins over the body's" "got: $got"
 

@@ -5,7 +5,8 @@
 # issue_answered() for a caller with just one number.
 ANSWERED_STAMP_ERA="${ANSWERED_STAMP_ERA:-2026-08-14}"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/estate-set.sh"
-ANSWERED_OWNER="${ANSWERED_OWNER:-$GH_ESTATE_OWNER}"
+# A LOGIN, not a namespace -- see GH_ESTATE_HUMAN in estate-set.sh.
+ANSWERED_OWNER="${ANSWERED_OWNER:-$GH_ESTATE_HUMAN}"
 ANSWERED_JQ_FILE="${ANSWERED_JQ_FILE:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/answered.jq}"
 
 # Set by issue_answered()/issue_answered_json() so a caller can SAY why --

@@ -32,7 +32,7 @@ ALERT_EVERY_H="${ALERT_EVERY_H:-12}"
 CADENCE_MIN="${CADENCE_MIN:-10}"
 GRACE_MIN="${GRACE_MIN:-20}"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/estate-set.sh"
-PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_OWNER/$GH_ESTATE_SITE_REPO}"
+PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_SITE_OWNER/$GH_ESTATE_SITE_REPO}"
 PUBLISH_DIR="${PUBLISH_DIR:-monkey}"
 # shellcheck source=lib/zaxon.sh
 . "$HERE/bin/lib/zaxon.sh"

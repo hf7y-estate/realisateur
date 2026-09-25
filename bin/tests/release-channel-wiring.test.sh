@@ -158,7 +158,7 @@ has "an ERROR verdict prefers the captured reason over the generic 'no result' o
 PUBSRC="$(cat "$PUBLISH" 2>/dev/null || true)"
 . "$REPO/bin/lib/estate-set.sh"  # the RESOLVED target, not the source text (#672)
 eq "the publisher targets the public Pages site" \
-   "${PUBLISH_REPO:-$GH_ESTATE_OWNER/$GH_ESTATE_SITE_REPO}" "hf7y/hf7y.github.io"
+   "${PUBLISH_REPO:-$GH_ESTATE_SITE_OWNER/$GH_ESTATE_SITE_REPO}" "hf7y/hf7y.github.io"
 has "the publisher writes a machine-readable endpoint" "$PUBSRC" "status.json"
 has "the publisher writes a human-readable page" "$PUBSRC" "index.html"
 
@@ -307,7 +307,7 @@ fi
 tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 if [ -z "$REF_MAIN" ]; then
   bad "no main ref is readable here -- drift was NOT checked (BLIND, not clean)"
-elif gh api repos/hf7y/verbs/contents/.github/workflows/build-verbs.yml --jq '.content' 2>/dev/null | base64 -d > "$tmp"; then
+elif gh api repos/hf7y-estate/verbs/contents/.github/workflows/build-verbs.yml --jq '.content' 2>/dev/null | base64 -d > "$tmp"; then
   if diff -q "$tmp" <(git -C "$REPO" show "$REF_MAIN:provision/verbs-meta/build-verbs.yml") >/dev/null; then
     ok "the deployed workflow is byte-identical to $REF_MAIN's"
   else
@@ -317,7 +317,7 @@ else
   bad "could not read the deployed workflow (auth? network?) -- drift is UNKNOWN, not clean"
 fi
 
-sched="$(gh api repos/hf7y/verbs/actions/workflows --jq '.workflows[]|select(.name=="build-verbs")|.state' 2>/dev/null)"
+sched="$(gh api repos/hf7y-estate/verbs/actions/workflows --jq '.workflows[]|select(.name=="build-verbs")|.state' 2>/dev/null)"
 [ "$sched" = active ] && ok "the build-verbs workflow is ACTIVE on GitHub" \
                       || bad "build-verbs is '$sched' on GitHub, not active -- nothing is scheduled"
 
