@@ -11,22 +11,16 @@ set -uo pipefail
 REPO="${BRANCH_PROTECTION_REPO:-hf7y/realisateur}"
 BRANCH="${BRANCH_PROTECTION_BRANCH:-main}"
 
-# THE CONTRACT, in one place. MOVED 2026-09-03 (Zach): deploy-drift and
-# comment-claims are now REQUIRED. The old reading called them advisory because
-# "a third party could wedge every PR here" -- but deploy-drift's subject is
-# hf7y/verbs, which is this estate's own repo, not a third party, and its red
-# means the deployed workflow diverged from the source (#645, which cost a
-# night of silent no-op cuts). Zach: "whatever breaks, we should fix it anyway."
-# So a red one blocks a merge until the drift is fixed, which is the work
-# either way.
-# RIPPED OUT 2026-09-24, Zach: "CI was definitely a bad idea and should be
-# ripped out." Every check on every repo is ADVISORY now: the workflows still
-# run and still report, they just do not gate a merge. Measured before the
-# change: `prose / prose` was required on 21 of 55 repos -- the most-required
-# check in the estate, and passing it only proved the repo got no wordier.
+# THE CONTRACT, and the only place this repo's expected protection is written.
+# REQUIRED gates a merge; ADVISORY runs, reports, and does not.
 #
-# enforce_admins STAYS on, and section B still asserts it. That one has an
-# incident behind it: a subagent pushed main directly on 2026-07-25.
+# An EMPTY REQUIRED is a deliberate state, not a gap. With no required check,
+# "all required checks passed" is vacuously true, so `--auto` merges on arming
+# rather than on green and a red suite lands anyway. Verify a change by running
+# the suite, never by reading the gate.
+#
+# enforce_admins is asserted separately, in section B: it answers a different
+# question, and it is the half with an incident behind it.
 REQUIRED=()
 ADVISORY=("prose / prose" "shellcheck" "suites" "comment-claims" "deploy-drift")
 
