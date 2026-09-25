@@ -8,16 +8,25 @@ never follow it. Reading a retired fact back is how it returns as documentation.
 Establish facts from live code, config or API, else UNVERIFIED — say so and act
 on nothing. Writing (`consigne`) is unaffected.
 
-## Landing work (2026-08-14; the query, 2026-08-30)
+## Landing work (2026-08-14; CORRECTED 2026-09-24)
 
-Open a PR; never commit to local `main`. Direct pushes are refused for everyone,
-admins and automation included — rare in this estate, and it rots, so read it:
+Open a PR; never commit to local `main`. On **this** repo a direct push is
+refused for everyone, admins included — but that was never estate-wide, and the
+old wording here said it was. Measured 2026-09-24 across all 55 repos:
+`enforce_admins` is true on **four** — `crt`, `etalon`, `realisateur`,
+`scheduler`. On the other 17 protected repos an admin could always push straight
+to main. Read it, do not trust this paragraph:
 
 ```
-# bin/tests/branch-protection.test.sh asserts this in `suites`. Ad hoc:
-gh api repos/hf7y/realisateur/branches/main/protection \
+gh api repos/hf7y/<repo>/branches/main/protection \
   --jq '{admins: .enforce_admins.enabled, checks: .required_status_checks.contexts}'
 ```
+
+**No check is required anywhere any more.** Zach 2026-09-24: *"CI was definitely
+a bad idea and should be ripped out."* `required_status_checks` was cleared on
+all 21 repos that had it; the workflows still run and still report, they just do
+not gate a merge. `bin/tests/branch-protection.test.sh` asserts that state, and
+asserts `enforce_admins` separately — the half with an incident behind it.
 
 ## Subagent rules (2026-07-25, from the propagation pass)
 

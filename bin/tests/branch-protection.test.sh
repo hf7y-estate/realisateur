@@ -19,8 +19,16 @@ BRANCH="${BRANCH_PROTECTION_BRANCH:-main}"
 # night of silent no-op cuts). Zach: "whatever breaks, we should fix it anyway."
 # So a red one blocks a merge until the drift is fixed, which is the work
 # either way.
-REQUIRED=("prose / prose" "shellcheck" "suites" "comment-claims" "deploy-drift")
-ADVISORY=()
+# RIPPED OUT 2026-09-24, Zach: "CI was definitely a bad idea and should be
+# ripped out." Every check on every repo is ADVISORY now: the workflows still
+# run and still report, they just do not gate a merge. Measured before the
+# change: `prose / prose` was required on 21 of 55 repos -- the most-required
+# check in the estate, and passing it only proved the repo got no wordier.
+#
+# enforce_admins STAYS on, and section B still asserts it. That one has an
+# incident behind it: a subagent pushed main directly on 2026-07-25.
+REQUIRED=()
+ADVISORY=("prose / prose" "shellcheck" "suites" "comment-claims" "deploy-drift")
 
 section "A. the required check set on $REPO@$BRANCH"
 
