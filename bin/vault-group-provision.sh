@@ -26,7 +26,7 @@ DIR_MODE_SHUT='0700'  # the target: no self-dev account reads the vault (#742)
 CRON_D="${VAULT_CRON_D:-/etc/cron.d/vault-spool-drain}"
 DRAIN="${VAULT_DRAIN_BIN:-/usr/local/libexec/selfdev/vault-spool-drain.sh}"
 HOME_ROOT="${HOME_ROOT:-/home}"
-UID_LO="${VAULT_UID_LO:-3000}"; UID_HI="${VAULT_UID_HI:-3100}"  # the self-dev band, same as bin/monkey-status-collect.py's containment(); the two names are fixture seams, unset in production
+UID_LO="${VAULT_UID_LO:-3000}"; UID_HI="${VAULT_UID_HI:-3100}"  # the self-dev band; the two names are fixture seams, unset in production
 SUDO="${SUDO-sudo}"
 while [ $# -gt 0 ]; do
   case "$1" in
