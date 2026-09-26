@@ -8,7 +8,6 @@
 # that stacked. So the off-host callers are WRITTEN DOWN, and cron-lock.test.sh
 # holds both halves: every row here takes the lock, and every script that does
 # declare a CRON_TAG has a row.
-monkey-watch.sh	dexter	NONE since 2026-09-25	NO LIVE CALLER. monkey was deleted 2026-09-24 and the `*/10` line came out of dexter's crontab at 02:26Z the next morning (backup: dexter ~/crontab.pre-monkey-delete.20260925T022655Z). The row stays because the file still declares a CRON_TAG and cron-lock.test.sh C grades that; the file itself is now residue and reaping it is its own pass.
 estate-watch.sh	dexter	*/20 * * * *	dexter crontab; the line its own --cadence prints. Zach installs it -- an agent cannot arm this host's cron.
 selfdev-release-tick.sh	monkey, dexter	41 5 * * *	its own --install-cadence
 ausculte.sh	monkey	37 */4 * * *	its own --install-cadence
