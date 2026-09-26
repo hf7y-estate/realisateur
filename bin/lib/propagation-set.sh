@@ -188,17 +188,13 @@ PROP_LEAK_BOUND=7
 # --- LOCAL: never leaves this repo ------------------------------------------
 # "NEVER LEAVES THIS REPO" IS NOT "NEVER RUNS ANYWHERE ELSE", and reading it
 # that way cost the estate its only outside observer: #511's scan saw no caller
-# for monkey-watch.sh and deleted it -- its caller is a crontab line on dexter
-# (bin/lib/cron-invoked.tsv). Still LOCAL and never on PATH: dexter's crontab
-# runs it from a live `git pull --ff-only` clone, not a pinned build.
+# and deleted one whose caller was a crontab line on dexter
+# (bin/lib/cron-invoked.tsv). estate-watch.sh is that shape now: LOCAL, never on
+# PATH, run by dexter's crontab from a live `git pull --ff-only` clone.
 # Before cutting anything in this list, ask what invokes it FROM SOMEWHERE ELSE.
 PROP_LOCAL_SCRIPTS="
 estate-watch.sh
 estate-status-collect.py
-monkey-watch.sh
-monkey-watch-win.sh
-monkey-status-collect.py
-repose.sh
 landing-drift.sh
 vault-spool-drain.sh
 stale-paths.sh
