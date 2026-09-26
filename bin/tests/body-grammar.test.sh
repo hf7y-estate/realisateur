@@ -320,6 +320,31 @@ _quoted_only="$(printf 'DECISION: @zach -- q\n\n> DEFAULT-AFTER 14d: what the la
 case "$(grammar_check "$_quoted_only" 2>&1)" in *NO-DEFAULT*) ok "a DECISION whose only DEFAULT-AFTER is quoted is still NO-DEFAULT" ;;
   *) bad "quoted default does not satisfy #680" "got: $(grammar_check "$_quoted_only" 2>&1)" ;; esac
 
+# --- A <details> BLOCK IS THE SAME KIND OF QUOTE (#1324) --------------------
+# A `>` quote fixed #346/#356, but a body demoting an answered DECISION often
+# keeps the original readable-but-collapsed in a <details> block instead of a
+# blockquote. Ungated, the DECISION and DEFAULT-AFTER inside still read as
+# live and the write was refused MISPLACED-DECISION / BAD-DEFAULT -- the same
+# failure, a different quoting shape.
+_details_demoted="$(printf 'NO-DECISION: answered 2026-09-25, the original is quoted below\n\n<details><summary>original</summary>\n\nDECISION: @zach -- which shim?\nDEFAULT-AFTER 14d: close it as declined\n\n</details>\n\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+grammar_check "$_details_demoted" >/dev/null 2>&1 \
+  && ok "a NO-DECISION may quote the DECISION and DEFAULT-AFTER it supersedes in a <details> block" \
+  || bad "a <details>-quoted declaration is text" "it was refused: $(grammar_check "$_details_demoted" 2>&1)"
+
+out="$(grammar_check "$_details_demoted" 2>&1)"
+case "$out" in *MISPLACED-DECISION*) bad "a <details>-quoted DECISION is not MISPLACED" "got: $out" ;;
+  *) ok "...and the <details>-quoted DECISION line is not MISPLACED-DECISION either" ;; esac
+
+# It must not satisfy the requirement either -- a DECISION whose only
+# DEFAULT-AFTER sits inside a <details> block has no live timer.
+_details_quoted_only="$(printf 'DECISION: @zach -- q\n\n<details><summary>old</summary>\n\nDEFAULT-AFTER 14d: what the last round said\n\n</details>\n\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+case "$(grammar_check "$_details_quoted_only" 2>&1)" in *NO-DEFAULT*) ok "a DECISION whose only DEFAULT-AFTER is inside <details> is still NO-DEFAULT" ;;
+  *) bad "a <details>-quoted default does not satisfy #680" "got: $(grammar_check "$_details_quoted_only" 2>&1)" ;; esac
+
+grammar_default_after "$_details_demoted" >/dev/null 2>&1 \
+  && bad "the actuator must not read a <details>-quoted default as live" "it returned 0" \
+  || ok "the actuator (grammar_default_after) does not read a <details>-quoted default as live"
+
 _nodefault="$(printf 'DECISION: @zach -- q\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
 out="$(grammar_check "$_nodefault" 2>&1)"
 case "$out" in *NO-DEFAULT*) ok "#680: a DECISION with no DEFAULT-AFTER is NO-DEFAULT -- blocking by omission is refused" ;;
