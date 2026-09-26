@@ -1,0 +1,29 @@
+# vault -- the archive as a service, at /srv/vault/ on dexter.
+# hf7y/realisateur#1164, #742. Deploy: sudo docker compose pull && up -d.
+services:
+  vault:
+    # PULLED, NOT BUILT: a dexter that lost its checkout recovers from this file.
+    image: ghcr.io/hf7y/vault:latest
+    container_name: vault
+    restart: always
+    volumes:
+      # THE CLONE IS STATE, never overwritten from a repo. It is also the only
+      # copy of any deposit that has not pushed yet, so this mount is the thing
+      # to back up if anything here is.
+      - ./data:/data
+    env_file:
+      # VAULT_WRITE_TOKEN (absent -> every deposit is refused, never open) and
+      # VAULT_PUSH_TOKEN (absent -> the clone cannot reach a private remote).
+      - ./data/.env
+    # Same two bindings as roster, for the same reason: 100.107.253.56 is
+    # dexter's tailnet address AND monkey's own eth0, so these reach mandark and
+    # monkey without binding 0.0.0.0 and handing the house LAN the archive.
+    ports:
+      - "127.0.0.1:8647:8647"
+      - "100.107.253.56:8647:8647"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if __import__('json').load(urllib.request.urlopen('http://127.0.0.1:8647/healthz',timeout=5))['ok'] else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
