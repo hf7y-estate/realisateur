@@ -6,11 +6,16 @@ set -uo pipefail
 harness_tmp
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
 WIRE="$REPO/bin/wire-agent-dispatch.sh"
-FILES="nightly.sh run-agent.sh repos Dockerfile"
+# Read the list OUT OF THE VERB, so adding a dispatch file cannot leave the test
+# asserting a number the verb no longer wires. It said "4" on 2026-09-26 and
+# merge-carry.sh made that wrong in two places at once.
+FILES="$(sed -n 's/^FILES=(\(.*\))$/\1/p' "$WIRE")"
+NFILES="$(printf '%s\n' $FILES | wc -l)"
+[ "$NFILES" -ge 4 ] || { echo "cannot read FILES out of $WIRE"; exit 2; }
 
 echo "wire-agent-dispatch.test.sh"
 
-fresh_copies() {  # the state dexter was in on 2026-09-26: four hand-placed copies
+fresh_copies() {  # the state dexter was in on 2026-09-26: hand-placed copies
   rm -rf "$T/srv"; mkdir -p "$T/srv"
   for f in $FILES; do cp -p "$REPO/agent/$f" "$T/srv/$f"; done
 }
@@ -29,12 +34,12 @@ has "...and hands over the next command" "$out" "--apply"
 eq "...and nothing was linked" "$(find "$T/srv" -type l | wc -l)" "0"
 eq "...and no backup directory was made" "$(ls -d "$T/srv/.pre-wire" 2>/dev/null | wc -l)" "0"
 
-section "C. --apply links all four and keeps what it replaced"
+section "C. --apply links every dispatch file and keeps what it replaced"
 out="$(wire --apply)"; rc "--apply exits 0" 0 "$?"
-eq "four symlinks" "$(find "$T/srv" -maxdepth 1 -type l | wc -l)" "4"
+eq "one symlink per dispatch file" "$(find "$T/srv" -maxdepth 1 -type l | wc -l)" "$NFILES"
 eq "each points into the clone" \
    "$(readlink -f "$T/srv/run-agent.sh")" "$(readlink -f "$REPO/agent/run-agent.sh")"
-eq "the replaced copies are kept" "$(ls "$T/srv/.pre-wire" | wc -l)" "4"
+eq "the replaced copies are kept" "$(ls "$T/srv/.pre-wire" | wc -l)" "$NFILES"
 
 section "D. it is idempotent -- a second run is a no-op that reports OK"
 out="$(wire --check)"; rc "an already-wired host is 0" 0 "$?"
@@ -56,7 +61,7 @@ if [ -n "$prev" ]; then
   eq  "...and --state says so in one word" \
       "$(AGENT_DIR="$T/srv" bash "$WIRE" --state | awk -F'\t' '$1=="run-agent.sh"{print $2}')" "behind"
   out="$(wire --apply)"; rc "...and --apply links it" 0 "$?"
-  eq  "...and the old bytes are kept" "$(ls "$T/srv/.pre-wire" | wc -l)" "4"
+  eq  "...and the old bytes are kept" "$(ls "$T/srv/.pre-wire" | wc -l)" "$NFILES"
 else
   ok "SKIPPED: agent/run-agent.sh has only one version in this clone"
 fi
@@ -70,7 +75,7 @@ eq  "...and --state calls it drifted" \
     "$(AGENT_DIR="$T/srv" bash "$WIRE" --state | awk -F'\t' '$1=="repos"{print $2}')" "drifted"
 has "...and hands over the diff command" "$out" "diff '$T/srv/repos'"
 eq "...and left the drifted file exactly as it was" "$(cat "$T/srv/repos")" "a-hand-edit-nobody-recorded"
-eq "...while still wiring the three that agreed" "$(find "$T/srv" -maxdepth 1 -type l | wc -l)" "3"
+eq "...while still wiring the others that agreed" "$(find "$T/srv" -maxdepth 1 -type l | wc -l)" "$((NFILES - 1))"
 
 section "G. a nightly holding the lock stops it -- run-agent.sh is in use"
 fresh_copies

@@ -33,6 +33,9 @@ STUB
 chmod +x "$T/stub/docker" "$T/stub/crontab"
 
 ARMED='0 1 * * * /srv/agent/nightly.sh # realisateur:agent-nightly:RUNNER'
+# Read the set out of the collector, so adding a dispatch file does not leave
+# this fixture one file short and every verdict DEGRADED.
+DFILES="$(python3 -c 'import re,sys; print(" ".join(re.findall(r"\"([^\"]+)\"", re.search(r"DISPATCH_FILES = \((.*?)\)", open(sys.argv[1]).read(), re.S).group(1))))' "$COLLECTOR")"
 UP='[{"Name":"/roster","Config":{"Image":"i","Labels":{"com.docker.compose.project":"roster"}},
      "State":{"Status":"running","StartedAt":"2026-09-25T00:00:00Z"},"RestartCount":0,
      "HostConfig":{"PortBindings":{"8646/tcp":[{"HostPort":"8646"}]}},
@@ -41,7 +44,7 @@ UP='[{"Name":"/roster","Config":{"Image":"i","Labels":{"com.docker.compose.proje
 # ESTATE_AGENT_SRC is the clone half of the dispatch-source probe. Default it to
 # a mirror of the fixture so the OTHER sections are not all graded on wiring.
 mkdir -p "$T/clone"
-for f in nightly.sh run-agent.sh repos Dockerfile; do : > "$T/clone/$f"; ln -sfn "$T/clone/$f" "$T/agent/$f"; done
+for f in $DFILES; do : > "$T/clone/$f"; ln -sfn "$T/clone/$f" "$T/agent/$f"; done
 # The credential probe is stubbed whole: this suite must never read a real one,
 # and TOK_OUT is the seam every case below steers.
 cat > "$T/stub/tokcheck" <<'STUB'
@@ -187,8 +190,8 @@ eq "run from outside a checkout it says UNKNOWN, never OK" \
 has "...and that is a finding" "$out" "is UNKNOWN"
 
 # back to linked, so G grades the sweep and not the wiring
-rm -f "$T/agent"/nightly.sh "$T/agent"/run-agent.sh "$T/agent"/repos "$T/agent"/Dockerfile
-for f in nightly.sh run-agent.sh repos Dockerfile; do : > "$T/clone/$f"; ln -sfn "$T/clone/$f" "$T/agent/$f"; done
+for f in $DFILES; do rm -f "$T/agent/$f"; done
+for f in $DFILES; do : > "$T/clone/$f"; ln -sfn "$T/clone/$f" "$T/agent/$f"; done
 
 section "I. the credential the nightly pushes with"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"

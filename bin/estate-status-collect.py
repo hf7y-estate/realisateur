@@ -36,10 +36,10 @@ NIGHTLY_TAG = "realisateur:agent-nightly:RUNNER"
 NIGHTLY_MAX_H = 26          # the cron is 0 1 * * *; one missed night is a finding
 NO_AUTOSTART = ".no-autostart"   # provision/dexter/autostart/dexter-srv-autostart's own opt-out marker
 PULL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
-# The four files the dispatcher IS. They are not a checkout (#1332): unless
+# The files the dispatcher IS. They are not a checkout (#1332): unless
 # each is a symlink into a clone that something pulls, a merged fix reaches the
 # 01:00 pass on no path -- and reads exactly like a fix.
-DISPATCH_FILES = ("nightly.sh", "run-agent.sh", "repos", "Dockerfile")
+DISPATCH_FILES = ("nightly.sh", "run-agent.sh", "merge-carry.sh", "repos", "Dockerfile")
 AGENT_SRC = os.environ.get(
     "ESTATE_AGENT_SRC",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agent"))
