@@ -327,7 +327,14 @@ grammar_check() {
 
     case "$line" in *[![:space:]]*) ;; *) continue ;; esac
     [ "$sopen" -gt 0 ] && [ "$first_seen" -eq 0 ] && first_seen=0
-    local decl="${stripped#"${stripped%%[![:space:]#>*_-]*}"}"
+    # `>` IS NOT DECORATION, unlike # * _ -: a blockquote is how a body carries a
+    # SUPERSEDED declaration beside its replacement. Stripping it read quoted
+    # history as a live declaration, so a demoted DECISION could not keep its own
+    # original text -- the `DEFAULT-AFTER 14d:` inside the quote still counted
+    # (two refused writes on hf7y/wtul#346, same shape again on #356). A fenced
+    # block is already skipped above; a quote is the same kind of thing.
+    case "$stripped" in '>'*) continue ;; esac
+    local decl="${stripped#"${stripped%%[![:space:]#*_-]*}"}"
     case "$decl" in
       [Nn][Oo]-[Dd][Ee][Cc][Ii][Ss][Ii][Oo][Nn]:*)
         [ "$first_seen" -eq 1 ] && _find MISPLACED-DECISION \
