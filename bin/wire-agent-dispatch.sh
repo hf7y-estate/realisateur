@@ -101,11 +101,17 @@ for f in "${FILES[@]}"; do
   esac
 
   [ "$MODE" = --apply ] || continue
+  # SAY ONLY WHAT HAPPENED. This claimed "was backed up to .pre-wire/<f>.<stamp>"
+  # unconditionally, so linking merge-carry.sh -- a file that was ABSENT on the
+  # host -- reported a backup that does not exist. A stated backup is something
+  # someone will later go looking for.
+  kept=""
   if [ -e "$DST/$f" ]; then
     mkdir -p "$DST/.pre-wire" || { bad "$f: could not make $DST/.pre-wire"; continue; }
     cp -p "$DST/$f" "$DST/.pre-wire/$f.$stamp" || { bad "$f: could not back up, not touching it"; continue; }
+    kept=" (was backed up to .pre-wire/$f.$stamp)"
   fi
-  ln -sfn "$want" "$DST/$f" && ok "$f -> the clone (was backed up to .pre-wire/$f.$stamp)" \
+  ln -sfn "$want" "$DST/$f" && ok "$f -> the clone${kept}" \
     || bad "$f: could not link"
 done
 

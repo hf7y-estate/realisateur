@@ -27,6 +27,13 @@ export GH_TOKEN="${GH_TOKEN:-$(sudo -n cat /etc/selfdev/gh-token)}"
 
 echo "=== nightly $(date -u +%FT%TZ)  turns=$turns  list=$list ==="
 grep -vE '^\s*(#|$)' "$list" | while read -r repo; do
+  # BEFORE the queue check, not after it. A repo is skipped below when its queue
+  # is empty -- and a queue is empty precisely when the work is already sitting
+  # in the previous pass's unmerged PRs, which is the case that most needs them
+  # merged. Called here as well as in run-agent.sh because that one never runs
+  # for a skipped repo; both calls are idempotent and the second prints nothing.
+  "$here/merge-carry.sh" "$repo" || echo "--- $repo: merge-carry.sh exited $?"
+
   # Do not spend a container on an empty queue. This is the same predicate the
   # brief hands the agent, so a repo that gets picked always has something.
   n=$(gh issue list --repo "hf7y-estate/$repo" --state open --limit 200 \

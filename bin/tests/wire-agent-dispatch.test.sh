@@ -66,6 +66,21 @@ else
   ok "SKIPPED: agent/run-agent.sh has only one version in this clone"
 fi
 
+section "E2. a backup is claimed only when one was taken"
+# It said "was backed up to .pre-wire/<f>.<stamp>" unconditionally, so linking a
+# file that was ABSENT on the host named a backup that does not exist.
+fresh_copies
+one="$(printf '%s\n' $FILES | sed -n 1p)"
+rm -f "$T/srv/$one"
+out="$(wire --apply)"; rc "an absent file still links" 0 "$?"
+has "...and says it was absent" "$out" "$one: absent on the host"
+case "$out" in
+  *"$one -> the clone (was backed up"*) bad "...and does not claim a backup it did not take" ;;
+  *) ok "...and does not claim a backup it did not take" ;;
+esac
+eq "...and no backup file was left for it" "$(ls "$T/srv/.pre-wire/$one".* 2>/dev/null | wc -l)" "0"
+has "...while a file it DID replace still says where the bytes went" "$out" "was backed up to .pre-wire/"
+
 section "F. bytes that were NEVER this path's content are refused, never adopted"
 fresh_copies
 printf 'a-hand-edit-nobody-recorded\n' > "$T/srv/repos"
