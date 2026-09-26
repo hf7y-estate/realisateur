@@ -93,18 +93,8 @@ case "$BANNER" in
 esac
 
 # --- host-side: consulted ONLY when its answer can change the verdict ---------
-# WHY THIS IS NOT A HEARTBEAT (#1226). `wsl.exe` loses the vsock on about a
-# quarter of calls here -- `ERROR: UtilAcceptVsock:273: accept4 failed 110`,
-# ETIMEDOUT, ~40s a miss -- and this tick was spending TWO of those calls every
-# ten minutes, 288 a day, for two facts it did not need:
-#   VM state -- sshd answering IS the distro running. The host is the only
-#     witness in exactly one case: the guest is silent, and someone has to say
-#     whether it is powered off or hung. That case is worth 40s and a retry.
-#   the disk  -- where the vhdx lives changes when a HUMAN moves it. Asking 144
-#     times a day cannot catch it sooner than the next tick, and every ask was
-#     another chance to publish a blind row.
-# So a healthy tick now makes NO interop call at all, and the bug cannot
-# produce a finding on a host that is fine.
+# INVARIANT: a healthy tick makes NO interop call. sshd answering IS the distro
+# running, so the host is asked only when the guest is silent (#1226).
 HOST_ASKED=0
 if [ "$SSHD" = "answering" ]; then
   VMSTATE=running   # proven by the banner, not inferred from it
@@ -121,14 +111,8 @@ if [ "$PKIND" = EXPIRED ]; then
   PKIND="RESUMING"; PWHEN="$NOW"
 fi
 
-# WHERE THE DISK LIVES IS A PUBLISHED FACT, not trivia: the whole outage was a
-# virtual disk on an external USB drive that logged 1580 controller errors in a
-# week. If this ever reads EXTERNAL-USB again, someone reverted the fix and the
-# page should say so rather than waiting to be asked.
-# CACHED, WITH THE TIME IT WAS READ. A human moves this, so re-reading every
-# ten minutes buys nothing and costs an interop call. A failed read keeps the
-# last value AND its original timestamp -- it never restamps, so a stale fact
-# cannot present itself as a fresh one (#1226).
+# INVARIANT: the disk location is published, cached, and never restamped -- a
+# failed read keeps the last value AND its original read time (#1226).
 DISK_CACHE="${DISK_CACHE:-$STATE_FILE.disk}"
 DISK_MAX_AGE_H="${DISK_MAX_AGE_H:-24}"
 DISK=""; DISK_AT=""
