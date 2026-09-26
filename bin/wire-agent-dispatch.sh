@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wire-agent-dispatch.sh -- point /srv/agent's four files at this clone, so a
+# wire-agent-dispatch.sh -- point /srv/agent's dispatch files at this clone, so a
 # merged PR reaches the 01:00 nightly instead of a copy nothing refreshes.
 # TRAPS (the rest of this header is in the vault):
 # `/srv/agent` is not a git repository (#1332). Its files were placed by hand
@@ -36,7 +36,7 @@ done
 
 SRC="${AGENT_SRC:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../agent}"
 DST="${AGENT_DIR:-/srv/agent}"
-FILES=(nightly.sh run-agent.sh repos Dockerfile)
+FILES=(nightly.sh run-agent.sh merge-carry.sh repos Dockerfile)
 
 # --state prints `<file><TAB><state>`, one line per file, and changes nothing.
 # It exists so estate-status-collect.py publishes THIS classification instead

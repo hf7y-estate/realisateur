@@ -34,6 +34,19 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 started_iso="${stamp:0:4}-${stamp:4:2}-${stamp:6:2}T${stamp:9:2}:${stamp:11:2}:${stamp:13:2}Z"
 log="/srv/agent/${repo}.${stamp}.log"
 
+# WHAT THE PREVIOUS PASS OPENED, and nothing else. Zach, 2026-09-26, asked which
+# of three options merges the container's PRs: "Next night's pass merges".
+#
+# The discriminator cannot be an identity. Measured on the six PRs open that day,
+# the head commit's committer read `claude-agent` on three, `Claude` on one and
+# `test` on another -- and Zach's own PRs are authored `hf7y`, the same token
+# identity the pass uses, so matching on either merges a human's work by
+# accident. What IS reliable is that this harness already knows which PRs it
+# opened: it prints them below, partitioned on this pass's own start time. So it
+# writes those numbers down and the next pass merges exactly them.
+carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
+mkdir -p "$(dirname "$carry")"
+
 # ONE level, not two. The previous version mounted /srv/agent/work/<repo> at
 # /work and then cloned to /work/<repo>, so the checkout landed at
 # .../work/<repo>/<repo> AND claude refused /work itself: "may only list files
@@ -97,6 +110,13 @@ BRIEF
 exec > >(tee -a "$log") 2>&1
 echo "=== ${stamp} agent pass: ${repo} (turns=${turns}) ==="
 echo "=== checkout: ${checkout}   log: ${log} ==="
+
+# BEFORE the pass, not after: crt spent two nights re-reading a queue whose work
+# was already sitting in three unmerged PRs of its own, and exiting without
+# saying so (#1329). A pass that starts against a merged predecessor sees the
+# queue as it really is. Its own script, because a step that merges is one to be
+# able to run and test by itself.
+"$(dirname "$0")/merge-carry.sh" "$repo" || echo "=== merge-carry.sh failed (rc=$?) -- dispatching anyway ==="
 
 rc=0
 sudo -n docker run --rm \
@@ -204,6 +224,10 @@ EOF
   echo
   echo "=== PRs opened by THIS pass (since ${started_iso}) ==="
   printf '%s\n' "${mine:-  (none)}"
+
+  # The next pass merges these. Appended, so a PR held back above is not lost.
+  printf '%s\n' "$prs" | awk -F'\t' -v s="$started_iso" \
+    '$1!="" && $1>=s { print $2 }' >> "$carry"
   echo "=== already open on hf7y-estate/${repo} before it ==="
   printf '%s\n' "${prior:-  (none)}"
   echo "=== branch and commits ==="
