@@ -1,0 +1,33 @@
+# One repo per line, no inline comments -- the PR-listing loop word-splits this
+# file and a trailing comment would become a repo name.
+#
+# The nightly runs them in this order, one container at a time, and skips any
+# whose queue is empty. Order is priority: the first ones get the good hours.
+#
+# A repo belongs here when a container can FINISH and VERIFY work in it: tests
+# that run with no device, no live host, no physical input. The `needs-host` and
+# `needs-human` labels carry the per-issue version of the same judgement.
+#
+# THE SET IS ZACH'S, 2026-09-25: "get these up tonight". The two proven ones go
+# first, so a bad night still shows a green pass before it shows a new failure.
+#
+#   crt          PROVEN, hf7y-estate/crt#400.  tests/
+#   dog          PROVEN, hf7y-estate/dog#8.    tests/run_tests.sh --fast
+#   musc-2300    67 runnable.  tests/
+#   groc-mangr   package.json + tests/
+#   wtul         tests/ + conftest.py, pytest
+#   senechal     test/ + test_senechal.py
+#   etalon       bin/ only, no test dir -- a pass here may report "nothing
+#                finishable from here", which is a successful run of the
+#                mechanism, not a failure of it
+#   realisateur  177 runnable, the deepest queue in the estate. The harness
+#                repo: a pass clones it fresh and lands via PR, and /srv/agent
+#                is never in the clone, so it cannot edit what is running it
+crt
+dog
+musc-2300
+groc-mangr
+wtul
+senechal
+etalon
+realisateur
