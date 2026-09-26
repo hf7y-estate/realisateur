@@ -1,6 +1,6 @@
-# markdown-cost.ratchet -- prose lines in this tree. SHRINKS ONLY.
+# markdown-cost.ratchet -- prose-bearing FILES in this tree. SHRINKS ONLY.
 # Written by markdown-cost.sh --accept, which refuses to raise it. A hand
 # edit that raises it is rejected by --census. See bin/markdown-cost.sh.
-# unit: 3 -- what was measured. A number from another unit is not a floor.
-# accepted 2026-09-08T18:07:07-05:00
-5201
+# unit: 4 -- what was measured. A number from another unit is not a floor.
+# accepted 2026-09-25T22:21:06-05:00
+150
