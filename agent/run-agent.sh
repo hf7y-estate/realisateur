@@ -52,6 +52,12 @@ mkdir -p "$(dirname "$carry")"
 # .../work/<repo>/<repo> AND claude refused /work itself: "may only list files
 # in the allowed working directories for this session: '/work/crt'". Its cwd is
 # the clone, so the clone must be the mount's child.
+# PULLED, NOT BUILT, AND NOT `agent:local`. The registry copy is the one CI
+# asserted `claude --version` against; nightly.sh pulls it before the loop and
+# exports this, so a night cannot run an image older than the merged Dockerfile
+# (#1341). A standalone run of this script takes whatever docker already has.
+image="${AGENT_IMAGE:-ghcr.io/hf7y-estate/agent:latest}"
+
 root="/srv/agent/work"
 checkout="${root}/${repo}"
 mkdir -p "$root"
@@ -110,6 +116,7 @@ BRIEF
 exec > >(tee -a "$log") 2>&1
 echo "=== ${stamp} agent pass: ${repo} (turns=${turns}) ==="
 echo "=== checkout: ${checkout}   log: ${log} ==="
+echo "=== image: ${image} ==="
 
 # BEFORE the pass, not after: crt spent two nights re-reading a queue whose work
 # was already sitting in three unmerged PRs of its own, and exiting without
@@ -169,7 +176,7 @@ sudo -n docker run --rm \
   -e REPO="$repo" \
   -e BRIEF="$brief" \
   -e TURNS="$turns" \
-  agent:local bash -lc '
+  "$image" bash -lc '
     set -euo pipefail
     export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/claude-token)"
     export GH_TOKEN="$(cat /run/gh-token)"
