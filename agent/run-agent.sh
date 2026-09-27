@@ -118,11 +118,53 @@ echo "=== checkout: ${checkout}   log: ${log} ==="
 # able to run and test by itself.
 "$(dirname "$0")/merge-carry.sh" "$repo" || echo "=== merge-carry.sh failed (rc=$?) -- dispatching anyway ==="
 
+# THE CREDENTIAL IS MINTED, NOT PLACED. `/etc/selfdev/gh-token` is a classic PAT
+# a human made; it carries no `workflow` scope, so a pass that edits anything under
+# `.github/workflows/` commits, fails to push, and has nothing to show (#1345).
+#
+# The App installed on the org has carried `workflows: write` since 2026-09-03
+# (#922). What stopped the estate from using it was one stale word: dexter's
+# `SELFDEV_GH_OWNER` still said `hf7y` after the repos moved to `hf7y-estate`, so
+# `installation_id()` resolved the pre-org-move USER installation and every token
+# it minted granted 23 `hf7y/*` repos and could not read `hf7y-estate/dog` at all.
+# Fixed in the host config and in `estate-set.sh`'s default (#1313).
+#
+# FALLS BACK, DELIBERATELY. A mint needs the network and /etc/selfdev/app.pem; if
+# either is unavailable this is the difference between a pass on the old
+# credential and no pass at all. The log says which one it used, because "it
+# pushed" and "it pushed as whom" are different questions.
+minter() {
+  local m
+  for m in /usr/local/libexec/selfdev/selfdev-gh-app.sh \
+           "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")/bin/selfdev-gh-app.sh"; do
+    [ -x "$m" ] && { printf '%s' "$m"; return 0; }
+  done
+  return 1
+}
+
+tokfile=/etc/selfdev/gh-token
+minted=""
+if m="$(minter)" && tok="$(sudo -n "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
+  # Outside /srv/agent/work on purpose: that directory IS the container's mount,
+  # so a token written there would be readable by the agent as a plain file
+  # instead of only at /run/gh-token.
+  mkdir -p /srv/agent/state
+  minted="$(mktemp /srv/agent/state/.gh-token.XXXXXX)"
+  chmod 600 "$minted"
+  printf '%s\n' "$tok" > "$minted"
+  tok=""
+  tokfile="$minted"
+  trap 'rm -f "$minted"' EXIT
+  echo "=== credential: App installation token, minted for this pass ==="
+else
+  echo "=== credential: /etc/selfdev/gh-token -- the App mint was unavailable ==="
+fi
+
 rc=0
 sudo -n docker run --rm \
   --cpus 1.5 --memory 3g \
   -v /etc/selfdev/claude-token:/run/claude-token:ro \
-  -v /etc/selfdev/gh-token:/run/gh-token:ro \
+  -v "${tokfile}":/run/gh-token:ro \
   -v "${root}":/work \
   -e REPO="$repo" \
   -e BRIEF="$brief" \
@@ -186,7 +228,7 @@ else
   # green night's log claimed no PR under a header saying it listed them.
   # Recency is the pass's own artifact and survives the token changing identity
   # again; `gh --jq` takes no --arg, so the cutoff is stitched into the program.
-  prs="$(GH_TOKEN="$(sudo -n cat /etc/selfdev/gh-token)" \
+  prs="$(GH_TOKEN="$(sudo -n cat "$tokfile")" \
     gh pr list --repo "hf7y-estate/${repo}" --limit 30 \
       --json number,createdAt,headRefName,title \
       --jq '.[] | "\(.createdAt)\t\(.number)\t\(.headRefName)\t\(.title)"' 2>/dev/null)" || prs=""
