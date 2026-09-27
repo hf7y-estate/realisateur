@@ -179,6 +179,11 @@ def repo_list():
 NIGHT_HEAD = re.compile(r"^=== nightly (\S+)\s+turns=(\d+)")
 NIGHT_DONE = re.compile(r"^=== nightly done (\S+) ===")
 DISPATCH = re.compile(r"^--- (\S+): (\d+) runnable, dispatching (\S+)")
+# The image is the pass's other input, and `:latest` cannot say which one ran --
+# so the log prints a digest and this reads it back. A failed pull is its own
+# outcome, not a night that merely lacks a `done` line: nothing was dispatched.
+NIGHT_IMAGE = re.compile(r"^=== image: (\S+) ===")
+NIGHT_PULLFAIL = re.compile(r"^=== PULL FAILED: (\S+)")
 SKIP = re.compile(r"^--- (\S+): queue empty, skipping")
 BLIND = re.compile(r"^--- (\S+): COULD NOT READ THE QUEUE")
 FINISH = re.compile(r"^--- (\S+): pass (finished|exited (\d+))")
@@ -193,7 +198,8 @@ def nightly_run():
         return None
     txt = read(path) or ""
     run = {"log": os.path.basename(path), "started_at": None, "finished_at": None,
-           "turns": None, "dispatched": {}, "skipped": [], "queue_unreadable": []}
+           "turns": None, "image": None, "pull_failed": None,
+           "dispatched": {}, "skipped": [], "queue_unreadable": []}
     for line in txt.splitlines():
         m = NIGHT_HEAD.match(line)
         if m and run["started_at"] is None:
@@ -201,6 +207,12 @@ def nightly_run():
         m = NIGHT_DONE.match(line)
         if m:
             run["finished_at"] = m.group(1)
+        m = NIGHT_IMAGE.match(line)
+        if m:
+            run["image"] = m.group(1)
+        m = NIGHT_PULLFAIL.match(line)
+        if m:
+            run["pull_failed"] = m.group(1)
         m = DISPATCH.match(line)
         if m:
             run["dispatched"][m.group(1)] = {"queue": int(m.group(2)), "at": m.group(3), "outcome": None}
@@ -366,6 +378,9 @@ def grade(d):
             warn.append("the last nightly log has no parseable start time")
         elif a > NIGHTLY_MAX_H:
             bad.append(f"the last nightly started {a}h ago, past the {NIGHTLY_MAX_H}h a daily cron allows")
+        elif n["last_run"]["pull_failed"]:
+            bad.append(f"the nightly could not pull {n['last_run']['pull_failed']} and dispatched nothing -- "
+                       "no container ran, so nothing landed")
         elif n["last_run"]["finished_at"] is None:
             warn.append("the last nightly has no `done` line -- still running, or it died")
         for repo in n["last_run"]["queue_unreadable"]:

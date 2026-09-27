@@ -136,6 +136,17 @@ const tokenCell=t=>{
   return '<span class="ok">accepted</span>';
 };
 
+// WHICH IMAGE RAN. The dispatcher pulls it before the loop, so the digest in
+// the log -- not the Dockerfile's link state -- is what says a merged edit
+// reached the night. A failed pull dispatched nothing at all.
+const imageCell=run=>{
+  if(!run) return '<span class="blind">no sweep</span>';
+  if(run.pull_failed) return `<span class="bad" title="${H(run.pull_failed)}">PULL FAILED</span>`;
+  if(!run.image) return '<span class="blind">not named in the log</span>';
+  const at=run.image.indexOf("@sha256:");
+  return at<0?H(run.image):`<span title="${H(run.image)}">${H(run.image.slice(0,at))}@${H(run.image.slice(at+8,at+20))}</span>`;
+};
+
 const passesHTML=d=>{
   const n=d.nightly, run=n.last_run;
   if(!run) return `<p class="bad">No nightly log on the host &mdash; the dispatcher has never run here.</p>`;
@@ -183,6 +194,7 @@ fetch("status.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
       <div class="fact"><b>nightly</b>${d.nightly.armed===null?'<span class="blind">crontab unread</span>':
          d.nightly.armed?'<span class="ok">armed</span>':'<span class="bad">NOT armed</span>'}</div>
       <div class="fact"><b>last sweep</b>${H(ago(d.nightly.last_run&&d.nightly.last_run.started_at))}</div>
+      <div class="fact"><b>image</b>${imageCell(d.nightly.last_run)}</div>
       <div class="fact"><b>passes that left a PR</b>${withPR} / ${passes.length}</div>
       <div class="fact"><b>last night cost</b>$${cost.toFixed(2)}</div>
       <div class="fact"><b>dispatcher source</b>${dispatchCell(d.nightly.dispatch_source)}</div>

@@ -234,4 +234,33 @@ out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
 eq "a sweep older than 26h is DOWN" "$(printf '%s' "$out" | field '["verdict"]')" '"DOWN"'
 has "...and the finding carries the age" "$out" "past the 26h a daily cron allows"
 
+section "J. which image the night ran, and a pull that failed"
+# The image line and a digest, in the shape nightly.sh prints them.
+rm -f "$T/agent"/nightly.*.log
+{ printf '=== nightly %s  turns=150  list=x ===\n' "$now"
+  printf '=== image: ghcr.io/hf7y-estate/agent@sha256:5b54277abad3 ===\n'
+  printf -- '--- roster: 7 runnable, dispatching %s\n' "$now"
+  printf -- '--- roster: pass finished\n'
+  printf '=== nightly done %s ===\n' "$now"; } > "$T/agent/nightly.$stamp.log"
+out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
+eq "the image the night ran is read back from the log" \
+   "$(printf '%s' "$out" | field '["nightly"]["last_run"]["image"]')" \
+   '"ghcr.io/hf7y-estate/agent@sha256:5b54277abad3"'
+eq "...and a night that pulled is not reported as a pull failure" \
+   "$(printf '%s' "$out" | field '["nightly"]["last_run"]["pull_failed"]')" "null"
+
+# A failed pull: nightly.sh exits before the loop, so there is no `done` line
+# and no dispatch -- and that must not read as "still running".
+rm -f "$T/agent"/nightly.*.log
+{ printf '=== nightly %s  turns=150  list=x ===\n' "$now"
+  printf '=== PULL FAILED: ghcr.io/hf7y-estate/agent:latest -- dispatching nothing ===\n'
+} > "$T/agent/nightly.$stamp.log"
+out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
+eq "a failed pull names the image it could not get" \
+   "$(printf '%s' "$out" | field '["nightly"]["last_run"]["pull_failed"]')" \
+   '"ghcr.io/hf7y-estate/agent:latest"'
+has "...and it is a finding that says nothing landed" "$out" "and dispatched nothing"
+eq  "...and the verdict is DOWN, not a warning" "$(printf '%s' "$out" | field '["verdict"]')" '"DOWN"'
+hasnt "...and it is NOT reported as a sweep that might still be running" "$out" "still running, or it died"
+
 summary
