@@ -146,11 +146,36 @@ grammar_delivers() {
   [ "$n" -gt 0 ]
 }
 
+# grammar_header <body> -- print the body with fenced blocks, `>` quotes and
+# <details> blocks removed: the lines a declaration can live in. #1324: a
+# <details> block is how a body keeps an answered DECISION's original text
+# readable while collapsed, and it is quoted history the same as a fence or a
+# `>` quote -- grammar_default_after and grammar_answered_by must not read a
+# live declaration out of one, or a demoted body's superseded default gets
+# actuated as if it were still open. THE SAME WALK grammar_check makes over
+# the raw body (it skips a fence and a quote inline, for line numbers), so a
+# second parser here cannot drift from the first.
+grammar_header() {
+  local body="$1" line stripped fenced=0 details=0
+  while IFS= read -r line; do
+    case "$line" in '```'*) fenced=$((1 - fenced)); continue ;; esac
+    [ "$fenced" -eq 1 ] && continue
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    case "${stripped,,}" in
+      '<details'*)  details=1; continue ;;
+      '</details>'*) details=0; continue ;;
+    esac
+    [ "$details" -eq 1 ] && continue
+    case "$stripped" in '>'*) continue ;; esac
+    printf '%s\n' "$line"
+  done <<<"$body"
+}
+
 # grammar_default_after <body> -- print "<days><TAB><action>" and return 0 when
 # the body carries a well-formed DEFAULT-AFTER; return 1 when it carries none.
 # Pure bash: this runs wherever gh-sign runs, and sed/grep were not on that PATH.
 grammar_default_after() {
-  local body="$1" line stripped rest days action
+  local line stripped rest days action
   while IFS= read -r line; do
     stripped="${line#"${line%%[![:space:]]*}"}"
     case "$stripped" in
@@ -165,12 +190,12 @@ grammar_default_after() {
     [ -n "$action" ] || continue
     printf '%s\t%s\n' "$days" "$action"
     return 0
-  done <<<"$body"
+  done <<<"$(grammar_header "$1")"
   return 1
 }
 
 grammar_answered_by() {  # <body> -- print the ref (#568), 1 if none; shape of grammar_default_after
-  local body="$1" line stripped rest ref
+  local line stripped rest ref
   while IFS= read -r line; do
     stripped="${line#"${line%%[![:space:]]*}"}"
     case "$stripped" in
@@ -186,7 +211,7 @@ grammar_answered_by() {  # <body> -- print the ref (#568), 1 if none; shape of g
     case "${ref#*'#'}" in ''|*[!0-9]*) continue ;; esac
     printf '%s\n' "$ref"
     return 0
-  done <<<"$body"
+  done <<<"$(grammar_header "$1")"
   return 1
 }
 
@@ -237,7 +262,7 @@ grammar_declaration() {
 # Prints `CODE  message` per violation; returns the count. Never exits.
 grammar_check() {
   local body="$1" line stripped n=0 lineno=0 first_seen=0
-  local open=0 in_block=0 entries=0 entry='' fenced=0
+  local open=0 in_block=0 entries=0 entry='' fenced=0 details=0
   local sopen=0 in_ship=0 ships=0 ship='' indent=''
   local has_default=0 head_neg=0 nc=''
 
@@ -279,6 +304,16 @@ grammar_check() {
     lineno=$((lineno + 1))
     case "$line" in '```'*) fenced=$((1 - fenced)); continue ;; esac
     [ "$fenced" -eq 1 ] && continue
+    # <details> IS A QUOTE, THE SAME AS `>` -- #1324: it is how a body keeps an
+    # answered DECISION's original text readable, collapsed, beside the answer
+    # that supersedes it. Ungated, the DECISION and DEFAULT-AFTER inside read as
+    # live and the write was refused MISPLACED-DECISION / BAD-DEFAULT -- the
+    # archive of an answered question could not sit next to its answer.
+    case "${line,,}" in
+      '<details'*)   details=1; continue ;;
+      '</details>'*) details=0; continue ;;
+    esac
+    [ "$details" -eq 1 ] && continue
 
     stripped="${line#"${line%%[![:space:]]*}"}"
 
