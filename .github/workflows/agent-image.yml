@@ -1,0 +1,51 @@
+# Build the overnight dispatcher's image, so a merged Dockerfile edit reaches the
+# 01:00 pass. Before this, nothing built it: `agent:local` was made by hand on
+# 2026-09-24, the day BEFORE agent/Dockerfile was committed, and `grep -rn
+# 'docker build' agent/` found nothing (#1341). A symlinked Dockerfile is a file
+# the host can read, not an image the host runs.
+#
+# Same shape as roster-image.yml, with one difference that matters: this package
+# is PRIVATE, and dexter pulls it with the `read:packages` login senechal#886
+# ruled for root and zach on 2026-09-16 (measured: root can pull
+# ghcr.io/hf7y-estate/*). Do not re-derive #1196's anonymous-pull premise; that
+# ruling superseded it.
+name: agent-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'agent/Dockerfile'
+      - '.github/workflows/agent-image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Dockerfile's own `claude --version` line is the assertion that makes a
+      # missing native binary a FAILED BUILD here rather than a silent empty night
+      # on the host. That is the whole reason building in CI is worth more than
+      # building on dexter: the failure lands in a run nobody has to notice.
+      - uses: docker/build-push-action@v6
+        with:
+          context: agent
+          push: true
+          tags: |
+            ghcr.io/hf7y-estate/agent:latest
+            ghcr.io/hf7y-estate/agent:${{ github.sha }}
