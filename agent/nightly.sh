@@ -15,17 +15,38 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
 list="${REPO_LIST:-$here/repos}"
-log="/srv/agent/nightly.$(date -u +%Y%m%dT%H%M%SZ).log"
+# The log and the lock live where the dispatch layer does. Named once, and
+# overridable, so the suite can run this loop somewhere that is not the host.
+dir="${AGENT_DIR:-/srv/agent}"
+log="${dir}/nightly.$(date -u +%Y%m%dT%H%M%SZ).log"
 
 # One night at a time. Without this, a pass that outlives its interval gets a
 # second container on the same checkout and they fight over the branch.
-exec 9>/srv/agent/.nightly.lock
+exec 9>"${dir}/.nightly.lock"
 flock -n 9 || { echo "another nightly holds the lock -- exiting"; exit 0; }
 
 exec > >(tee -a "$log") 2>&1
 export GH_TOKEN="${GH_TOKEN:-$(sudo -n cat /etc/selfdev/gh-token)}"
 
 echo "=== nightly $(date -u +%FT%TZ)  turns=$turns  list=$list ==="
+
+# THE IMAGE COMES FROM THE REGISTRY, which is what makes a merged
+# `agent/Dockerfile` edit the thing tonight runs. `.github/workflows/agent-image.yml`
+# builds and pushes it on every merge that touches the Dockerfile; with no pull
+# here, `docker run` reuses whatever local copy exists and the merged edit stops
+# at the registry -- a file the host can read, not an image the host runs (#1341).
+#
+# AND A FAILED PULL DISPATCHES NOTHING. Running the local copy instead is how a
+# stale or broken image becomes another silent empty night, which is the failure
+# the Dockerfile's own `claude --version` line exists to make loud.
+export AGENT_IMAGE="${AGENT_IMAGE:-ghcr.io/hf7y-estate/agent:latest}"
+sudo -n docker pull "$AGENT_IMAGE" \
+  || { echo "=== PULL FAILED: $AGENT_IMAGE -- dispatching nothing ==="; exit 1; }
+# By digest, so a night can be tied to the Dockerfile it ran, which `:latest`
+# alone cannot say.
+digest="$(sudo -n docker image inspect "$AGENT_IMAGE" --format '{{index .RepoDigests 0}}')" \
+  && echo "=== image: $digest ===" \
+  || echo "=== image: $AGENT_IMAGE -- pulled, digest unreadable ==="
 grep -vE '^\s*(#|$)' "$list" | while read -r repo; do
   # BEFORE the queue check, not after it. A repo is skipped below when its queue
   # is empty -- and a queue is empty precisely when the work is already sitting
