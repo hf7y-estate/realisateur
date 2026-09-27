@@ -41,9 +41,9 @@ actually found, not a stale mental model.
   `AskUserQuestion` is for. Ground each question in what the survey showed:
   cite the project, the issue, how long it has sat open.
 - **Already-settled** — matches a standing decision. Don't re-litigate.
-- **Synchronicities** (sweep only) — two or more projects pointing at
-  overlapping ground. The highest-leverage finding this command produces, since
-  no single project's nightly-batch has the cross-project view.
+- **Synchronicities** (sweep only) — projects pointing at overlapping ground.
+  The highest-leverage finding this command produces, since no single project's
+  nightly-batch has the cross-project view.
 
 ## 3. Ask, don't guess
 

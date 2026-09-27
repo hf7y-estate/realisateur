@@ -1,8 +1,8 @@
 # PROSE-REAPING.md — where a paragraph lives
 
-Established 2026-08-06 (Zach): *"projects are prose-bloated which leads to
-inefficiency and confusion among agents. The new paradigm is github issues for
-mundane text."* `/reap` is the pass; this is the criterion it applies.
+Zach: *"projects are prose-bloated which leads to inefficiency and confusion
+among agents. The new paradigm is github issues for mundane text."* `/reap` is
+the pass; this is the criterion it applies.
 
 ## 1. The criterion
 
@@ -18,8 +18,8 @@ Row three is what makes this more than tidying: a long justification for a knob
 is *evidence about the knob*, and vaulting it launders dead config into a
 cleaner-looking file while the knob survives. Reaping **flags** a mechanism; it
 does not delete it. Prefer a **runnable witness** over a paragraph asserting the
-same. And when the ratchet flags +N, **the answer is always reap** (Zach,
-2026-09-07): a large baseline is itself the evidence that junk exists.
+same. And when the ratchet flags +N, **the answer is always reap** (Zach): a large
+baseline is itself the evidence that junk exists.
 
 **N is a count of FILES, and only a file that stops existing pays it.** The
 census asks how many files carry prose, not how many lines they hold, so
@@ -33,10 +33,8 @@ page for a mechanism that was retired, a spec for a check that is gone.
 **A file counts once it carries a full-line comment; a trailing one on the line
 it explains does not tip it in.** So a code file with none is one full-line
 comment away from being prose-bearing, and the guard will then ask for a whole
-file deleted to pay for it -- measured 2026-09-16 in hf7y/wtul#214, where four
-explanatory lines across two comment-free files read as `+2` and `RUN /reap.
-Delete 2 file(s)`. A third file in the same change received a trailing comment
-and did not move. **This is why the estate writes trailing comments** --
+file deleted to pay for it. A file that receives only a trailing comment does
+not tip in and owes nothing. **This is why the estate writes trailing comments** --
 `bin/ausculte.sh` is written almost entirely that way and says so at its
 `image:` parser. That idiom is a consequence of this metric, not a matter of
 taste, and explaining a line where it sits costs nothing.
@@ -48,8 +46,8 @@ editing this file cause *mechanical* damage without this paragraph, and can the
 claim be re-derived from the code **today**?
 
 **A document may name a VERB, never a script path, flag, or guard's job** (Zach,
-2026-08-23; #579). A verb's `--help` is its own source; the others go stale the
-moment the mechanism moves, and 24 had. **Deleting the sentence is the fix** —
+#579). A verb's `--help` is its own source; the others go stale the moment the
+mechanism moves. **Deleting the sentence is the fix** —
 do not repoint it, and do not build a detector, itself a mechanism to describe.
 
 **The vault** — narrative, post-mortems, superseded decisions. The private
