@@ -207,13 +207,12 @@ acct_git() {  # <account> <home> <git args...> -- as that account, against ITS g
 
 # WHY THIS REPAIRS INSTEAD OF REPORTING (2026-09-18, Zach: "I'm tired of loud
 # warnings that just get ignored. the loops need to complete").
-# 13 of 19 accounts on monkey DECLARED `test@example.com` in their global
-# ~/.gitconfig while committing correctly as <acct>@selfdev.invalid. So
-# monkey-status-collect.py's identity_drift() graded every real commit foreign
-# and hf7y.com/monkey carried a red "7 ACCOUNTS NOT COMMITTING AS ITSELF"
-# banner for weeks -- right that something was wrong, wrong about what, and
-# wired to nothing. The declaration is the one thing that probe cannot verify
-# by reading more commits, and a fourteenth report would have changed nothing.
+# An account may DECLARE `test@example.com` in its global ~/.gitconfig while
+# committing correctly as <acct>@selfdev.invalid, and a drift probe reading
+# commits cannot tell the two apart -- so it grades every real commit foreign
+# and reports an account that is behaving. The declaration is the one thing
+# that probe cannot verify by reading more of them; another report would
+# change nothing.
 # This is the clock that already runs as root on the host every morning.
 # The previous value is preserved under selfdev.previous* BEFORE any write,
 # once, so a re-run cannot overwrite the original with this function's own --

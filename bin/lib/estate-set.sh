@@ -22,6 +22,6 @@ GH_ESTATE_SITE_OWNER="${GH_ESTATE_SITE_OWNER:-hf7y}"
 # by bin/tests/etiquette.test.sh, which went 63/0 to 57/6 on the flip alone.
 GH_ESTATE_HUMAN="${GH_ESTATE_HUMAN:-hf7y}"
 # WHERE THE ARMING AUTHORITY ANSWERS (hf7y/scheduler#429). 100.107.253.56 is
-# dexter's tailnet address AND monkey's own eth0 -- one WSL2 namespace, so one
-# default reaches mandark and monkey both (measured 2026-09-01).
+# dexter's tailnet address, and every WSL2 distro on dexter shares that
+# namespace -- so one default serves the host and its distros alike.
 GH_ESTATE_ROSTER_URL="${GH_ESTATE_ROSTER_URL:-http://100.107.253.56:8646}"

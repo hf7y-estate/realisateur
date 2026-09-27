@@ -5,9 +5,9 @@
 # THE DEFECT THIS CLOSES: ausculte.sh's fleet probe read
 # `ssh ${AUSCULTE_FLEET_HOST:-monkey}` -- a single default, not a set. A second
 # host (vaporwave) was therefore never asked, and its silence read as health --
-# this estate's signature defect, at the scale of a whole host. See
-# uid-band comments in bin/monkey-status-collect.py for why the SAME shape let
-# svc-vaporwave run undetected for weeks; unrelated code, same lesson.
+# this estate's signature defect, at the scale of a whole host. The same shape
+# -- a uid band standing in for a roster -- let svc-vaporwave run undetected for
+# weeks; unrelated code, same lesson.
 #
 # A host in this set that cannot be reached must read BLIND, never be folded
 # silently into an OK -- ausculte.sh's fleet probe enforces that, this file
@@ -46,9 +46,9 @@ SSH_NETNS_ADDR="${SSH_NETNS_ADDR:-dexter.tail893f2c.ts.net}"
 
 # port=who-answers. 22 IS DECLARED ON PURPOSE -- naming it is what lets a block
 # that defaults to it read as WRONG rather than as merely unlisted. Proven by
-# host key, not belief: `ssh-keyscan -p <port>` re-proves any row, and the
-# fingerprints are recorded in provision/monkey-wsl2/runbook.1.
-SSH_NETNS_PORTS="${SSH_NETNS_PORTS:-22=windows 2223=dexter 2224=monkey 2225=vaporwave}"
+# host key, not belief: `ssh-keyscan -p <port>` re-proves any row, so this map
+# is the record and nothing else has to hold the fingerprints.
+SSH_NETNS_PORTS="${SSH_NETNS_PORTS:-22=windows 2223=dexter 2225=vaporwave}"
 
 ssh_netns_host_at() {  # <port> -> who answers there; rc 1 for a port not declared
   local kv

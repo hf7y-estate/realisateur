@@ -87,16 +87,6 @@ OUT="$(ARMING_ROSTER_URL="$URL/roster" bash -c \
   ". '$HERE/bin/lib/arming.sh'; arming_load && arming_state crt")"
 eq "E2 ...and reaches the real thing when it is up" "$OUT" "parked"
 
-section "F. one address, and the python reader agrees with the bash one"
-# The collector is piped over ssh with no environment and carries the literal.
-LIT="$(grep -oE 'http://[0-9.]+:[0-9]+' "$HERE/bin/monkey-status-collect.py" | head -1)"
-eq "F1 the collector's literal is GH_ESTATE_ROSTER_URL" \
-   "$LIT" "$(bash -c ". '$HERE/bin/lib/estate-set.sh'; printf '%s' \"\$GH_ESTATE_ROSTER_URL\"")"
-eq "F2 and it no longer names a git host" \
-   "$(grep -c 'raw.githubusercontent' "$HERE/bin/monkey-status-collect.py")" "0"
-eq "F3 the collector keys on PROJECT, not on an account or host column the service dropped" \
-   "$(grep -c 'r\["account"\]\|r\["host"\]' "$HERE/bin/monkey-status-collect.py")" "0"
-
 section "G. schedule/ config is served from what the build baked in -- never fetched here, never carried"
 SCHED="$T/schedule"; mkdir -p "$SCHED"
 printf 'PROJECT=alpha\n' > "$SCHED/alpha.conf"

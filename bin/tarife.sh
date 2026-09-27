@@ -88,6 +88,21 @@ if [ "$GATE" = 1 ] && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   fi
 fi
 
+# BOTH RATCHETS SEE ONLY TRACKED FILES, so a run before `git add` grades a
+# SUBSET and can answer "nothing to pay" about a tree that owes. That is this
+# estate's signature defect wearing a guard's clothes: could-not-see reading as
+# nothing-wrong. Say what was left out; never silently grade less than the tree.
+untracked_prose() {
+  git rev-parse --git-dir >/dev/null 2>&1 || return 0
+  git ls-files --others --exclude-standard 2>/dev/null \
+    | grep -E '\.(sh|py|md|yml|yaml|jq|tsv)$' || true
+}
+u="$(untracked_prose)"
+if [ -n "$u" ]; then
+  say "-- UNTRACKED, so NEITHER ratchet below counted them. \`git add\` first or this number is a subset:"
+  printf '%s\n' "$u" | sed 's/^/     /'
+fi
+
 # --- etalon's guards, by reference --------------------------------------------
 for l in exit-codes.sh cli-guard.sh; do fetch_guard "lib/$l" >/dev/null; done
 

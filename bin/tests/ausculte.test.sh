@@ -982,10 +982,10 @@ out="$(routes "$TMP/portless")"; rc=$?
 check "I1 a portless alias at that address is DOWN (5), not a route that quietly reaches Windows" "$rc" "5"
 case "$out" in *"WINDOWS sshd"*) ok "I2 ...and it names what :22 actually is, so the key is not retried" ;;
   *) bad "I2 names the Windows sshd" "got: $out" ;; esac
-case "$out" in *"2223 dexter"*) ok "I3 ...and hands over the ports rather than making the reader look them up" ;;
+case "$out" in *"2223=dexter"*) ok "I3 ...and hands over the ports rather than making the reader look them up" ;;
   *) bad "I3 names the ports" "got: $out" ;; esac
 
-printf 'Host dexter-staging\n  HostName %s\n  Port 2223\nHost monkey\n  HostName %s\n  Port 2224\n' "$ADDR" "$ADDR" > "$TMP/portful"
+printf 'Host dexter-staging\n  HostName %s\n  Port 2223\nHost vaporwave\n  HostName %s\n  Port 2225\n' "$ADDR" "$ADDR" > "$TMP/portful"
 out="$(routes "$TMP/portful")"; rc=$?
 check "I4 naming the port is OK (0)" "$rc" "0"
 case "$out" in *"2 ssh alias(es)"*) ok "I5 ...and it says how many it actually looked at" ;;
@@ -1019,7 +1019,9 @@ section "J. the port map is a declaration, one file, and 22 is IN it"
 . "$HERE/../lib/fleet-hosts-set.sh"
 check "J1 22 is declared, so defaulting to it reads WRONG not merely unlisted" "$(ssh_netns_host_at 22)" "windows"
 check "J2 2223 is dexter's WSL2" "$(ssh_netns_host_at 2223)" "dexter"
-check "J3 2224 is monkey" "$(ssh_netns_host_at 2224)" "monkey"
+# 2224 WAS monkey, unregistered 2026-09-24. A port whose host is gone must not
+# keep resolving: an alias pointed at it is a route to nothing, not to monkey.
+if ssh_netns_host_at 2224 >/dev/null 2>&1; then bad "J3 2224 must not resolve -- monkey is deleted"; else ok "J3 2224 resolves to nothing, monkey having been deleted"; fi
 check "J4 2225 is vaporwave" "$(ssh_netns_host_at 2225)" "vaporwave"
 check "J5 the reverse lookup ausculte's propagation probe uses agrees" "$(ssh_netns_port_for dexter)" "2223"
 if ssh_netns_host_at 9999 >/dev/null 2>&1; then bad "J6 an undeclared port must not resolve"; else ok "J6 an undeclared port does not resolve"; fi

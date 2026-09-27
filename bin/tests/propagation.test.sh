@@ -782,11 +782,11 @@ has "--help says --check is the default and writes nothing" "$O" "--check (defau
 echo
 echo "-- 9. THE TICK REPAIRS A DRIFTED DECLARED IDENTITY (#1231) -------------"
 # ===========================================================================
-# 13 of 19 accounts on monkey declared `test@example.com` in their global
-# ~/.gitconfig while committing correctly as <acct>@selfdev.invalid, so
-# monkey-status-collect.py's identity_drift() graded every real commit foreign
-# and hf7y.com/monkey carried a red "7 ACCOUNTS NOT COMMITTING AS ITSELF"
-# banner for weeks, wired to nothing. Fixture passwd, fixture homes,
+# An account may declare `test@example.com` in its global ~/.gitconfig while
+# committing correctly as <acct>@selfdev.invalid. A drift probe reading commits
+# cannot tell those apart, so it grades every real commit foreign and reports
+# an account that is behaving -- loudly, and wired to nothing.
+# Fixture passwd, fixture homes,
 # TICK_SUDO="" -- and D2 below is the one that matters: a suite that writes the
 # running user's own ~/.gitconfig is the bug it claims to be testing.
 

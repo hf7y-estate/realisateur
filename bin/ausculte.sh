@@ -64,8 +64,8 @@ fi
 # (written once, on entry, never rewritten while the state holds -- that
 # mtime is the only thing an escalation ever produced that is worth keeping),
 # a GH_TOKEN minted for the root crontab that has no gh login, and nothing
-# that files or pages -- the relay and issue-filing legs cost 47 questions
-# sent/0 answered and 10 issues/5 days before both were cut for cause.
+# that files or pages -- both of those legs were cut for cause and neither
+# returns here.
 if [ "$CADENCE" = 1 ]; then
   . "$HERE/lib/cron-lock.sh"
   cron_lock ausculte-cadence
@@ -119,7 +119,7 @@ fetch_monkey_status() {  # one curl per run for monkey/status.json -- hosts and 
 }
 
 down=0; blind=0; rows=()
-# FOUR STATES, NOT THREE (2026-08-22). OK / DOWN / BLIND could not express
+# FOUR STATES, NOT THREE. OK / DOWN / BLIND could not express
 # "this host must not answer that question", so containment showed up as
 # failure: monkey is a VM GUEST on dexter, and a guest holding shell on its own
 # hypervisor is backwards. Without a fourth word the only honest readings left
@@ -210,7 +210,10 @@ if want routes; then
       else rok=$((rok+1)); fi
     done
     if [ -n "$rbad" ]; then
-      record routes DOWN "ssh alias reaching dexter's address without naming its host:$rbad -- 2223 dexter, 2224 monkey, 2225 vaporwave"
+      # The map is READ, not retyped -- the same argument the propagation probe
+      # already makes below. This line's own copy said "2224 monkey" for two
+      # days after monkey was deleted, which is what a retyped fact does.
+      record routes DOWN "ssh alias reaching dexter's address without naming its host:$rbad -- declared: $SSH_NETNS_PORTS"
     else
       record routes OK "$rok ssh alias(es) at dexter's address, each naming the port that selects its host"
     fi
@@ -437,8 +440,8 @@ if want propagation; then
   else
     cut_at="$(printf '%s' "$v" | jq -r '.last_cut.at // empty' 2>/dev/null)"
     streak="$(printf '%s' "$v" | jq -r '.blocked_streak // 0' 2>/dev/null)"
-    # TWO NUMBERS, NOT ONE (realisateur#603). Under a monthly cut they differ
-    # by 29 days:
+    # TWO NUMBERS, NOT ONE (realisateur#603). Under a monthly cut they are
+    # keyed to different clocks and must not be collapsed:
     #   max_h      the ADOPTION window -- how long a host may lag a cut it has
     #              been told about. Keyed to the emitter's nightly cadence, so
     #              this is unchanged at 28h.
@@ -518,10 +521,9 @@ if want propagation; then
 fi
 
 if want handoff; then
-  # A HANDOFF THAT NEVER COMPLETES IS INVISIBLE. The senechal block moved on
-  # 2026-08-22 and the deletion owed here was still outstanding four days
-  # later, because "delete once it merges" lived in an issue body and nothing
-  # read it on a clock. reprise reads bin/lib/handoffs.tsv instead.
+  # A HANDOFF THAT NEVER COMPLETES IS INVISIBLE. "Delete once it merges" in an
+  # issue body is read by nothing on a clock, so the deletion outlives the
+  # handoff. reprise reads bin/lib/handoffs.tsv instead.
   if rp="$(part reprise.sh)"; then
     out="$(bash "$rp" --check 2>&1)"; rc=$?
     case $rc in
@@ -585,7 +587,7 @@ if want unarmed; then
     out="$(bash "$un" --check 2>&1)"; rc=$?
     case $rc in
       0) record unarmed OK 'the floor holds -- nothing newly built and unarmed, and no row past its own window' ;;
-      # Name the rows, not a count: "3 findings" sends them to the file anyway.
+      # Name the rows, not a count -- a count sends the reader to the file anyway.
       1) named="$(printf '%s\n' "$out" \
                    | awk '$1 == "EXPIRED" || $1 == "GREW" || $1 == "REGRESSED" { printf "%s %s; ", $1, $2 }')"
          record unarmed DOWN "${named:-$(printf '%s' "$out" | tail -1)}" ;;
@@ -661,12 +663,12 @@ $_led" ;;
     else
       # DONE and COOLDOWN are both fine -- COOLDOWN is the pacer holding a
       # finished account back on purpose. SO IS NOT-DONE WITH A REASON, which
-      # this row called DOWN until 2026-08-22: it is what the runner records
-      # for an agent verdict of CONTINUE (schedule/_verdict-semantics.md,
-      # "there is ACTIONABLE work left"), the healthy steady state of an
-      # account with a backlog. Measured that day, 9 of 14 accounts read
-      # NOT-DONE and six had shipped a merged PR in that very run. A monitor
-      # that reports DOWN in the normal case is one a human checks by hand
+      # this row once called DOWN: it is what the runner records for an agent
+      # verdict of CONTINUE (schedule/_verdict-semantics.md, "there is
+      # ACTIONABLE work left"), the healthy steady state of an account with a
+      # backlog -- an account can read NOT-DONE in the same run that shipped a
+      # merged PR. A monitor that reports DOWN in the normal case is one a
+      # human checks by hand
       # every time. So the finding is SILENCE, not incompleteness:
       #
       #   blank reason      the account stopped and said nothing (scheduler#261)
@@ -698,10 +700,9 @@ fi
 if want fatals; then  # A HARD ABORT BEFORE `claude` STARTS writes no ledger row, so `fleet` above never sees it -- two accounts hard-aborted every dispatch for days on exactly that gap (#1005) and a four-line sweep.log FATAL count found both in a minute.
   # CURRENT RUN, NOT LIFETIME. sweep.log is never rotated, so `grep -c FATAL`
   # over the whole file made this row LATCH: one abort in an account's history
-  # held it DOWN forever, and no recovery could ever clear it. Measured
-  # 2026-09-16, it was reporting 25 aborts across 4 accounts of which ZERO were
-  # current -- the newest was 10 days old and every one of those accounts has
-  # completed runs since. A row that cannot return to OK is not a witness, it
+  # held it DOWN forever, and no recovery could ever clear it -- an account with
+  # completed runs since its last abort still read DOWN. A row that cannot
+  # return to OK is not a witness, it
   # is furniture, and an operator learns to scroll past it -- which is the
   # failure this whole verb exists to prevent.
   #

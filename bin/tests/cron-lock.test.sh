@@ -2,12 +2,11 @@
 #
 # SUBJECT: bin/lib/cron-lock.sh -- the guard that stops a clock from stacking.
 #
-# THE DEFECT THIS PINS, 2026-08-25. monkey-watch.sh ran from dexter's crontab
-# every ten minutes with ConnectTimeout and no lock. monkey wedged mid-auth --
-# TCP up, banner sent, never authenticated -- so ConnectTimeout, which bounds
-# the CONNECT and not the session, expired on nothing. Every run hung, one per
-# tick, nine of them before a human looked. The two other clocks in this repo
-# had the same shape and had simply not been unlucky yet.
+# THE DEFECT THIS PINS. A watcher ran from a crontab every ten minutes with
+# ConnectTimeout and no lock. Its target wedged mid-auth -- TCP up, banner
+# sent, never authenticated -- so ConnectTimeout, which bounds the CONNECT and
+# not the session, expired on nothing. Every run hung, one per tick, and they
+# stacked until a human looked. A timeout on the wrong phase is not a lock.
 #
 # So: B is the ratchet. A script that declares a cron cadence declares
 # CRON_TAG, and this suite fails if such a script does not take the lock --

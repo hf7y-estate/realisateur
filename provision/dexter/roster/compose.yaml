@@ -12,10 +12,10 @@ services:
     env_file:
       # ROSTER_WRITE_TOKEN. Absent -> every write is refused, never open.
       - ./data/.env
-    # 100.107.253.56 is dexter's tailnet address AND monkey's own eth0 -- every
-    # WSL2 distro on dexter shares one namespace (measured 2026-09-01). So these
-    # two lines reach mandark and monkey without binding 0.0.0.0, which would
-    # hand 192.168.0.22 and the house LAN the estate's arming control (crt#402).
+    # 100.107.253.56 is dexter's tailnet address, and every WSL2 distro on
+    # dexter shares that namespace. So these two lines reach the tailnet without
+    # binding 0.0.0.0, which would hand the house LAN the estate's arming
+    # control (crt#402).
     ports:
       - "127.0.0.1:8646:8646"
       - "100.107.253.56:8646:8646"

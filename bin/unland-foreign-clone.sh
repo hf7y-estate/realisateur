@@ -43,7 +43,7 @@ while [ $# -gt 0 ]; do
 done  # $PROJECT is MATCHED, not merely non-empty: it becomes a path component of the rm -rf below, and `..` would name every account's whole Documents/Projects
 [ -n "$PROJECT" ] || cli_die "which project's foreign clones? (e.g. senechal)"
 
-UID_LO=3000; UID_HI=3100                                          # the self-dev band, same as bin/monkey-status-collect.py
+UID_LO=3000; UID_HI=3100                                          # the self-dev band; every reader of it derives, never a typed list
 HOME_ROOT="${SELFDEV_HOME_ROOT:-/home}"                           # fixture seams:
 PASSWD_SRC="${SELFDEV_PASSWD:-}"                                  # unset in production
 HOST_S="${SELFDEV_HOSTNAME:-$(hostname -s 2>/dev/null || echo unknown)}"
@@ -58,7 +58,7 @@ bad() { printf '  BAD     %s\n' "$*"; BAD=$((BAD+1)); }
 act() { printf '  DO      %s\n' "$*"; }
 die() { printf '\n%s: %s\n' "$CLI_NAME" "$*" >&2; exit "${2:-5}"; }
 
-accounts() {  # the uid band IS the roster, same predicate bin/monkey-status-collect.py uses -- never a typed list
+accounts() {  # the uid band IS the roster -- never a typed list
   { [ -n "$PASSWD_SRC" ] && cat "$PASSWD_SRC" || getent passwd; } 2>/dev/null \
     | awk -F: -v lo="$UID_LO" -v hi="$UID_HI" '$3+0>=lo && $3+0<hi {print $1}' | sort
 }

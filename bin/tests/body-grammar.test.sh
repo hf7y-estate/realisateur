@@ -299,6 +299,27 @@ out="$(grammar_check "$(_da 'DEFAULT-AFTER 14d:')" 2>&1)"
 case "$out" in *BAD-DEFAULT*) ok "a window with no action is BAD-DEFAULT -- a timer to nowhere" ;;
   *) bad "no action is BAD-DEFAULT" "got: $out" ;; esac
 
+# --- A QUOTED DECLARATION IS TEXT (hf7y/wtul#346, again on #356) -------------
+# Demoting an answered DECISION to NO-DECISION while keeping the original wording
+# quoted beside it was refused: the `DEFAULT-AFTER 14d:` inside the blockquote
+# still parsed as a live declaration, so the body could not carry its own
+# history. Two writes refused on #346 before the body took. `>` is not markdown
+# decoration like # * _ -; it is how supersession is written.
+_demoted="$(printf 'NO-DECISION: answered 2026-09-25, the original is quoted below\n\n> DECISION: @zach -- which shim?\n> DEFAULT-AFTER 14d: close it as declined\n\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+grammar_check "$_demoted" >/dev/null 2>&1 \
+  && ok "a NO-DECISION may quote the DECISION and DEFAULT-AFTER it supersedes" \
+  || bad "a quoted declaration is text" "it was refused: $(grammar_check "$_demoted" 2>&1)"
+
+out="$(grammar_check "$_demoted" 2>&1)"
+case "$out" in *MISPLACED-DECISION*) bad "a quoted DECISION is not MISPLACED" "got: $out" ;;
+  *) ok "...and the quoted DECISION line is not MISPLACED-DECISION either" ;; esac
+
+# The quote must not satisfy the requirement either -- a DECISION whose only
+# DEFAULT-AFTER is quoted history has no live timer and still blocks forever.
+_quoted_only="$(printf 'DECISION: @zach -- q\n\n> DEFAULT-AFTER 14d: what the last round said\n\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+case "$(grammar_check "$_quoted_only" 2>&1)" in *NO-DEFAULT*) ok "a DECISION whose only DEFAULT-AFTER is quoted is still NO-DEFAULT" ;;
+  *) bad "quoted default does not satisfy #680" "got: $(grammar_check "$_quoted_only" 2>&1)" ;; esac
+
 _nodefault="$(printf 'DECISION: @zach -- q\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
 out="$(grammar_check "$_nodefault" 2>&1)"
 case "$out" in *NO-DEFAULT*) ok "#680: a DECISION with no DEFAULT-AFTER is NO-DEFAULT -- blocking by omission is refused" ;;

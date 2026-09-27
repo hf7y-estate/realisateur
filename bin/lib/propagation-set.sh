@@ -188,15 +188,15 @@ PROP_LEAK_BOUND=7
 # --- LOCAL: never leaves this repo ------------------------------------------
 # "NEVER LEAVES THIS REPO" IS NOT "NEVER RUNS ANYWHERE ELSE", and reading it
 # that way cost the estate its only outside observer: #511's scan saw no caller
-# for monkey-watch.sh and deleted it -- its caller is a crontab line on dexter
-# (bin/lib/cron-invoked.tsv). Still LOCAL and never on PATH: dexter's crontab
-# runs it from a live `git pull --ff-only` clone, not a pinned build.
+# and deleted one whose caller was a crontab line on dexter
+# (bin/lib/cron-invoked.tsv). estate-watch.sh is that shape now: LOCAL, never on
+# PATH, run by dexter's crontab from a live `git pull --ff-only` clone.
 # Before cutting anything in this list, ask what invokes it FROM SOMEWHERE ELSE.
 PROP_LOCAL_SCRIPTS="
-monkey-watch.sh
-monkey-watch-win.sh
-monkey-status-collect.py
-repose.sh
+estate-watch.sh
+estate-status-collect.py
+wire-agent-dispatch.sh
+dispatch-token-check.sh
 landing-drift.sh
 vault-spool-drain.sh
 stale-paths.sh
@@ -219,6 +219,11 @@ selfdev-home-check.sh
 # carry.sh and reprise.sh are LOCAL: they write to a BRANCH of this repo, not a
 # host, so per-account copies would be many writers racing one force-with-lease.
 # reprise also reads bin/lib/handoffs.tsv, THIS repo's ledger, empty elsewhere.
+# dispatch-token-check.sh is LOCAL and must STAY local: it reads the host's
+# credential, and a per-account copy would be that read on nineteen machines.
+# wire-agent-dispatch.sh is LOCAL for the same reason estate-watch.sh is, and
+# more strongly: it exists to point /srv/agent AT this clone, so shipping it to
+# a host would be a copy of the thing whose whole argument is not to copy.
 # registry-standup.sh, branch-protection-provision.sh: LOCAL. FLEET subjects.
 # publish-release-verdict.sh is LOCAL because it runs in the release pipeline.
 

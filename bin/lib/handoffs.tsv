@@ -34,57 +34,6 @@
 # man/consigne.1	hf7y/bibliothecaire	68	man/fonde.1
 # bin/tests/consigne.test.sh	hf7y/bibliothecaire	68	test/fonde-consign-test.sh
 
-# monkey-watch and its parts -> hf7y/senechal, which owns what exists on a
-# host and already received the three monkey provisioning scripts (senechal#355).
-# Carried WITH #621 (the vmhost seam) and #639 (the virtual clock) already in.
-# The witness for each is the file on senechal's default branch; the dexter
-# crontab line is retargeted at merge time, which is why these must not
-# collect on the merge alone.
-#
-# provision/dexter/README.md is NOT a row. It went to the VAULT, not to
-# senechal -- a plan proposed 2026-08-14 on empty ground and never executed,
-# now at vault:senechal/dexter-host-layout-20260814.md with its actionable
-# half at senechal#439. A deposit is not a handoff, so it is deleted here
-# outright rather than waited on.
-#
-# PR 441 was closed unmerged, superseded by 513, then 520, then 522 (rebases
-# past prose-ratchet unit-2 fallout, senechal#442). reprise checks `merged` on
-# the literal PR number in this row, so a superseded number reports OWED
-# forever even after the real successor merges -- retarget this row on every
-# supersession, not just once (hf7y/realisateur#651).
-#
-# PAUSED 2026-09-02 (realisateur#879 follow-up): bin/repose.sh still sources
-# lib/vmhost.sh at runtime (". $HERE/lib/vmhost.sh", not a copy); ausculte.sh,
-# cron-invoked.tsv and not-a-verb.tsv still read monkey-watch.sh and
-# monkey-status-collect.py as local files. --apply deleted all nine anyway and
-# broke cron-lock/estate-set/propagation and 15 extra repose.test.sh failures
-# on a green main. Uncomment once repose.sh and propagation-set.sh point at
-# senechal's copies instead of these paths -- #651 stays open until then.
-#
-# THAT BLOCKER IS SPENT; A WORSE ONE REPLACED IT (measured 2026-09-18).
-# senechal now carries bin/lib/{vmhost,cron-lock,zaxon,monkey-watch-alert}.sh
-# and monkey-watch-merge.py, so "point at senechal's copies" is satisfied. But
-# every copy over there is from 2026-09-01 and the estate moved:
-#
-#   bin/lib/vmhost.sh            senechal  94 lines   realisateur 257
-#                                and the word `wsl` appears ZERO times in it
-#   bin/monkey-watch.sh          senechal 143 lines   realisateur ~300
-#   bin/monkey-status-collect.py senechal 168 lines   realisateur 364
-#
-# senechal's vmhost.sh is the pre-migration VirtualBox-only driver. Hand repose
-# over onto it and it reads `unknown` for monkey forever, because monkey has
-# been a WSL2 distro since 2026-08-30. THE HANDOFF IS A RE-SYNC, NOT A MOVE:
-# senechal's five files have to be brought to realisateur's current versions
-# first, or this delivers a mechanism to a driver that cannot see the host.
-# bin/monkey-watch.sh	hf7y/senechal	522	bin/monkey-watch.sh
-# bin/monkey-status-collect.py	hf7y/senechal	522	bin/monkey-status-collect.py
-# bin/lib/monkey-watch-alert.sh	hf7y/senechal	522	bin/lib/monkey-watch-alert.sh
-# bin/lib/monkey-watch-merge.py	hf7y/senechal	522	bin/lib/monkey-watch-merge.py
-# bin/lib/vmhost.sh	hf7y/senechal	522	bin/lib/vmhost.sh
-# share/monkey-status.html	hf7y/senechal	522	share/monkey-status.html
-# bin/tests/monkey-watch.test.sh	hf7y/senechal	522	test/monkey-watch.test.sh
-# bin/tests/vmhost.test.sh	hf7y/senechal	522	test/vmhost.test.sh
-# bin/tests/monkey-status-collect.test.sh	hf7y/senechal	522	test/monkey-status-collect.test.sh
 
 # the self-dev provisioning block -> hf7y/scheduler, which owns arming and
 # dispatch (ROSTER, dose, usage-gate.sh, sync-crontab.sh). realisateur#577
