@@ -46,7 +46,8 @@ query($owner:String!, $repo:String!, $after:String) {
            orderBy: {field: CREATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number createdAt closedAt stateReason
+        number createdAt closedAt stateReason title
+        labels(first: 20) { nodes { name } }
         closedByPullRequestsReferences(first: 1, includeClosedPrs: true) { totalCount }
         timelineItems(last: 60, itemTypes: [REFERENCED_EVENT, CROSS_REFERENCED_EVENT]) {
           nodes {
@@ -97,7 +98,7 @@ def classify(issue):
     return "ASSERTED"
 
 
-def census_repo(owner, repo, since):
+def census_repo(owner, repo, since, listing=None):
     """Completed closures created on or after `since`, by class. Stops paging as
     soon as CREATED_AT order takes it past the window."""
     out = {"completed": 0, "not_planned": 0, "classes": {k: 0 for k in
@@ -115,6 +116,8 @@ def census_repo(owner, repo, since):
             k = classify(i)
             out["classes"][k] += 1
             out["examples"].setdefault(k, f"{repo}#{i['number']}")
+            if listing == k:
+                print(f"  {repo}#{i['number']:<6} [{','.join(l['name'] for l in i['labels']['nodes'])}] {i['title'][:70]}")
         if not page["pageInfo"]["hasNextPage"]:
             return out
         after = page["pageInfo"]["endCursor"]
@@ -126,6 +129,7 @@ def main():
     ap.add_argument("--repo", action="append", help="one repo; repeatable. Default: every repo the owner has")
     ap.add_argument("--since", default=SINCE_DEFAULT, help=f"created on or after (default {SINCE_DEFAULT}, realisateur#791's window)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--list", metavar="CLASS", help="also print every closure in one class, with its labels")
     a = ap.parse_args()
 
     repos = a.repo
@@ -141,7 +145,7 @@ def main():
                       "classes": {k: 0 for k in ("LINKED", "COMMITTED", "VERIFIED", "ASSERTED")}}}
     for r in repos:
         try:
-            got = census_repo(a.owner, r, a.since)
+            got = census_repo(a.owner, r, a.since, a.list)
         except Exception as e:                      # a repo that could not be read is BLIND, not empty
             rec["blind"][r] = str(e)
             continue
