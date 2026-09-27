@@ -201,10 +201,17 @@ EOF
 echo
 echo "-- 1d. A LIB ALREADY ON bashified IS IN THE TABLE ----------------------"
 if [ -n "$V_REF" ]; then
-  frozen=""
+  frozen=""; gone=""
   for l in $(git -C "$REPO" ls-tree --name-only "$V_REF" bin/lib/ 2>/dev/null); do
+    # A DELETION IS NOT A FREEZE, the same reason 1b tolerates one. bashified
+    # keeps a file until the next cut, so a lib deleted on main sits there with
+    # no source left to carry -- and no carries.tsv row could reach it, because
+    # the file it would copy is gone. Failing here makes a lib deletion
+    # unmergeable until a cut runs, which no PR can make happen.
+    [ -e "$REPO/$l" ] || { gone="$gone ${l#bin/lib/}"; continue; }
     case $'\n'"$carried_libs"$'\n' in *$'\n'"${l#bin/}"$'\n'*) ;; *) frozen="$frozen ${l#bin/lib/}" ;; esac
   done
+  [ -z "$gone" ] || echo "  ..      lib(s) deleted on main, awaiting the next cut to leave bashified:$gone"
   [ -z "$frozen" ] && ok "every bin/lib file already on bashified is a carries.tsv row, so carry.sh still refreshes it" \
                    || bad "on bashified but NOT in carries.tsv -- frozen there, a fix on main reaches it on no path:$frozen"
 fi

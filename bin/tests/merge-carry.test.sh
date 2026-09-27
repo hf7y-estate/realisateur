@@ -31,6 +31,7 @@ chmod +x "$T/bin/gh" "$T/bin/sudo"
 
 run() {  # run(repo) -- with the stubs in front of the real gh
   rm -f "$T/merged"
+  # shellcheck disable=SC2097,SC2098  # T="$T" passes the harness dir the stubs read; same value, child env
   PATH="$T/bin:$PATH" T="$T" AGENT_STATE="$T/state" GH_TOKEN_FILE="$T/token" \
     bash "$SUT" "$1" 2>&1
 }
@@ -71,7 +72,7 @@ for case in "draft:OPEN true MERGEABLE" "conflict:OPEN false CONFLICTING" \
 done
 
 section "E. a PR that is already gone is dropped, not retried forever"
-repo=done; carry 33
+repo="done"; carry 33   # quoted: bare done reads as the loop keyword (SC1010)
 state 33 "MERGED false UNKNOWN"
 out="$(run "$repo")"; has "says it is already done" "$out" "DONE     #33"
 eq "...and drops it" "$(left)" ""
