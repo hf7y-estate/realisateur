@@ -18,7 +18,10 @@ HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 COLLECTOR="${COLLECTOR:-$HERE/bin/estate-status-collect.py}"
 PAGE_SRC="${PAGE_SRC:-$HERE/share/estate-status.html}"
 . "$HERE/bin/lib/estate-set.sh"
-PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_OWNER/$GH_ESTATE_SITE_REPO}"
+# THE SITE OWNER, NOT THE ESTATE OWNER. `hf7y.github.io` is a USER Pages repo and
+# stayed under `hf7y` when the other 54 moved to the org -- lib/estate-set.sh says
+# so, in the comment above the variable this line now reads.
+PUBLISH_REPO="${PUBLISH_REPO:-$GH_ESTATE_SITE_OWNER/$GH_ESTATE_SITE_REPO}"
 PUBLISH_DIR="${PUBLISH_DIR:-estate}"
 CRON_TAG='# realisateur:estate-watch:WATCH'
 CRON_SPEC="${ESTATE_WATCH_CRON_SPEC:-*/20 * * * *}"
@@ -56,8 +59,12 @@ if [ "${1:-}" != "--apply" ]; then
   exit 0
 fi
 
-gh repo clone "$PUBLISH_REPO" "$WORK/site" -- -q --depth 1 2>/dev/null \
-  || die "could not clone $PUBLISH_REPO -- nothing published"
+# THE REASON TRAVELS WITH THE FAILURE. `2>/dev/null` here printed the same
+# "could not clone" line every 20 minutes while gh was saying 404 on a repo that
+# does not exist, and the page went stale with its own publisher's diagnosis
+# discarded.
+gh repo clone "$PUBLISH_REPO" "$WORK/site" -- -q --depth 1 2>"$WORK/clone.err" \
+  || die "could not clone $PUBLISH_REPO -- nothing published: $(tr '\n' ' ' < "$WORK/clone.err")"
 mkdir -p "$WORK/site/$PUBLISH_DIR"
 printf '%s\n' "$payload" > "$WORK/site/$PUBLISH_DIR/status.json"
 [ -f "$PAGE_SRC" ] && cp "$PAGE_SRC" "$WORK/site/$PUBLISH_DIR/index.html"
