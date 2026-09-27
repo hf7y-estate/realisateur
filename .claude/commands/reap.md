@@ -9,34 +9,32 @@ argument-hint: "<repo-name>"
      there, never the installed copy. -->
 
 Reap `$ARGUMENTS`. Three targets: **prose in half, foreign mechanism in half,
-75% of issues closed by working them.** realisateur was the test case —
-19,458 → 9,670 prose lines, 50 of 66 issues closed (hf7y/realisateur#366).
+75% of issues closed by working them.**
 
 ## 1. Measure first
 
 `gh issue list --state open | length` and the prose count from the repo's
 `.prose-ratchet`. Write both numbers down; every later claim is against them.
 
-**A repo with no prose guard adopts one in six lines**, calling
+**A repo with no prose guard adopts one by calling**
 `hf7y/etalon/.github/workflows/guard.yml@main`. Never copy the script: it is
 maintained in `hf7y/etalon` and nowhere else, and every vendored copy this
 estate has made has drifted or shipped broken.
 
 ## 2. Cut the generators, not the output
 
-The step that makes the rest stick. #321 measured **84 mandatory prose lines
-per 180 of mechanism** — none of them chosen. Reap the output without cutting
-what mandates it and it regrows by the next PR.
+The step that makes the rest stick. Most prose is MANDATED by something —
+a guard, a template, a convention — and none of it was chosen. Reap the output
+without cutting what mandates it and it regrows by the next PR.
 
 **Add no guard, no convention, no document.** Zach, 2026-08-17: *"Do not
 establish new policies that will go stale. Delete the old policy they would
 contradict instead."* Enforcement is whatever ratchet already exists.
-Recorded in hf7y/realisateur#366, which is the pass that applied it.
 
 Hunt, ranked by what yielded:
 
 - a doctrine file's essay half — any `.md` over ~200 lines whose mechanism is a script
-- a checklist row that argues with itself — parentheses over 3 lines
+- a checklist row that argues with itself, or parenthesises its own exception
 - **a spec for a check that no longer exists** — grep the header's check names against the code that emits them
 - a guard demanding a *reason* per declaration
 - **a ledger column nothing parses** — read the consumer; `while read -r k v` means field 3+ is dead

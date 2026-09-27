@@ -29,8 +29,8 @@ anything, or change a weight. A promotion nobody stated is the silent reorder
 `/ideate` 4.5 forbids.
 
 For per-project git health and open questions use `scheduler status
-<project>` directly. The four survey scripts that wrapped it are retired
-(hf7y/realisateur#265); `bin/tests/guard-estate.test.sh` holds the survivors.
+<project>` directly. The survey scripts that wrapped it are retired;
+`bin/tests/guard-estate.test.sh` holds the survivors.
 
 **Read the answers on your own issues and process them.** Zach answers by
 commenting and LEAVING THE ISSUE OPEN -- state and labels say nothing about
