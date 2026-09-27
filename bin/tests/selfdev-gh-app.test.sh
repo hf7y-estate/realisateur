@@ -352,22 +352,22 @@ BINDIR="$(cd "$(dirname "$0")/.." && pwd)"
 # OWN repo and nothing else: realisateur reaches an account through the verb
 # build (#134) and each clones only its own REPO_URL (scheduler#307).
 # The re-wire caller, bin/selfdev-credentials.sh, was removed in #1134 (its
-# credential-audit check moved to hf7y/etalon); this is the one caller left.
+# credential-audit check moved to hf7y-estate/etalon); this is the one caller left.
 has "M4 the provisioning caller scopes to the project itself" \
     "$(cat "$BINDIR/setup-selfdev-project.sh")" "--wire --repos '\$PROJECT'"
 
 echo
 echo "-- N: an owner-qualified --repos entry is refused, not sent to GitHub -----"
 
-outN1="$(mwire --repos hf7y/dog 2>&1)"; rcN1=$?
+outN1="$(mwire --repos hf7y-estate/dog 2>&1)"; rcN1=$?
 has "N1 the qualified form is refused before any request" "$outN1" "owner-qualified"
-has "N1 ...naming the fix"                                "$outN1" "drop the 'hf7y/' prefix"
+has "N1 ...naming the fix"                                "$outN1" "drop the 'hf7y-estate/' prefix"
 has "N1 ...and the bare form to use"                       "$outN1" "'dog'"
 eq  "N1 ...exits 5 like the script's other refusals"       "$rcN1" "5"
-no  "N1 ...never bakes the bad value into the helper"       "$(mhelper)" "hf7y/dog"
+no  "N1 ...never bakes the bad value into the helper"       "$(mhelper)" "hf7y-estate/dog"
 
-outN2="$(mwire --repos wtul,hf7y/senechal 2>&1)"; rcN2=$?
-has "N2 a mixed list is still caught" "$outN2" "hf7y/senechal' is owner-qualified"
+outN2="$(mwire --repos wtul,hf7y-estate/senechal 2>&1)"; rcN2=$?
+has "N2 a mixed list is still caught" "$outN2" "hf7y-estate/senechal' is owner-qualified"
 eq  "N2 ...exits 5"                   "$rcN2" "5"
 
 outN3="$(mwire --repos WTUL 2>&1)"; rcN3=$?

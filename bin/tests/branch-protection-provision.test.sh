@@ -32,19 +32,19 @@ put() { local k; k="$(printf '%s' "$1" | tr -c 'A-Za-z0-9' '_')"; shift; cat > "
 
 repo() {   # <name>; default branch, one workflow path, and the workflow body on stdin
   local n="$1"
-  put "repos/hf7y/$n" <<<'{"default_branch":"main"}'
-  put "repos/hf7y/$n/git/trees/main?recursive=1" \
+  put "repos/hf7y-estate/$n" <<<'{"default_branch":"main"}'
+  put "repos/hf7y-estate/$n/git/trees/main?recursive=1" \
     <<<'{"truncated":false,"tree":[{"path":".github/workflows/ci.yml"}]}'
-  jq -Rs '{content: (. | @base64)}' > "$FIX/$(printf '%s' "repos/hf7y/$n/contents/.github/workflows/ci.yml?ref=main" | tr -c 'A-Za-z0-9' '_')"
+  jq -Rs '{content: (. | @base64)}' > "$FIX/$(printf '%s' "repos/hf7y-estate/$n/contents/.github/workflows/ci.yml?ref=main" | tr -c 'A-Za-z0-9' '_')"
 }
 
 checks() {   # <name> <sha> <name-that-reached-a-conclusion>... -- one PR run and its conclusive checks
   local n="$1" sha="$2"; shift 2
-  put "repos/hf7y/$n/actions/runs?event=pull_request&per_page=50" \
+  put "repos/hf7y-estate/$n/actions/runs?event=pull_request&per_page=50" \
     <<<"{\"workflow_runs\":[{\"id\":9,\"head_sha\":\"$sha\"}]}"
   printf '%s\n' "$@" | jq -R . | jq -s \
     '{check_runs: [.[] | {name: ., conclusion: "success", details_url: "https://x/actions/runs/9/job/1"}]}' \
-    > "$FIX/$(printf '%s' "repos/hf7y/$n/commits/$sha/check-runs?per_page=100" | tr -c 'A-Za-z0-9' '_')"
+    > "$FIX/$(printf '%s' "repos/hf7y-estate/$n/commits/$sha/check-runs?per_page=100" | tr -c 'A-Za-z0-9' '_')"
 }
 
 wf_one_job() { printf 'name: ci\non:\n  pull_request:\njobs:\n  %s:\n    runs-on: ubuntu-latest\n' "$1"; }
@@ -56,16 +56,16 @@ advised'
 
 repo tidy      < <(wf_one_job suites)
 checks tidy aaa suites
-put "repos/hf7y/tidy/branches/main/protection" \
+put "repos/hf7y-estate/tidy/branches/main/protection" \
   <<<'{"required_status_checks":{"strict":false,"contexts":["suites"]},"enforce_admins":{"enabled":true}}'
 
 repo runsmore  < <(printf 'name: ci\non:\n  pull_request:\njobs:\n  suites:\n    runs-on: x\n  lint:\n    runs-on: x\n')
 checks runsmore bbb suites lint
-put "repos/hf7y/runsmore/branches/main/protection" \
+put "repos/hf7y-estate/runsmore/branches/main/protection" \
   <<<'{"required_status_checks":{"strict":false,"contexts":["suites"]},"enforce_admins":{"enabled":false}}'
-cp "$FIX/$(printf '%s' 'repos/hf7y/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_')" \
-   "$FIX/$(printf '%s' 'repos/hf7y/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after"
-python3 - "$FIX/$(printf '%s' 'repos/hf7y/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after" <<'PY'
+cp "$FIX/$(printf '%s' 'repos/hf7y-estate/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_')" \
+   "$FIX/$(printf '%s' 'repos/hf7y-estate/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after"
+python3 - "$FIX/$(printf '%s' 'repos/hf7y-estate/runsmore/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after" <<'PY'
 import json,sys
 f=sys.argv[1]; d=json.load(open(f))
 d["required_status_checks"]["contexts"]=["suites","lint"]
@@ -74,7 +74,7 @@ PY
 
 repo wedged    < <(wf_one_job suites)
 checks wedged ccc suites
-put "repos/hf7y/wedged/branches/main/protection" \
+put "repos/hf7y-estate/wedged/branches/main/protection" \
   <<<'{"required_status_checks":{"strict":false,"contexts":["ghost"]},"enforce_admins":{"enabled":false}}'
 
 # advised: suites is already required; deploy-drift carries an ADVISORY
@@ -82,11 +82,11 @@ put "repos/hf7y/wedged/branches/main/protection" \
 # no marker and must still be proposed, exactly like runsmore's.
 repo advised   < <(printf 'name: ci\non:\n  pull_request:\njobs:\n  suites:\n    runs-on: ubuntu-latest\n  # ADVISORY: reads another repo; a required check a third party can break is a wedge\n  deploy-drift:\n    runs-on: ubuntu-latest\n  lint:\n    runs-on: ubuntu-latest\n')
 checks advised ddd suites deploy-drift lint
-put "repos/hf7y/advised/branches/main/protection" \
+put "repos/hf7y-estate/advised/branches/main/protection" \
   <<<'{"required_status_checks":{"strict":false,"contexts":["suites"]},"enforce_admins":{"enabled":false}}'
-cp "$FIX/$(printf '%s' 'repos/hf7y/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_')" \
-   "$FIX/$(printf '%s' 'repos/hf7y/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after"
-python3 - "$FIX/$(printf '%s' 'repos/hf7y/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after" <<'PY'
+cp "$FIX/$(printf '%s' 'repos/hf7y-estate/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_')" \
+   "$FIX/$(printf '%s' 'repos/hf7y-estate/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after"
+python3 - "$FIX/$(printf '%s' 'repos/hf7y-estate/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_').after" <<'PY'
 import json,sys
 f=sys.argv[1]; d=json.load(open(f))
 d["required_status_checks"]["contexts"]=["suites","lint"]
@@ -113,7 +113,7 @@ section "C. a repo missing a check it runs is a finding, with the remedy named"
 : > "$T/log"; OUT="$(run runsmore)"; RC=$?
 eq  "C1 exits 1" "$RC" "1"
 has "C2 names the check it runs and does not require" "$OUT" "MISSING runs and does not require: lint"
-has "C3 names the remedy" "$OUT" "remedy  require [suites,lint] on hf7y/runsmore@main"
+has "C3 names the remedy" "$OUT" "remedy  require [suites,lint] on hf7y-estate/runsmore@main"
 hasnt "C4 still wrote nothing" "$(cat "$T/log")" "-X PUT"
 
 section "D. a required context no workflow produces is a WEDGE, never a proposal"
@@ -132,11 +132,11 @@ section "E. --apply is the only path that writes"
 has "E1 without the flag it refuses the write in words" "$OUT" "no write: --apply was not given"
 hasnt "E2 and made no PUT" "$(cat "$T/log")" "-X PUT"
 : > "$T/log"; OUT="$(run --apply runsmore)"; RC=$?
-has "E3 with the flag it PUTs" "$(cat "$T/log")" "-X PUT repos/hf7y/runsmore/branches/main/protection"
+has "E3 with the flag it PUTs" "$(cat "$T/log")" "-X PUT repos/hf7y-estate/runsmore/branches/main/protection"
 has "E4 and re-reads to confirm" "$OUT" "applied now requires [suites,lint]"
 eq  "E5 exits 0 once the delta is closed" "$RC" "0"
 
-section "H. a job with its own ADVISORY marker is witnessed but never proposed as required (hf7y/realisateur#949)"
+section "H. a job with its own ADVISORY marker is witnessed but never proposed as required (hf7y-estate/realisateur#949)"
 : > "$T/log"; OUT="$(run advised)"; RC=$?
 eq  "H1 exits 1 (lint is still a genuine finding)" "$RC" "1"
 has "H2 still proposes the unmarked job" "$OUT" "MISSING runs and does not require: lint"
@@ -144,11 +144,11 @@ hasnt "H3 never folds the marked job into MISSING" "$OUT" "does not require: dep
 hasnt "H4 never folds it in alongside lint either" "$OUT" "does not require: lint,deploy-drift"
 has "H5 reports it distinctly, by name" "$OUT" "ADVISORY deploy-drift"
 has "H6 names the file the marker lives in" "$OUT" "per .github/workflows/ci.yml"
-has "H7 the remedy proposed excludes it" "$OUT" "remedy  require [suites,lint] on hf7y/advised@main"
+has "H7 the remedy proposed excludes it" "$OUT" "remedy  require [suites,lint] on hf7y-estate/advised@main"
 PUT_BODY_DIR="$T/put"; mkdir -p "$PUT_BODY_DIR"
 : > "$T/log"; OUT="$(run --apply advised)"; RC=$?
 eq  "H8 --apply exits 0 once the delta (lint only) is closed" "$RC" "0"
-BODY="$T/put/$(printf '%s' 'repos/hf7y/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_')"
+BODY="$T/put/$(printf '%s' 'repos/hf7y-estate/advised/branches/main/protection' | tr -c 'A-Za-z0-9' '_')"
 [ -f "$BODY" ] || { bad "H9 the PUT body was captured" "no file at $BODY"; }
 hasnt "H10 the write itself never carries the marked job"  "$(cat "$BODY" 2>/dev/null)" "deploy-drift"
 has   "H11 the write does carry the unmarked one"          "$(cat "$BODY" 2>/dev/null)" "lint"

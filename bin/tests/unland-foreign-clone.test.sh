@@ -110,7 +110,7 @@ else
   ok "H1 skipped: no fakeroot, so the removal path cannot be driven here"
 fi
 
-section "I. the project is an ARGUMENT: the same tool takes senechal's copies (hf7y/scheduler#307)"
+section "I. the project is an ARGUMENT: the same tool takes senechal's copies (hf7y-estate/scheduler#307)"
 mkclone "$T/home/wtul/Documents/Projects/senechal"
 mkclone "$T/home/ecosim/Documents/Projects/senechal"
 mkclone "$T/home/senechal/Documents/Projects/senechal"
@@ -148,10 +148,10 @@ mkclone "$T/homeL/realisateur/Documents/Projects/realisateur"
 cat > "$T/gh-stub" <<'EOF'  # ghost gets no clone below, only a deploy key -- the orphan #852 describes; wtul gets neither
 #!/usr/bin/env bash
 case "$*" in
-  "repo deploy-key list --repo hf7y/realisateur --json id,title --jq"*)
+  "repo deploy-key list --repo hf7y-estate/realisateur --json id,title --jq"*)
     printf '111\tmonkey-ecosim-realisateur\n222\tmonkey-ghost-realisateur\n' ;;
-  "repo deploy-key delete 111 --repo hf7y/realisateur") exit 0 ;;  # ecosim's: succeeds
-  "repo deploy-key delete 222 --repo hf7y/realisateur") exit 1 ;;  # ghost's: GitHub refuses, e.g. a stale token
+  "repo deploy-key delete 111 --repo hf7y-estate/realisateur") exit 0 ;;  # ecosim's: succeeds
+  "repo deploy-key delete 222 --repo hf7y-estate/realisateur") exit 1 ;;  # ghost's: GitHub refuses, e.g. a stale token
   *) exit 1 ;;
 esac
 EOF
@@ -163,8 +163,8 @@ runL() {  # runL <mode> -- OUT/RC, against $T/homeL and the stub above
 
 OUT="$(runL --check)"; RC=$?
 has "L1 ecosim's clone is still named" "$OUT" "would remove $T/homeL/ecosim/Documents/Projects/realisateur"
-has "L2 and ecosim's deploy key is named alongside it" "$OUT" "would revoke deploy key 'monkey-ecosim-realisateur' (id 111) on hf7y/realisateur"
-has "L3 ghost has no clone but its orphaned key is still a finding" "$OUT" "would revoke deploy key 'monkey-ghost-realisateur' (id 222) on hf7y/realisateur"
+has "L2 and ecosim's deploy key is named alongside it" "$OUT" "would revoke deploy key 'monkey-ecosim-realisateur' (id 111) on hf7y-estate/realisateur"
+has "L3 ghost has no clone but its orphaned key is still a finding" "$OUT" "would revoke deploy key 'monkey-ghost-realisateur' (id 222) on hf7y-estate/realisateur"
 hasnt "L4 ghost is not reported as having a clone" "$OUT" "would remove $T/homeL/ghost/"
 has "L5 wtul has neither a clone nor a key, and reads OK" "$OUT" "wtul: no clone"
 eq "L6 findings exit 1" "$RC" "1"
@@ -174,8 +174,8 @@ if command -v fakeroot >/dev/null 2>&1; then
           UNLAND_GH="$T/gh-stub" fakeroot "$SCRIPT" realisateur --apply 2>&1)"; RC=$?
   [ -d "$T/homeL/ecosim/Documents/Projects/realisateur" ] \
     && bad "L7 ecosim's clone is gone" || ok "L7 ecosim's clone is gone"
-  has "L8 and ecosim's deploy key was revoked" "$OUT" "revoked deploy key 'monkey-ecosim-realisateur' (id 111) on hf7y/realisateur"
-  has "L9 ghost's orphaned key was attempted and GitHub's refusal is reported, not swallowed" "$OUT" "could not revoke deploy key 'monkey-ghost-realisateur' (id 222) on hf7y/realisateur"
+  has "L8 and ecosim's deploy key was revoked" "$OUT" "revoked deploy key 'monkey-ecosim-realisateur' (id 111) on hf7y-estate/realisateur"
+  has "L9 ghost's orphaned key was attempted and GitHub's refusal is reported, not swallowed" "$OUT" "could not revoke deploy key 'monkey-ghost-realisateur' (id 222) on hf7y-estate/realisateur"
   eq "L10 a key GitHub refused to revoke is a finding" "$RC" "1"
 else
   ok "L7 skipped: no fakeroot, so the apply path cannot be driven here"
@@ -216,9 +216,9 @@ mkclone "$T/homeM/realisateur/Documents/Projects/realisateur"
 cat > "$T/gh-stubM" <<'EOF'
 #!/usr/bin/env bash
 case "$*" in
-  "repo deploy-key list --repo hf7y/realisateur --json id,title --jq"*)
+  "repo deploy-key list --repo hf7y-estate/realisateur --json id,title --jq"*)
     printf '333\tmonkey-ecosim-realisateur\n' ;;
-  "repo deploy-key delete 333 --repo hf7y/realisateur") exit 0 ;;
+  "repo deploy-key delete 333 --repo hf7y-estate/realisateur") exit 0 ;;
   *) exit 1 ;;
 esac
 EOF
@@ -234,7 +234,7 @@ OUT="$(runM --check)"; RC=$?
 has "M1 says it is driven over ssh"                 "$OUT" "on monkey, driven over ssh"
 has "M2 the ssh transport really fired"              "$OUT" "FAKESSH host=monkey"
 has "M3 ecosim's foreign clone is named"              "$OUT" "would remove $T/homeM/ecosim/Documents/Projects/realisateur on monkey"
-has "M4 ecosim's deploy key is found via LOCAL gh"    "$OUT" "would revoke deploy key 'monkey-ecosim-realisateur' (id 333) on hf7y/realisateur"
+has "M4 ecosim's deploy key is found via LOCAL gh"    "$OUT" "would revoke deploy key 'monkey-ecosim-realisateur' (id 333) on hf7y-estate/realisateur"
 has "M5 the owning account's checkout is kept"        "$OUT" "realisateur: KEPT -- this account owns realisateur"
 eq  "M6 findings exit 1"                              "$RC" "1"
 [ -d "$T/homeM/ecosim/Documents/Projects/realisateur" ] \
@@ -253,7 +253,7 @@ if command -v fakeroot >/dev/null 2>&1; then
     && ok "M10 the owning account's checkout survived" \
     || bad "M10 the owning account's checkout survived"
   has "M11 says the removal happened on the target"     "$OUT" "removed $T/homeM/ecosim/Documents/Projects/realisateur on monkey"
-  has "M12 and the deploy key was revoked, via LOCAL gh" "$OUT" "revoked deploy key 'monkey-ecosim-realisateur' (id 333) on hf7y/realisateur"
+  has "M12 and the deploy key was revoked, via LOCAL gh" "$OUT" "revoked deploy key 'monkey-ecosim-realisateur' (id 333) on hf7y-estate/realisateur"
 else
   ok "M8 skipped: no fakeroot, so the apply-over-host path cannot be driven here"
 fi

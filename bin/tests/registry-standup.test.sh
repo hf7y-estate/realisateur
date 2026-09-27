@@ -40,16 +40,16 @@ node() { # name private hwf bwf hverb bverb [archived] [marker]
 wf() { jq -cn --arg t "$2" --arg n "$1" '{entries:[{name:$n, object:{text:$t}}]}'; }
 GUARDY="$(wf prose.yml   'jobs:
   prose:
-    uses: hf7y/etalon/.github/workflows/guard.yml@main')"
+    uses: hf7y-estate/etalon/.github/workflows/guard.yml@main')"
 RUNTIMEY="$(wf runtime.yml 'jobs:
   runtime:
-    uses: hf7y/etalon/.github/workflows/guard.yml@main
+    uses: hf7y-estate/etalon/.github/workflows/guard.yml@main
     with:
       runtime: true')"
 DECOY="$(wf other.yml 'env:
   runtime: true')"
 
-registry() { jq -s '{data:{user:{repositories:{nodes:.}}}}' > "$1"; }
+registry() { jq -s '{data:{organization:{repositories:{nodes:.}}}}' > "$1"; }
 { node alpha false "$GUARDY" "$RUNTIMEY" false true
   node beta  true  "$GUARDY" null        false false
   node gamma true  null      null        true  false
@@ -69,7 +69,7 @@ section "A. a project that was never stood up is reported, by name and by item"
 out="$(run "$T/full.json")"; rc_a=$?
 rc  "A1 findings exit 1" 1 "$rc_a"
 has "A2 gamma owes the workflow"      "$out" "MISSING gamma"
-has "A3 gamma owes the guard call"    "$out" "workflows calling hf7y/etalon/.github/workflows/guard.yml"
+has "A3 gamma owes the guard call"    "$out" "workflows calling hf7y-estate/etalon/.github/workflows/guard.yml"
 has "A4 gamma owes the runtime job"   "$out" "runtime: true on the default branch"
 has "A5 gamma owes a runner"          "$out" "a self-hosted runner"
 has "A6 a bare input is not a guard"  "$out" "MISSING delta"
