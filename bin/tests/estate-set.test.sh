@@ -61,8 +61,14 @@ for f in ausculte.sh publish-release-verdict.sh selfdev-release-tick.sh estate-w
   out="$(GH_ESTATE_SITE=new.example bash -c "sed 's/#.*//' '$HERE/bin/$f' | grep -c 'hf7y\.com'" 2>/dev/null)"
   eq "D1 $f names no host literal in code" "$out" "0"
 done
-has "D2 estate-watch's publish target reads the variables" \
-    "$(sed 's/#.*//' "$HERE/bin/estate-watch.sh")" '$GH_ESTATE_OWNER/$GH_ESTATE_SITE_REPO'
+# BOTH PUBLISHERS, ONE RULE. D2 asserted `$GH_ESTATE_OWNER/...` here while D4
+# asserted the site owner next door, so a green suite held estate-watch pointed at
+# `hf7y-estate/hf7y.github.io` -- a repo that 404s -- and the page stopped
+# publishing for hours with nothing red.
+has "D2 estate-watch's publish target composes from the SITE owner, not the estate owner" \
+    "$(sed 's/#.*//' "$HERE/bin/estate-watch.sh")" '$GH_ESTATE_SITE_OWNER/$GH_ESTATE_SITE_REPO'
+hasnt "D2b ...and never from the estate owner, which addresses a repo that does not exist" \
+    "$(sed 's/#.*//' "$HERE/bin/estate-watch.sh")" 'PUBLISH_REPO:-$GH_ESTATE_OWNER'
 has "D3 ...and so does the commit author it writes under" \
     "$(sed 's/#.*//' "$HERE/bin/estate-watch.sh")" 'noreply@$GH_ESTATE_SITE'
 has "D4 the Pages repo composes from the SITE owner, not the estate owner" \
