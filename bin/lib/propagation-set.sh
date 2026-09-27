@@ -195,6 +195,7 @@ PROP_LEAK_BOUND=7
 PROP_LOCAL_SCRIPTS="
 estate-watch.sh
 estate-status-collect.py
+healing-census.py
 wire-agent-dispatch.sh
 dispatch-token-check.sh
 landing-drift.sh
