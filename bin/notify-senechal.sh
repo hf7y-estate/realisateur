@@ -157,15 +157,24 @@ PY
 )" || die "the filing does not satisfy senechal's schema for door '$door' (see above) -- nothing was filed"
 
 # The human-readable line is DERIVED from the fields, not typed alongside them,
-# so it cannot disagree with the payload the absorber reads.
+# so it cannot disagree with the payload the absorber reads. The subject is
+# whichever field(s) the door's OWN schema names as `key` -- not a guessed
+# "id" or "name" -- because a composite-key door like `crontab` (host,
+# account, tag) has neither, and titled every filing "None" (#1334).
 text="$(printf '%s' "$payload" | python3 -c '
 import json, sys
+doors_file, door_name = sys.argv[1], sys.argv[2]
+doors = json.load(open(doors_file))["doors"]
 p = json.load(sys.stdin)
 f = p["fields"]
-key = f.get("id") or f.get("name")
+key_fields = doors[door_name]["key"]
+if isinstance(key_fields, str):
+    key_fields = [key_fields]
+key = "/".join(f[k] for k in key_fields)
+excluded = set(key_fields) | {"notes"}
 print("%s: %s (%s)" % (p["door"], key, ", ".join(
-    "%s=%s" % (k, v) for k, v in sorted(f.items()) if k not in ("id", "name", "notes"))))
-')"
+    "%s=%s" % (k, v) for k, v in sorted(f.items()) if k not in excluded)))
+' "$doors_file" "$door")"
 
 command -v gh >/dev/null 2>&1 || die "gh is not on PATH -- cannot file, and could not confirm a filing either"
 # NO senechal clone is required: the note goes to GitHub. Do not reinstate a
