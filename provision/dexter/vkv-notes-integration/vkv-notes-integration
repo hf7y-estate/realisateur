@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# vkv-notes-integration -- fire ONCE, 2026-10-12 09:07 America/Chicago, and
+# notify. Nothing else.
+#
+#   vkv-notes-integration --install [--dry-run]   from a machine with a dexter
+#                                                 login; installs and enables
+#   vkv-notes-integration --unit service|timer    print one systemd unit
+#   vkv-notes-integration                         the notification itself
+#
+# WHY THIS EXISTS: four October beats are armed as Gmail scheduled sends, and a
+# Gmail scheduled send is frozen -- no API can edit one. The 10/11 meeting
+# produces notes that belong in the Oct 17 "Rapid Rewards Brunch 10/18" beat,
+# which by then has been armed for ten days. Nothing in any repo, tracker or
+# host fires on a date, so without this the integration is remembered or it is
+# not (media-arts-collective/wavebucks#74).
+#
+# NOTIFY ONLY, DELIBERATELY. The post-meeting integration sequence has never run
+# end to end, and scheduling a sequence that has never completed only makes it
+# fail unattended. `defere` files one `needs-human` issue: no model is called,
+# no mail is sent, no tokens are spent. agent/nightly.sh's queue predicate
+# excludes `needs-human`, so the notification cannot pull a container either.
+# Do not "improve" this into an unattended run.
+#
+# ONE-SHOT: OnCalendar names a single date. After 2026-10-12 it is inert, not
+# broken. Delete it then, or repoint the date at the next meeting.
+set -uo pipefail
+
+# THE UNITS LIVE HERE, not in files beside this one -- same rule as
+# dexter-srv-autostart: --install writes what --unit prints, so the host's copy
+# and this script cannot disagree about ExecStart or the date.
+if [ "${1:-}" = "--unit" ] && [ "${2:-}" = "service" ]; then
+  cat <<'UNIT'
+[Unit]
+Description=VKV: fold the 10/11 meeting notes into the armed Oct 17 brunch beat
+Documentation=https://github.com/hf7y-estate/realisateur/blob/main/provision/dexter/vkv-notes-integration/vkv-notes-integration
+Documentation=https://github.com/media-arts-collective/wavebucks/issues/74
+
+[Service]
+Type=oneshot
+# AS ZACH, NOT ROOT: `defere` files through `gh`, which reads ~/.config/gh.
+# root has no such credential and the notification would fail silently on the
+# one morning it matters.
+User=zach
+Group=zach
+ExecStart=/usr/local/bin/vkv-notes-integration
+UNIT
+  exit 0
+fi
+
+if [ "${1:-}" = "--unit" ] && [ "${2:-}" = "timer" ]; then
+  cat <<'UNIT'
+[Unit]
+Description=VKV: one-shot, 2026-10-12 09:07 -- see vkv-notes-integration.service
+Documentation=https://github.com/media-arts-collective/wavebucks/issues/74
+
+[Timer]
+OnCalendar=2026-10-12 09:07:00
+# Fires at the next boot if dexter is down that morning. A reminder that
+# silently skipped because the host was asleep is the failure this guards.
+Persistent=true
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target
+UNIT
+  exit 0
+fi
+
+log() { printf '[vkv-notes-integration] %s\n' "$*"; }
+
+if [ "${1:-}" = "--install" ]; then
+  HOST="${DEXTER_HOST:-dexter}"
+  self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" true \
+    || { log "FATAL: no ssh to $HOST -- --install runs from a machine with a dexter login"; exit 1; }
+  if [ "${2:-}" = "--dry-run" ]; then
+    log "DRY RUN -- nothing is written to $HOST"
+    "$self" --unit service | sed 's/^/  service | /'
+    "$self" --unit timer   | sed 's/^/  timer   | /'
+    exit 0
+  fi
+  log "installing on $HOST"
+  scp -q "$self" "$HOST:/tmp/vkv-notes-integration"
+  ssh "$HOST" 'set -e
+sudo -n install -m 0755 /tmp/vkv-notes-integration /usr/local/bin/vkv-notes-integration
+rm -f /tmp/vkv-notes-integration
+/usr/local/bin/vkv-notes-integration --unit service | sudo -n tee /etc/systemd/system/vkv-notes-integration.service >/dev/null
+/usr/local/bin/vkv-notes-integration --unit timer   | sudo -n tee /etc/systemd/system/vkv-notes-integration.timer   >/dev/null
+sudo -n systemctl daemon-reload
+sudo -n systemctl enable --now vkv-notes-integration.timer' || exit 1
+  log "enabled. Verify: ssh $HOST systemctl list-timers vkv-notes-integration.timer --all"
+  exit 0
+fi
+
+# THE NOTIFICATION. `defere` is the estate's typed door for "a person has to do
+# this": it writes the DECISION/DEFAULT-AFTER grammar and the needs-human label
+# itself, so nothing here hand-rolls a body that body-grammar.sh would refuse.
+exec /usr/local/bin/defere \
+  "VKV: fold the 10/11 meeting notes into the armed Oct 17 brunch beat" \
+  --human "the Oct 17 'Rapid Rewards Brunch 10/18' beat is armed as a Gmail scheduled send and is frozen -- folding the 10/11 meeting notes into it is cancel-send, edit, reschedule, BY HAND. Notes live at ~/Documents/vkv/ on mandark. Context: media-arts-collective/wavebucks#74." \
+  --default-after "3d: the Oct 17 beat sends without the 10/11 notes in it" \
+  --repo hf7y-estate/realisateur
