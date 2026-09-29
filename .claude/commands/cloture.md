@@ -84,8 +84,14 @@ The **owning** repo -- `check-project-busy <target>` first if it isn't this one.
 
 ## 4. Blocked on Zach
 
-Only this session's own. An open issue whose body opens `DECISION:` is waiting on a person; `NO-DECISION:` is not.
+Only this session's own. **A body opening `DECISION:` is a question asked, not one still open** -- the ruling is usually in a comment the body never learned (#1044), so grade with the shared predicate, never the body (#1089):
 
+```
+. bin/lib/answered.sh && issue_answered <owner/repo> <n>   # 0 answered  1 unanswered  2 uncounted  6 BLIND
+```
+
+- **Only `1` is blocked on Zach.** `2` and `6` are rows too -- an unknowable is not an answer, and a check that could not look is a finding about the check.
+- **`needs-human` is `etiquette`'s VIEW of that same predicate, not a second opinion** -- stale wherever that sweep cannot write (2026-09-29: three repos blind on one credential).
 - **Residue this session CAUSED is never one of these.** Repair it or file it; handing it back is the failure.
 - **"Blocked on Zach: nothing" under an unmet goal is an alarm**, not a pass -- the only thing that stopped is the agent. While an unblocked next command exists, run it.
 - **An offer is not a landing.** "Want me to file that?", "say the word and I'll build it" -- nine in one session, one declined (#1239). An offer nobody declines was never a question.
