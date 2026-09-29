@@ -15,6 +15,9 @@ mkdir -p "$T/bin"
 cat > "$T/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "issue" ] && [ "$2" = "edit" ]; then
+  # GH_EDIT_FAIL: the credential can READ the tracker and cannot LABEL it --
+  # the live shape on 2026-09-24, which reported as a clean sweep.
+  [ -n "${GH_EDIT_FAIL:-}" ] && { echo "GraphQL: Resource not accessible by personal access token (addLabelsToLabelable)" >&2; exit 1; }
   printf '%s\n' "$*" >> "$EDITS"; exit 0
 fi
 if [ "$1" = "label" ] && [ "$2" = "create" ]; then
@@ -295,4 +298,23 @@ got="$(printf '%s' '{"body":"DECISION: @zach","comments":[{"createdAt":"2026-08-
   || bad "D: no pointer anywhere is null" "got: $got"
 
 echo
+section "L. a write the credential REFUSES is BLIND, never a clean sweep"
+cat > "$T/f.json" <<'EOF'
+[
+ {"number":20,"title":"declares a decision, unlabelled","body":"DECISION: @zach -- pick one","labels":[]}
+]
+EOF
+: > "$T/edits"
+out="$(GH_EDIT_FAIL=1 run --apply 2>&1)"; rc_refused=$?
+rc    "L1 --apply exits 6 when a write is refused"           6 "$rc_refused"
+has   "L2 ...and the refusal is a ROW, not a silence"        "$out" "REFUSED"
+has   "L3 ...and it is named as BLIND"                       "$out" "label write(s) REFUSED"
+hasnt "L4 ...and is NOT counted as reconciled"               "$out" "1 label(s) reconciled"
+eq    "L5 ...and nothing was recorded as written"            "$(wc -l < "$T/edits" | tr -d " ")" "0"
+out="$(run --apply 2>&1)"; rc_ok=$?
+# 1, not 0: a finding --apply FIXED still exits 1, which is exactly why the
+# workflow tolerates 1 and why a refused write had to become 6 instead.
+rc    "L6 the same sweep with a working credential exits 1, on the finding"  1 "$rc_ok"
+has   "L7 ...and reconciles the label"                       "$out" "1 label(s) reconciled"
+
 summary
