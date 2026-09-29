@@ -15,6 +15,15 @@ mkdir -p "$TMP/stub"
 cat > "$TMP/stub/gh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$GH_LOG"
+# The read-back this stub is standing in for (#1357): a bare GET of a PR's
+# body, as gh-sign issues to check whether a `pr edit` actually landed.
+# Answered from GH_STUB_PR_BODY, a file simulating "what GitHub has now",
+# and NEVER fails -- only the write under test should.
+case "$*" in
+  'api repos/'*'/pulls/'[0-9]*' --jq .body')
+    [ -n "${GH_STUB_PR_BODY:-}" ] && cat "$GH_STUB_PR_BODY" 2>/dev/null
+    exit 0 ;;
+esac
 : > "$GH_LAST_BODY"
 prev=''
 for a in "$@"; do
@@ -31,6 +40,15 @@ for a in "$@"; do
   esac
   prev="$a"
 done
+# GH_SIMULATE_SILENT_FAIL=1 is the bug itself (#1357): `pr edit` exits 0 but
+# the projectCards lookup aborted the mutation, so GH_STUB_PR_BODY is left
+# stale on purpose.
+case "$*" in
+  'pr edit '*'--body-file -')
+    if [ "${GH_SIMULATE_SILENT_FAIL:-0}" != 1 ] && [ -n "${GH_STUB_PR_BODY:-}" ]; then
+      cp "$GH_LAST_BODY" "$GH_STUB_PR_BODY"
+    fi ;;
+esac
 exit "${GH_EXIT:-0}"
 STUB
 chmod +x "$TMP/stub/gh"
@@ -86,6 +104,27 @@ contains "a pr edit touching more than the body still goes to gh pr edit" "$(cat
 reset
 run pr edit 5 --repo hf7y/widget --body "$BAD" >/dev/null 2>&1
 check "a malformed pr edit is REFUSED (7)" "$?" "7"
+
+section "A2. a mixed pr edit is read back, not trusted on exit code alone (#1357)"
+reset
+: > "$TMP/pr.stub-body"
+GH_STUB_PR_BODY="$TMP/pr.stub-body" run pr edit 5 --repo hf7y/widget --title T --body "$GOOD" >/dev/null 2>&1
+check "...a real write exits 0" "$?" "0"
+contains "...and the write is verified against a read-back" "$(cat "$TMP/gh.log")" "api repos/hf7y/widget/pulls/5 --jq .body"
+
+reset
+: > "$TMP/pr.stub-body"
+GH_STUB_PR_BODY="$TMP/pr.stub-body" GH_SIMULATE_SILENT_FAIL=1 \
+  run pr edit 5 --repo hf7y/widget --title T --body "$GOOD" >/dev/null 2>"$TMP/stderr"
+check "...the projectCards bug (exit 0, body unwritten) is caught, not trusted (8)" "$?" "8"
+contains "...and refuses loudly, naming the issue" "$(cat "$TMP/stderr")" "REFUSED"
+contains "...citing #1357" "$(cat "$TMP/stderr")" "1357"
+
+reset
+: > "$TMP/pr.stub-body"
+GH_STUB_PR_BODY="$TMP/pr.stub-body" GH_EXIT=1 \
+  run pr edit 5 --repo hf7y/widget --title T --body "$GOOD" >/dev/null 2>&1
+check "...a real gh failure still propagates its own exit code" "$?" "1"
 
 section "B. gh api PATCH to the same path -- the route named in #970"
 reset

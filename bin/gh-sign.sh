@@ -511,9 +511,14 @@ case "${args[$idx]}" in
     exec "$GH" "${args[@]}" ;;
 esac
 # `pr edit` reads repository.pullRequest.projectCards, which GitHub now errors
-# on (Projects classic sunset): exit 1, body unwritten, and a line that reads as
+# on (Projects classic sunset): exit 0, body unwritten, and a line that reads as
 # a deprecation warning (hf7y/musc-2300#104). A body-only edit is the same
-# PATCH over REST, which never asks for the field. Anything else passes through.
+# PATCH over REST, which never asks for the field. A mixed edit (body plus
+# --title/--add-label/...) has no single REST call that covers every field
+# gh pr edit can touch, so it still goes to the real gh pr edit -- but the bug
+# means its exit code cannot be trusted, so the body is read back and diffed
+# against what was sent; a mismatch is refused loudly instead of reported as a
+# success that never landed (hf7y/realisateur#1357).
 if [ "${1:-} ${2:-}" = 'pr edit' ]; then
   _n='' _r='{owner}/{repo}' _other=0
   for ((i = 2; i < ${#args[@]}; i++)); do
@@ -527,6 +532,22 @@ if [ "${1:-} ${2:-}" = 'pr edit' ]; then
   if [ -n "$_n" ] && [ "$_other" -eq 0 ]; then
     printf '%s' "$signed" | "$GH" api -X PATCH "repos/$_r/pulls/$_n" -F body=@- --jq .html_url
     exit $?
+  fi
+  if [ -n "$_n" ] && [ "$_other" -eq 1 ]; then
+    args[$idx]='--body-file'
+    args[$bi]='-'
+    _out="$(printf '%s' "$signed" | "$GH" "${args[@]}" 2>&1)"; _rc=$?
+    printf '%s\n' "$_out"
+    if [ "$_rc" -eq 0 ]; then
+      _seen="$("$GH" api "repos/$_r/pulls/$_n" --jq .body 2>/dev/null)"
+      if [ "$_seen" != "$signed" ]; then
+        printf 'gh-sign: REFUSED -- pr edit on repos/%s/pulls/%s exited 0 but the body on\n' "$_r" "$_n" >&2
+        printf 'gh-sign: GitHub does not match what was sent. The deprecated projectCards\n' >&2
+        printf 'gh-sign: lookup aborts this mutation silently (hf7y/realisateur#1357); nothing landed.\n' >&2
+        exit 8
+      fi
+    fi
+    exit "$_rc"
   fi
 fi
 args[$idx]='--body-file'
