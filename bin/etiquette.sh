@@ -21,7 +21,8 @@ CLI_POSITIONAL='[<owner>/<repo>]'
 CLI_EXITS='  0  the repo carries the declared labels and every derived one matches its body
   1  findings: a declared label is missing, a derived one disagrees, or a body declares nothing
   2  usage error
-  6  BLIND -- the grammar or the issue list could not be read. Never 0.
+  6  BLIND -- the grammar or the issue list could not be read, OR --apply was
+     refused a write. Could-not-ACT is a blindness, never a finding. Never 0.
   (--all reports the WORST of the repos it swept: 6 outranks 1 outranks 0.)'
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/cli-guard.sh"
 cli_guard "$@"
@@ -121,7 +122,7 @@ have="$(gh label list --repo "$REPO" --limit 200 --json name,description --jq '.
 
 say "etiquette -- $REPO against $GRAMMAR_FILE"
 say ""
-label_findings=0; provisioned=0
+label_findings=0; provisioned=0; REFUSED=0
 for g in "${GRAMMAR[@]}"; do
   name="$(g_field "$g" 1)"; color="$(g_field "$g" 2)"; meaning="$(g_field "$g" 4)"
   # GitHub caps a description at 100 chars -- a pointer, not the meaning.
@@ -135,7 +136,8 @@ for g in "${GRAMMAR[@]}"; do
     if gh label create "$name" --repo "$REPO" --color "$color" --description "$desc" >/dev/null 2>&1; then
       provisioned=$((provisioned + 1)); printf '  %-11s %s\n' "  +label" "created \`$name\`"
     else
-      printf '  %-11s %s\n' "  FAILED" "could not create \`$name\` -- not counting it as provisioned"
+      REFUSED=$((REFUSED + 1))
+      printf '  %-11s %s\n' "  REFUSED" "could not create \`$name\` -- not counting it as provisioned"
     fi
   fi
 done
@@ -188,16 +190,26 @@ while IFS=$'\t' read -r num has_label title; do
   findings=$((findings + 1))
   if [ "$want" = yes ]; then
     row MISSING "$num" "declares DECISION: but is not labelled $LABEL -- ${title:0:52}"
-    [ "$APPLY" -eq 1 ] && gh issue edit "$num" --repo "$REPO" --add-label "$LABEL" >/dev/null \
-      && { changed=$((changed + 1)); row "  +label" "$num" "$LABEL added"; }
+    if [ "$APPLY" -eq 1 ]; then
+      if gh issue edit "$num" --repo "$REPO" --add-label "$LABEL" >/dev/null; then
+        changed=$((changed + 1)); row "  +label" "$num" "$LABEL added"
+      else
+        REFUSED=$((REFUSED + 1)); row "  REFUSED" "$num" "could not add $LABEL"
+      fi
+    fi
   else
     if [ "$answered" = 1 ]; then
       row ANSWERED "$num" "declares DECISION: and has been answered -- ${title:0:52}"
     else
       row STALE "$num" "labelled $LABEL but declares NO-DECISION: -- ${title:0:52}"
     fi
-    [ "$APPLY" -eq 1 ] && gh issue edit "$num" --repo "$REPO" --remove-label "$LABEL" >/dev/null \
-      && { changed=$((changed + 1)); row "  -label" "$num" "$LABEL removed"; }
+    if [ "$APPLY" -eq 1 ]; then
+      if gh issue edit "$num" --repo "$REPO" --remove-label "$LABEL" >/dev/null; then
+        changed=$((changed + 1)); row "  -label" "$num" "$LABEL removed"
+      else
+        REFUSED=$((REFUSED + 1)); row "  REFUSED" "$num" "could not remove $LABEL"
+      fi
+    fi
   fi
 done < <(printf '%s' "$json" | jq -r --arg l "$LABEL" \
   '.[] | [.number, (if any(.labels[]; .name==$l) then "yes" else "no" end), .title] | @tsv')
@@ -207,6 +219,16 @@ say "$matched issue(s) agree, $findings issue finding(s), $label_findings label 
 say "$changed label(s) reconciled, $provisioned label(s) provisioned."
 [ $((findings + label_findings)) -gt 0 ] && [ "$APPLY" -eq 0 ] && \
   say 'Re-run with --apply. An UNDECLARED body is NOT fixed by a label -- edit line 1.'
+# A REFUSED WRITE IS BLINDNESS, NOT A FINDING. It reported as neither: the
+# `&&` chain here simply did not increment `changed`, so 26 refusals across 7
+# repos printed as `0 label(s) reconciled` and exited on findings alone -- which
+# .github/workflows/etiquette.yml tolerates. Measured 2026-09-24, the last run
+# that went green: 30 repos swept, 0 labels ever written, and no row said so.
+if [ "$REFUSED" -gt 0 ]; then
+  printf '%s: BLIND -- %s label write(s) REFUSED by the credential, so the derived label is NOT reconciled here.\n' \
+    "$CLI_NAME" "$REFUSED" >&2
+  exit 6
+fi
 # A BLIND read is neither a finding --apply can fix nor a clean run.
 if [ "$BLIND_READS" -gt 0 ]; then
   printf '%s: BLIND -- %s issue(s) could not be read, so the report above is INCOMPLETE.\n' \
