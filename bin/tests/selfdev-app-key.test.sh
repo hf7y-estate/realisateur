@@ -92,5 +92,25 @@ case "$code" in
   *) ok "G: $n no longer defaults to a per-account credential path" ;;
 esac
 
+echo "-- H. --apply exits on its post-apply state, not its pre-apply reading (#1284)"
+if [ "$(id -u)" -eq 0 ]; then
+  H="$(mktemp -d)"; trap 'rm -rf "$H"' RETURN 2>/dev/null || true
+  mkdir -p "$H/etc/selfdev"
+  : > "$H/src.pem"
+  : > "$H/etc/selfdev/app.pem"; chmod 600 "$H/etc/selfdev/app.pem"
+  HGRP="selfdevtest_h_$$"
+  HOUT="$(SELFDEV_APP_DIR="$H/etc/selfdev" SELFDEV_APP_GROUP="$HGRP" \
+    "$SCRIPT" --apply --uid-min 999999 --uid-max 999999 \
+    --app-id 123 --owner testowner --from "$H/src.pem" 2>&1)"
+  HRC=$?
+  groupdel "$HGRP" >/dev/null 2>&1
+  rm -rf "$H"
+  has "H1 apply still reports the pre-apply BAD it then fixed" "$HOUT" "BAD"
+  has "H2 apply fixed it (witness passed)" "$HOUT" "witness: every account read"
+  eq  "H3 exit is 0 -- a bad reading apply already fixed is not a failed apply" "$HRC" "0"
+else
+  ok "H: skipped, not root"
+fi
+
 echo
 summary
