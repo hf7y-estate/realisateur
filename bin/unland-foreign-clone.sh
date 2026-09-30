@@ -191,7 +191,7 @@ if [ -n "$TARGET_HOST" ]; then  # driven from here over ssh; deploy-key half sta
 == WITNESS -- run this after --apply and paste the output ==
   ssh $TARGET_HOST sudo find $HOME_ROOT -maxdepth 4 -type d -path '*/Documents/Projects/$PROJECT'
   echo "clones left: \$(ssh $TARGET_HOST sudo find $HOME_ROOT -maxdepth 4 -type d -path '*/Documents/Projects/$PROJECT' | grep -c .) (expect 1 -- $PROJECT's own)"
-  ssh $TARGET_HOST 'command -v ausculte; ausculte --help >/dev/null 2>&1; echo "ausculte rc=$?"'
+  ssh $TARGET_HOST 'command -v atteste; atteste --help >/dev/null 2>&1; echo "atteste rc=$?"'
 Root over ssh, and find rather than a glob, for the same reason the local
 witness uses them: $PROJECT's own home is 0700 on $TARGET_HOST too.
 WITNESS
@@ -278,7 +278,7 @@ cat <<WITNESS
 == WITNESS -- run this on $(hostname -s) after --apply and paste the output ==
   sudo find $HOME_ROOT -maxdepth 4 -type d -path '*/Documents/Projects/$PROJECT'
   echo "clones left: \$(sudo find $HOME_ROOT -maxdepth 4 -type d -path '*/Documents/Projects/$PROJECT' | grep -c .) (expect 1 -- $PROJECT's own)"
-  command -v ausculte; ausculte --help >/dev/null 2>&1; echo "ausculte rc=\$?"
+  command -v atteste; atteste --help >/dev/null 2>&1; echo "atteste rc=\$?"
 Root, and find rather than a glob: $PROJECT's own home is 0700, so a glob the
 invoking shell expands cannot see the one clone that is supposed to SURVIVE,
 and the witness reads "clones left: 0" on a correct run (2026-08-31).
