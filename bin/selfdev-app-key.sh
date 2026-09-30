@@ -199,6 +199,12 @@ case "$MODE" in
     die "host-wide placement is not live for every account; per-account copies were NOT touched, so nothing is worse than before" 5
   fi
   ok "witness: every account read $PEM as itself"
+  # Every bad() above (line 99, 109/110, 136) is something this branch just
+  # fixed unconditionally (perms, conf contents, group membership) or that
+  # the witness just re-proved -- reaching here without dying means none of
+  # them are still true. A count taken before the fix is not evidence after
+  # it (#1284).
+  BAD=0
   echo
   echo "Next, once you are satisfied: sudo $CLI_NAME --retire-copies"
   ;;
