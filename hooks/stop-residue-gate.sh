@@ -347,7 +347,10 @@ advice() {
   echo "  2. Push it, so the branch exists on origin and not only on this host:"
   echo "       git push -u origin <branch>"
   echo "  3. Revert what you did not mean to keep:  git restore <paths>"
-  echo "  4. If a file is deliberately untracked, add it to .gitignore and commit that."
+  echo "  4. If the user wrote the change and says to commit it as theirs, author it to them:"
+  echo "       git commit --author='<their name> <their email>' -F <msgfile>"
+  echo "     Take the identity from their own past commits (git log --format='%an <%ae>')."
+  echo "  5. If a file is deliberately untracked, add it to .gitignore and commit that."
   echo
   echo "NONE of those apply to a path this report did not list as YOURS. Those files"
   echo "are not yours: leave them exactly as they are, say so in your reply, and stop."
