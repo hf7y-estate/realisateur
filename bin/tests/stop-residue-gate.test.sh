@@ -290,6 +290,7 @@ echo mine > "$T/e-own/mine.txt"
 E1="$(runb "$T/e-own" sess-a)"; E1_RC="$(rcb "$T/e-own" sess-a)"
 rc  "E1 own change after the baseline -> BLOCKED (2)" 2 "$E1_RC"
 has "E1 names it as YOURS" "$E1" "YOURS"
+has "E1 offers committing it as the user's" "$E1" "--author="
 has "E1 names the file"    "$E1" "mine.txt"
 
 newrepo "$T/e-foreign"
