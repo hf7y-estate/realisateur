@@ -110,6 +110,24 @@ stated_defects() { # <this turn's assistant text> -> one line per sentence asser
   '
 }
 
+left_unfixed() { # <this turn's assistant text> -> one line per sentence that NAMES a thing and says the turn left it unfixed (#1389)
+  awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^[[:space:]]*>/ { next }
+    { line = $0; gsub(/\*?"[^"]*"\*?/, " ", line)
+      n = split(line, sent, /[.!?] +/)
+      for (i = 1; i <= n; i++) {
+        s = tolower(sent[i]); gsub(/\047/, "", s)
+        if (s !~ /(have|has|had|did|was|were|is|are) not (been |yet )?(edit|edited|fix|fixed|patch|patched|correct|corrected|update|updated|touch|touched)/) continue
+        if (line !~ /#[0-9]+|`[^`]+`/) continue                        # the LINE must name what was left: an issue, a PR, a file
+        if (s ~ /cannot|can not|cant|refused|denied|not mine|\?$/) continue   # out of reach, or put as a question, is a different statement
+        print substr(sent[i], 1, 140)
+      }
+    }
+  '
+}
+
 ACT_RE='^(Write|Edit|NotebookEdit)$|git +commit|git +push|gh +(issue|pr) +(create|comment)|gh +api.*(issues|pulls)|notify-senechal'
 
 # AN ISSUE NOTHING DISPATCHES TO IS RESIDUE (#1141). Why, in the message below.
@@ -240,6 +258,19 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
       echo "in the tracker. Put it in one: gh issue edit <n> --milestone \"<title>\"."
       echo "If none fits, write that into the issue body and give it the nearest"
       echo "anyway. Leaving it unplaced and explaining why in the reply is the failure."
+    } >&2
+    exit 2
+  fi
+  unfixed_report="$(left_unfixed <<<"$turn_text")"   # NOT under the no-act guard above: an act elsewhere in the turn does not excuse this
+  if [ -n "$unfixed_report" ]; then
+    {
+      echo "BLOCKED: this turn names something it found wrong and says it left it unfixed."
+      echo
+      printf '%s\n' "$unfixed_report"
+      echo
+      echo "Zach, 2026-10-01: \"You fix when you find. Not flag for me.\" Make the edit now"
+      echo "and say what changed. If it is out of reach, say cannot and why in that"
+      echo "sentence; if it is his decision, ask it as a question."
     } >&2
     exit 2
   fi
