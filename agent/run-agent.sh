@@ -72,14 +72,18 @@ read -r -d '' brief <<BRIEF || true
 You are working unattended on hf7y-estate/${repo}. ONE issue, ONE branch, then stop.
 ${sent}
 
-\`gh\` is authenticated and the network works. Start by reading the queue:
+\`gh\` is authenticated and the network works. Start by reading the queue --
+open issues in an open milestone, minus needs-host and needs-human:
 
-    gh issue list --repo hf7y-estate/${repo} --state open \\
-      --search '-label:needs-host -label:needs-human'
+    ms=\$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]')
+    gh issue list --repo hf7y-estate/${repo} --state open --limit 200 \\
+      --search '-label:needs-host -label:needs-human' --json number,title,milestone \\
+      | jq --argjson ms "\$ms" '.[] | select(.milestone and (.milestone.number as \$m | \$ms|index(\$m)))'
 
-Those two exclusions ARE the queue, not a suggestion. \`needs-host\` means the
-issue cannot be finished from here -- it needs a physical device or a live
-remote host. Do not route around the filter by listing issues without it.
+No milestone, or a closed one, is not in scope -- same as the two label
+exclusions, not a suggestion. \`needs-host\` means the issue cannot be
+finished from here -- it needs a physical device or a live remote host. Do
+not route around the filter by listing issues without it.
 
 Then:
 0. FIRST COMES FIRST. If any issue in that queue carries the label \`first\`,
