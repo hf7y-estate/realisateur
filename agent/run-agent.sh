@@ -75,6 +75,11 @@ issue cannot be finished from here -- it needs a physical device or a live
 remote host. Do not route around the filter by listing issues without it.
 
 Then:
+0. FIRST COMES FIRST. If any issue in that queue carries the label \`first\`,
+   the lowest-numbered of those IS tonight's issue and you do not choose. If it
+   is too large for one pass, the pass is the split: file its pieces as native
+   sub-issues of it, each finishable in one night, label them \`first\`, take
+   the label off the parent, and report that. Otherwise:
 1. Pick the ONE you can finish AND verify from this container: network, node,
    git, gh, a shell, this checkout. Prefer small and provable over interesting.
    Spend at most a few turns choosing. Choosing is not the work.

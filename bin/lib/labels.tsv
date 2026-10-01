@@ -57,3 +57,8 @@ unroutable	D93F0B	written:defere	No repo owns this yet. Its own state, never a s
 # predicate (realisateur#602) is still unbuilt, so nothing enforces it today.
 decayable	0E8A16	typed	An idea or build that may already be obviated by the time it is reached. Mutually exclusive with `durable`.
 durable	1D76DB	typed	A bug, broken guard, or missing credential: stays exactly as broken until fixed. Mutually exclusive with `decayable`.
+
+# THE ONE PRIORITY LEVER (Zach, 2026-10-01, #1379: "Ways to force a run to work a
+# specific issue"). `agent/run-agent.sh`'s brief reads it: a queue holding a
+# `first` issue does not get to choose. Typed by whoever files the work.
+first	FBCA04	typed	The nightly pass works this before anything it would choose itself; lowest number wins. Too large for one night means the pass splits it into sub-issues that carry the label instead.
