@@ -128,6 +128,17 @@ left_unfixed() { # <this turn's assistant text> -> one line per sentence that NA
   '
 }
 
+incantations() { # <this turn's assistant text> -> one line per shell command handed to the human that is long or chained (#1379)
+  awk '
+    /^[[:space:]]*!?[[:space:]]*(ssh|sudo|docker|systemd-run|systemctl|curl|gh api) / || /^[[:space:]]*! / {
+      c = $0; sub(/^[[:space:]]*/, "", c)
+      if (c !~ /^! /) next                                 # only what the turn asks the HUMAN to type: the `! <command>` form
+      n = gsub(/;|&&|\|\|/, "&", c)
+      if (length(c) > 160 || n >= 3) print substr(c, 1, 100) "..."
+    }
+  '
+}
+
 ACT_RE='^(Write|Edit|NotebookEdit)$|git +commit|git +push|gh +(issue|pr) +(create|comment)|gh +api.*(issues|pulls)|notify-senechal'
 
 # AN ISSUE NOTHING DISPATCHES TO IS RESIDUE (#1141). Why, in the message below.
@@ -258,6 +269,20 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
       echo "in the tracker. Put it in one: gh issue edit <n> --milestone \"<title>\"."
       echo "If none fits, write that into the issue body and give it the nearest"
       echo "anyway. Leaving it unplaced and explaining why in the reply is the failure."
+    } >&2
+    exit 2
+  fi
+  spell_report="$(incantations <<<"$turn_text")"
+  if [ -n "$spell_report" ]; then
+    {
+      echo "BLOCKED: this turn hands Zach a command no one should have to type."
+      echo
+      printf '%s\n' "$spell_report"
+      echo
+      echo "Zach, 2026-10-01: \"That incantation proves the failure. This needs to be properly"
+      echo "owned by an agent that can take it on.\" A command over 160 characters, or three"
+      echo "chained steps, is a missing verb: build the verb, or name the issue that builds it,"
+      echo "and hand over the short form."
     } >&2
     exit 2
   fi
