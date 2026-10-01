@@ -28,6 +28,9 @@
 #                2026-09-30: "using realisateur, make sure this work is
 #                scheduled to get picked up with a number of jobs"
 #   secretaire   test/. Same date, for its send-as and read-route jobs
+#   space-canon  no test dir; bin/ is python and a pass can run it. Added
+#                2026-10-01: #4 and #11 are answered and nothing ran them.
+#                Zach, 2026-10-01: "Address that, then."
 crt
 dog
 musc-2300
@@ -38,3 +41,4 @@ etalon
 realisateur
 bibliothecaire
 secretaire
+space-canon
