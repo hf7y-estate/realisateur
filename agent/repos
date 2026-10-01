@@ -31,6 +31,11 @@
 #   space-canon  no test dir; bin/ is python and a pass can run it. Added
 #                2026-10-01: #4 and #11 are answered and nothing ran them.
 #                Zach, 2026-10-01: "Address that, then."
+#   chezz        PROVEN 2026-10-01 by hand, hf7y-estate/chezz#153: npm ci, Chromium
+#                and `npm run check` all run in the image. Zach, same day, on
+#                moving chezz's nightly off its own Actions workflow: "Do all 3."
+#                Last, so it takes the hours left over. An 80-turn pass ran out
+#                before committing; 150 finished (hf7y-estate/chezz#156).
 crt
 dog
 musc-2300
@@ -42,3 +47,4 @@ realisateur
 bibliothecaire
 secretaire
 space-canon
+chezz
