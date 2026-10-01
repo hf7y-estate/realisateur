@@ -184,4 +184,32 @@ rc "L4 names no issue and no file -> exit 0" 0 "$(rcof "$R" "$T/l4.jsonl")"
   asst_turn "#1374 said 117. I corrected it to 110 and closed it."; } > "$T/l5.jsonl"
 rc "L5 found it and fixed it -> exit 0" 0 "$(rcof "$R" "$T/l5.jsonl")"
 
+
+section "M. a long or chained command handed to the human is a missing verb (#1379)"
+
+{ user_turn "start the run"
+  asst_turn "To drain the queue now, run this:
+
+\`\`\`
+! ssh dexter 'cd ~/realisateur && git pull -q --ff-only; printf \"a\nb\n\" > /srv/agent/state/sent.list; sudo systemd-run --unit=agent-sent --uid=zach --setenv=PASSES=3 /srv/agent/nightly.sh'
+\`\`\`"; } > "$T/m1.jsonl"
+rc  "M1 a 200-character chained command for the human -> BLOCKED (2)" 2 "$(rcof "$R" "$T/m1.jsonl")"
+has "M1 the block quotes the ruling" "$(run "$R" "$T/m1.jsonl")" "incantation proves the failure"
+
+{ user_turn "start the run"
+  asst_turn "Run this:
+
+\`\`\`
+! ssh dexter /srv/agent/nightly.sh --send 3 senechal etalon
+\`\`\`"; } > "$T/m2.jsonl"
+rc "M2 a short verb for the human -> exit 0" 0 "$(rcof "$R" "$T/m2.jsonl")"
+
+{ user_turn "what did you run"
+  asst_turn "I ran this myself:
+
+\`\`\`
+ssh dexter 'cd ~/realisateur && git pull -q --ff-only; printf \"a\nb\n\" > /srv/agent/state/sent.list; sudo systemd-run --unit=agent-sent --uid=zach --setenv=PASSES=3 /srv/agent/nightly.sh'
+\`\`\`"; } > "$T/m3.jsonl"
+rc "M3 the same command reported, not handed over -> exit 0" 0 "$(rcof "$R" "$T/m3.jsonl")"
+
 summary || exit 1
