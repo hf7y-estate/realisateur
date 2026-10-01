@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# run-agent.sh <repo> [max_turns] -- one unattended pass over a repo's open
-# issues, in a container. This is the whole dispatch mechanism: no ROSTER, no
+# run-agent.sh <repo> [max_turns] [issue] -- one unattended pass over a repo's open
+# issues in a container, or over the ONE issue named (#1382: a pass that can be
+# sent, not only left to choose). This is the whole dispatch mechanism: no ROSTER, no
 # pacer, no rotation index, no ledger, no flock, no unix account.
 #
 # THE FLAG THAT MAKES IT UNATTENDED, and it took four runs to find:
@@ -26,8 +27,13 @@
 # stay out of `docker inspect`, `ps` and shell history.
 set -euo pipefail
 
-repo="${1:?usage: run-agent.sh <repo> [max_turns]}"
+repo="${1:?usage: run-agent.sh <repo> [max_turns] [issue]}"
 turns="${2:-150}"
+issue="${3:-}"
+case "$issue" in ''|*[!0-9]*) [ -z "$issue" ] || { echo "run-agent.sh: issue must be a number, got '$issue'" >&2; exit 2; } ;; esac
+# SENT, NOT CHOSEN. With an issue number the pass does not read the queue to pick.
+sent=""
+[ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip steps 0 and 1 below, and do not work any other. If it is too large for one pass, the pass is the split described in step 0."
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 # The same instant as an ISO-8601 Z string, because the PR list below is
 # partitioned on it and `gh --jq` compares createdAt as text.
@@ -64,6 +70,7 @@ mkdir -p "$root"
 
 read -r -d '' brief <<BRIEF || true
 You are working unattended on hf7y-estate/${repo}. ONE issue, ONE branch, then stop.
+${sent}
 
 \`gh\` is authenticated and the network works. Start by reading the queue:
 
