@@ -14,6 +14,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
+passes="${PASSES:-1}"
 list="${REPO_LIST:-$here/repos}"
 # The log and the lock live where the dispatch layer does. Named once, and
 # overridable, so the suite can run this loop somewhere that is not the host.
@@ -63,10 +64,22 @@ grep -vE '^\s*(#|$)' "$list" | while read -r repo; do
     0)   echo "--- $repo: queue empty, skipping"; continue ;;
     ERR) echo "--- $repo: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
   esac
-  echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ)"
-  "$here/run-agent.sh" "$repo" "$turns" >/dev/null 2>&1 \
-    && echo "--- $repo: pass finished" \
-    || echo "--- $repo: pass exited $? (its own log has the reason)"
+  # THE QUEUE IS THE `first` LABEL, and PASSES is how far one run drains it.
+  # One pass per repo was a number based on nothing (Zach, 2026-10-01, #1379);
+  # the default stays 1 until something measured sets it, and a hand-started run
+  # says PASSES=n. A repo with no `first` issue left stops early.
+  i=0
+  while :; do
+    i=$((i + 1))
+    echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes"   # the timestamp stays third: estate-status-collect.py:181 parses this line
+    "$here/run-agent.sh" "$repo" "$turns" >/dev/null 2>&1 \
+      && echo "--- $repo: pass finished" \
+      || echo "--- $repo: pass exited $? (its own log has the reason)"
+    [ "$i" -lt "$passes" ] || break
+    f=$(gh issue list --repo "hf7y-estate/$repo" --state open --limit 200 --label first \
+          --search '-label:needs-host -label:needs-human' --json number --jq 'length' 2>/dev/null) || break
+    [ "${f:-0}" -gt 0 ] || break
+  done
 done
 
 echo "=== nightly done $(date -u +%FT%TZ) ==="
