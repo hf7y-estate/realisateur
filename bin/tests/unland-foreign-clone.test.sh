@@ -124,7 +124,7 @@ hasnt "I5 a realisateur clone is not swept by a senechal run" "$OUT_S" "Projects
 section "J. the witness proves BOTH halves"
 OUT="$(run --check)"
 has "J1 it counts the clones left" "$OUT" "clones left:"
-has "J2 and that a verb still resolves" "$OUT" "command -v ausculte"
+has "J2 and that a verb still resolves" "$OUT" "command -v atteste"
 has "J3 it lists as root, so the 0700 home of the clone that must SURVIVE is not counted as removed" "$OUT" "sudo find"
 
 section "K. it is declared, so it reaches a host by a named channel"

@@ -172,7 +172,6 @@ check-project-busy.sh
 notify-senechal.sh
 gh-sign.sh
 consigne
-ausculte.sh
 atteste.sh
 decision-rot.sh
 unarmed.sh

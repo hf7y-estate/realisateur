@@ -57,7 +57,7 @@ eq "C6 a new owner reaches the release channel" \
    "$(src PROP_RELEASE_REMOTE GH_ESTATE_OWNER=neworg propagation-set.sh)" "https://github.com/neworg/verbs.git"
 
 section "D. a new host reaches every published URL"
-for f in ausculte.sh publish-release-verdict.sh selfdev-release-tick.sh estate-watch.sh; do
+for f in publish-release-verdict.sh selfdev-release-tick.sh estate-watch.sh; do
   out="$(GH_ESTATE_SITE=new.example bash -c "sed 's/#.*//' '$HERE/bin/$f' | grep -c 'hf7y\.com'" 2>/dev/null)"
   eq "D1 $f names no host literal in code" "$out" "0"
 done
