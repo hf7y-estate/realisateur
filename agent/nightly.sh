@@ -48,7 +48,67 @@ sudo -n docker pull "$AGENT_IMAGE" \
 digest="$(sudo -n docker image inspect "$AGENT_IMAGE" --format '{{index .RepoDigests 0}}')" \
   && echo "=== image: $digest ===" \
   || echo "=== image: $AGENT_IMAGE -- pulled, digest unreadable ==="
-grep -vE '^\s*(#|$)' "$list" | while read -r repo; do
+# THE ORG IS THE CANDIDATE SET, not this file (#1383). `agent/repos` keeps
+# only order: a repo named there runs where it's placed; a repo the org has
+# and that file doesn't still runs, last. Before this, a repo absent from the
+# hand list never ran no matter what its queue held -- space-canon sat
+# unlisted while #4 and #11 were answered and milestoned, and nobody added
+# the repo until it was fixed by hand (#1380).
+org_repos="$(gh repo list hf7y-estate --no-archived --limit 1000 --json name --jq '.[].name' 2>&1)" \
+  && echo "=== org: $(printf '%s\n' "$org_repos" | grep -c .) non-archived repos ===" \
+  || { echo "=== COULD NOT LIST hf7y-estate -- running $list's order only, nothing appended ==="; org_repos=""; }
+
+declare -A in_org=()
+if [ -n "$org_repos" ]; then
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    in_org["$r"]=1
+  done <<<"$org_repos"
+fi
+
+declare -A in_list=()
+repos=()
+while IFS= read -r r; do
+  [ -n "$r" ] || continue
+  if [ -n "$org_repos" ] && [ -z "${in_org[$r]:-}" ]; then
+    echo "--- $r: in $list but not in the hf7y-estate org -- skipping"
+    continue
+  fi
+  in_list["$r"]=1
+  repos+=("$r")
+done < <(grep -vE '^\s*(#|$)' "$list")
+
+extra=()
+if [ -n "$org_repos" ]; then
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    if [ -z "${in_list[$r]:-}" ]; then
+      extra+=("$r")
+    fi
+  done < <(printf '%s\n' "$org_repos" | sort)
+fi
+if [ "${#extra[@]}" -gt 0 ]; then
+  echo "=== org repos not in $list, appended last: ${extra[*]} ==="
+  repos+=("${extra[@]}")
+fi
+
+# The queue predicate: open issues in an open milestone, minus needs-host and
+# needs-human. The same one the brief hands the agent below, so a repo that
+# gets picked always has something the agent's own read will find too (#1383
+# -- Zach: "Nightly should read milestones. That's the failure."). `ERR`, not
+# a guess, when either call fails -- an unreadable queue is not an empty one.
+queue_count() {
+  local repo="$1" ms n
+  ms="$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]' 2>/dev/null)" \
+    || { echo ERR; return; }
+  n="$(gh issue list --repo "hf7y-estate/${repo}" --state open --limit 200 \
+        --search '-label:needs-host -label:needs-human' --json milestone 2>/dev/null \
+      | jq --argjson ms "$ms" '[.[] | select(.milestone and (.milestone.number as $m | $ms|index($m)))] | length')" \
+    || { echo ERR; return; }
+  echo "$n"
+}
+
+for repo in "${repos[@]}"; do
   # BEFORE the queue check, not after it. A repo is skipped below when its queue
   # is empty -- and a queue is empty precisely when the work is already sitting
   # in the previous pass's unmerged PRs, which is the case that most needs them
@@ -56,10 +116,8 @@ grep -vE '^\s*(#|$)' "$list" | while read -r repo; do
   # for a skipped repo; both calls are idempotent and the second prints nothing.
   "$here/merge-carry.sh" "$repo" || echo "--- $repo: merge-carry.sh exited $?"
 
-  # Do not spend a container on an empty queue. This is the same predicate the
-  # brief hands the agent, so a repo that gets picked always has something.
-  n=$(gh issue list --repo "hf7y-estate/$repo" --state open --limit 200 \
-        --search '-label:needs-host -label:needs-human' --json number --jq 'length' 2>&1) || n=ERR
+  # Do not spend a container on an empty queue.
+  n="$(queue_count "$repo")"
   case "$n" in
     0)   echo "--- $repo: queue empty, skipping"; continue ;;
     ERR) echo "--- $repo: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
@@ -89,7 +147,7 @@ echo "=== nightly done $(date -u +%FT%TZ) ==="
 # list on every night that opened PRs. Recency is the pass's own artifact.
 since="$(date -u -d '12 hours ago' +%FT%TZ)"
 echo "=== PRs opened on the estate since ${since} ==="
-for repo in $(grep -vE '^\s*(#|$)' "$list"); do
+for repo in "${repos[@]}"; do
   # gh's --jq takes no --arg, so both the cutoff and the repo name are
   # stitched in -- the cutoff into the program, the name onto each line.
   gh pr list --repo "hf7y-estate/$repo" --limit 10 \

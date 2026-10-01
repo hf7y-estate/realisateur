@@ -30,9 +30,18 @@ case "$1" in
   image) [ -f "$T/digest" ] || exit 1; cat "$T/digest" ;;
 esac
 STUB
+# Answers the three calls nightly.sh makes before it dispatches: the org
+# listing (just "dog", so the candidate set matches $T/repos), the open
+# milestones for "dog" (one, #1), and the queue read itself (one issue on
+# that milestone) -- so the loop reaches dispatch, which is the only thing
+# this suite is checking. nightly-queue.test.sh covers the predicate itself.
 cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
-case "$2" in issue) printf '1\n' ;; esac   # one runnable issue, so the loop dispatches
+case "$1" in
+  repo)  [ "$2" = list ] && printf 'dog\n' ;;
+  api)   case "$2" in *milestones*) printf '[1]\n' ;; esac ;;
+  issue) [ "$2" = list ] && printf '[{"milestone":{"number":1}}]\n' ;;
+esac
 STUB
 # The steps the loop calls, recording what they were handed.
 cat > "$T/agent/merge-carry.sh" <<'STUB'
