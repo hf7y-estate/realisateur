@@ -159,4 +159,29 @@ for c in bash cat dirname git grep sed awk; do ln -s "$(command -v "$c")" "$NOJQ
 rc "B6 no jq on PATH -- the claim check is skipped, not an error" 0 \
    "$(printf '{"cwd":"%s","transcript_path":"%s","stop_hook_active":false}' "$R" "$T/a2.jsonl" | PATH="$NOJQ" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?")"
 
+
+section "L. a thing named and left unfixed is not a report, it is residue (#1389)"
+
+{ user_turn "check the handoff"
+  asst_turn "#1374 still states 117; the real count is 110. I have not edited it."; } > "$T/l1.jsonl"
+rc  "L1 names an issue and says it was not edited -> BLOCKED (2)" 2 "$(rcof "$R" "$T/l1.jsonl")"
+has "L1 the block quotes the ruling" "$(run "$R" "$T/l1.jsonl")" "You fix when you find"
+
+{ user_turn "check the handoff"
+  edit_act "/tmp/memory.md"
+  asst_turn "#1374 still states 117; the real count is 110. I have not edited it."; } > "$T/l2.jsonl"
+rc "L2 an unrelated act in the same turn does not excuse it -> BLOCKED (2)" 2 "$(rcof "$R" "$T/l2.jsonl")"
+
+{ user_turn "check the handoff"
+  asst_turn "The runner registrations were not fixed: I cannot remove them, the permission layer refused."; } > "$T/l3.jsonl"
+rc "L3 out of reach, and says so -> exit 0" 0 "$(rcof "$R" "$T/l3.jsonl")"
+
+{ user_turn "check the handoff"
+  asst_turn "The page was not updated last night, and nothing here names what."; } > "$T/l4.jsonl"
+rc "L4 names no issue and no file -> exit 0" 0 "$(rcof "$R" "$T/l4.jsonl")"
+
+{ user_turn "check the handoff"
+  asst_turn "#1374 said 117. I corrected it to 110 and closed it."; } > "$T/l5.jsonl"
+rc "L5 found it and fixed it -> exit 0" 0 "$(rcof "$R" "$T/l5.jsonl")"
+
 summary || exit 1
