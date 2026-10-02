@@ -110,20 +110,20 @@ BEFORE='2026-09-06T09:00:00Z'  # somebody else's, still in flight
 runpr() { payload "$1" "${2:-}" "$CSID" | STUB_PR="$T/pr-state" CLAUDE_JOB_DIR="$CJOB" PATH="$T/bin:$PATH" "$SCRIPT" 2>&1; }
 rcof()  { payload "$1" "${2:-}" "$CSID" | STUB_PR="$T/pr-state" CLAUDE_JOB_DIR="$CJOB" PATH="$T/bin:$PATH" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?"; }
 
-printf 'open\tfalse\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
 rc  "C1 an open non-draft PR blocks the stop" 2 "$RC"
 has "C2 and names the PR" "$OUT" "pull/7"
 
-printf 'open\ttrue\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\ttrue\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 RC="$(rcof "$G" "$TR")"
 rc "C3 a DRAFT claims nothing, so it does not block" 0 "$RC"
 
-printf 'closed\tfalse\tfalse\t%s\tdeadbee\tNO-DECISION: x' "$AFTER" > "$T/pr-state"
+printf 'closed\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x' "$AFTER" > "$T/pr-state"
 RC="$(rcof "$G" "$TR")"
 rc "C4 a merged or closed PR does not block" 0 "$RC"
 
-printf 'open\tfalse\ttrue\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\tfalse\ttrue\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
 rc  "C5 an open PR with AUTO-MERGE ARMED does not block" 0 "$RC"
 has "C6 and says so, rather than passing silently" "$OUT" "AUTO-MERGE ARMED"
@@ -138,20 +138,28 @@ OUT="$(STUB_FAILING=BLIND runpr "$G" "$TR")"; RC="$(STUB_FAILING=BLIND rcof "$G"
 rc  "C5d checks it cannot read fail OPEN -- a stop guard must not block on BLIND" 0 "$RC"
 has "C5e and says the checks could not be read" "$OUT" "could not be read"
 
-printf 'open\tfalse\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+# NOTHING FAILING IS NOT NOTHING BLOCKING (#1260): zero required checks and
+# mergeable_state=blocked means a required review holds it, not a check.
+printf 'open\tfalse\ttrue\t%s\tdeadbee\tblocked\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
+rc  "C5f armed, nothing failing, but mergeable_state=BLOCKED still blocks" 2 "$RC"
+has "C5g and names BLOCKED rather than claiming checks will land it" "$OUT" "mergeable_state=BLOCKED"
+hasnt "C5h does not claim it lands when its checks pass" "$OUT" "it lands when its checks pass"
+
+printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"
 has "C7 the refusal names arming auto-merge as the preferred exit" "$OUT" "--auto"
 
 # `gh pr comment` prints .../pull/N#issuecomment-ID, which read as a PR this
 # turn opened.
-printf 'open\tfalse\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$BEFORE" > "$T/pr-state"
+printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$BEFORE" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
 rc  "C8 a PR opened before this session does not block" 0 "$RC"
 has "C9 and it says mentioned, not opened here"         "$OUT" "predates this session"
 
 # No baseline: it cannot tell whose PR is whose and BLOCKS anyway. A
 # no-baseline pass is indistinguishable from disabling the check.
-printf 'open\tfalse\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 NB="$T/nb"; mkdir -p "$NB/tmp"
 nb_run() { payload "$G" "$TR" "no-baseline-sid" | STUB_PR="$T/pr-state" CLAUDE_JOB_DIR="$NB" PATH="$T/bin:$PATH" "$SCRIPT"; }
 OUT="$(nb_run 2>&1)"
@@ -167,12 +175,12 @@ printf '{"cwd":"%s","transcript_path":"%s","session_id":"nb2","stop_hook_active"
 rc "C12 a re-fired Stop exits 0, so the block surfaces once" 0 "$?"
 
 # A stopping state is one whoever opened the PR.
-printf 'open\tfalse\ttrue\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\tfalse\ttrue\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(nb_run 2>&1)"; nb_run >/dev/null 2>&1
 rc  "C13 auto-merge wins even with no baseline" 0 "$?"
 has "C14 and says so"                           "$OUT" "AUTO-MERGE ARMED"
 
-printf 'open\ttrue\tfalse\t%s\tdeadbee\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+printf 'open\ttrue\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 nb_run >/dev/null 2>&1
 rc "C15 a draft wins even with no baseline" 0 "$?"
 
