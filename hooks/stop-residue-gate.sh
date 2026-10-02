@@ -429,12 +429,13 @@ if command -v gh >/dev/null 2>&1; then
   while IFS= read -r url; do
     [ -n "$url" ] || continue
     slug="${url#https://github.com/}"; num="${slug##*/}"; slug="${slug%/pull/*}"
-    meta="$(gh api "repos/$slug/pulls/$num" --jq '"\(.state)\t\(.draft)\t\(.auto_merge != null)\t\(.created_at)\t\(.head.sha)\t\(.body // "")"' 2>/dev/null)" || {
+    meta="$(gh api "repos/$slug/pulls/$num" --jq '"\(.state)\t\(.draft)\t\(.auto_merge != null)\t\(.created_at)\t\(.head.sha)\t\(.mergeable_state // "unknown")\t\(.body // "")"' 2>/dev/null)" || {
       log "could not read $url -- not blocking on a tracker this hook cannot reach"; continue; }
     st="${meta%%$'\t'*}"; rest="${meta#*$'\t'}"; dr="${rest%%$'\t'*}"
     rest="${rest#*$'\t'}"; am="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
     created="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
-    headsha="${rest%%$'\t'*}"; body="${rest#*$'\t'}"
+    headsha="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+    mergeable_state="${rest%%$'\t'*}"; body="${rest#*$'\t'}"
     [ "$st" = open ] || continue
     # DRAFT and AUTO-MERGE first: valid stopping states whoever opened it, so
     # asking whose it is first reports already-handled work (C13-C15).
@@ -449,6 +450,14 @@ if command -v gh >/dev/null 2>&1; then
     if [ "$am" = true ]; then
       failing="$(pr_failing_checks "$slug" "$headsha")"
       if [ "$failing" = 0 ]; then
+        # NOTHING FAILING IS NOT NOTHING BLOCKING (#1260): mergeable_state=blocked
+        # on a repo with zero required checks means a required review, not a
+        # check, is what holds it -- checks passing was never the condition.
+        if [ "$mergeable_state" = blocked ]; then
+          pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=BLOCKED with nothing failing"$'\n'
+          pr_report+="    armed is not landing: something other than a check holds it (commonly a required review)"$'\n'
+          continue
+        fi
         log "note: $url has AUTO-MERGE ARMED and nothing failing -- it lands when its checks pass. Valid way to stop."
         continue
       fi
