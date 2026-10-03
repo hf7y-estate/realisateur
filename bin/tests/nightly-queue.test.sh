@@ -168,6 +168,9 @@ has "...says what it sent" "$out" "sending: alpha gamma -- up to 3 pass(es) each
 has "...as a named unit" "$(cat "$T/systemd-run.args")" "--unit=agent-sent-"
 has "...carrying the pass count" "$(cat "$T/systemd-run.args")" "--setenv=PASSES=3"
 has "...and the repos" "$(cat "$T/systemd-run.args")" "--setenv=ONLY=alpha gamma"
+hasnt "...and no turn limit unless one was given" "$(cat "$T/systemd-run.args")" "TURNS"
+TURNS=77 PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --send 1 alpha >/dev/null 2>&1
+has "...TURNS rides along when the sender sets it" "$(cat "$T/systemd-run.args")" "--setenv=TURNS=77"
 eq "...and dispatched nothing itself" "$(dispatched | wc -l | tr -d ' ')" "2"
 PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send x alpha >/dev/null 2>&1; rc "...a pass count that is not a number exits 2" 2 "$?"
 PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send 3 >/dev/null 2>&1; rc "...no repo named exits 2" 2 "$?"

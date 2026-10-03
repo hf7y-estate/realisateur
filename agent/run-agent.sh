@@ -33,7 +33,7 @@ issue="${3:-}"
 case "$issue" in ''|*[!0-9]*) [ -z "$issue" ] || { echo "run-agent.sh: issue must be a number, got '$issue'" >&2; exit 2; } ;; esac
 # SENT, NOT CHOSEN. With an issue number the pass does not read the queue to pick.
 sent=""
-[ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip step 1 below, and do not work any other."
+[ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip step 1 below, and do not work any other. If a comment on it names a salvage branch, start from that branch: an earlier pass ran out of turns there."
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 # The same instant as an ISO-8601 Z string, because the PR list below is
 # partitioned on it and `gh --jq` compares createdAt as text.
@@ -190,6 +190,11 @@ sudo -n docker run --rm \
   -e REPO="$repo" \
   -e BRIEF="$brief" \
   -e TURNS="$turns" \
+  -e STAMP="$stamp" \
+  -e ISSUE="$issue" \
+  -e SALVAGE="$(cat "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/salvage.sh")" \
+  -e BASH_DEFAULT_TIMEOUT_MS=900000 \
+  -e BASH_MAX_TIMEOUT_MS=3600000 \
   "$image" bash -lc '
     set -euo pipefail
     export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/claude-token)"
@@ -209,10 +214,19 @@ sudo -n docker run --rm \
     [ -d "/work/$REPO/.git" ] || { echo "CLONE FAILED after 3 attempts" >&2; exit 1; }
 
     cd "/work/$REPO"
+    # THE TWO TIMEOUTS ABOVE ARE WHY A LONG TEST RUN STAYS IN THE FOREGROUND. At
+    # the 2-minute default the CLI moves the command to the background, the
+    # agent ends its turn to wait, and `claude -p` ends the pass with it: crt,
+    # two nights, turns=39 of 150, nothing committed.
+    #
+    # AND WHATEVER IS LEFT IS PUSHED, whatever the exit: turn cap, stall, crash.
+    rc=0
     claude -p "$BRIEF" \
       --max-turns "$TURNS" \
       --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
-      --output-format stream-json --verbose
+      --output-format stream-json --verbose || rc=$?
+    bash -c "$SALVAGE" salvage "$STAMP" "$ISSUE" || true
+    exit "$rc"
   ' | while IFS= read -r line; do
         # One readable line per event. Raw stream-json is unreadable at volume
         # and the interesting parts are the tool calls and the text.
