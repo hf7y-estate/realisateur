@@ -28,7 +28,7 @@ if [ "${1:-}" = --send ]; then
   unit="agent-sent-$(date -u +%Y%m%dT%H%M%SZ)"
   echo "sending: $* -- up to $p pass(es) each, as unit $unit"
   exec sudo -n systemd-run --unit="$unit" --uid="$(id -u)" --gid="$(id -g)" \
-    --setenv=HOME="$HOME" --setenv=PATH="$PATH" --setenv=PASSES="$p" --setenv=ONLY="$*" \
+    --setenv=HOME="$HOME" --setenv=PATH="$PATH" --setenv=PASSES="$p" --setenv=ONLY="$*" ${TURNS:+--setenv=TURNS="$TURNS"} \
     "$here/nightly.sh"
 fi
 only="${ONLY:-}"
