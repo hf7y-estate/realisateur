@@ -8,7 +8,7 @@
 # PATH, beside a COPY of the script.
 set -uo pipefail
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/harness.sh"
-harness_tmp
+harness_tmp; export T
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
 
 echo "nightly-queue.test.sh"
@@ -75,7 +75,7 @@ case "$1" in
   issue)
     [ "$2" = list ] || exit 0
     case "$repo" in
-      alpha) printf '[{"milestone":{"number":1}}]\n' ;;
+      alpha) [ "$(cat "$T/left-alpha" 2>/dev/null)" = 0 ] && printf '[]\n' || printf '[{"milestone":{"number":1}}]\n' ;;
       beta)  printf '[{"milestone":{"number":99}}]\n' ;;   # 99 is not open
       gamma) printf '[{"milestone":{"number":5}}]\n' ;;
       delta) printf '[{"milestone":{"number":9}}]\n' ;;
@@ -90,13 +90,16 @@ exit 0
 STUB
 cat > "$T/agent/run-agent.sh" <<'STUB'
 #!/usr/bin/env bash
-printf '%s\n' "$1" >> "$T/dispatched"
+printf '%s\n' "$1${3:+#$3}" >> "$T/dispatched"
+# each pass closes one queued issue, the way a real one would
+[ -f "$T/left-$1" ] && printf '%s\n' "$(( $(cat "$T/left-$1") - 1 ))" > "$T/left-$1"
+exit 0
 STUB
 chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
 
 run() {
   rm -f "$T/dispatched" "$T/srv/nightly."*.log
-  export T; PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
     AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1
 }
 dispatched() { cat "$T/dispatched" 2>/dev/null; }
@@ -134,5 +137,49 @@ has "...says the org couldn't be read" "$out" "COULD NOT LIST hf7y-estate -- run
 eq "...and still ran the file's own repos" "$(dispatched | sed -n 1p)" "alpha"
 hasnt "...but appended nothing it couldn't see" "$(dispatched)" "gamma"
 rm -f "$T/fail-repo-list"
+
+
+section "F. PASSES drains a repo's queue, and stops when it is empty"
+printf '2\n' > "$T/left-alpha"                      # alpha's queue holds two issues
+out="$(PASSES=5 NIGHT_PASSES=9 run)"; rc "exits 0" 0 "$?"
+eq "...alpha ran two passes: one per queued issue" \
+  "$(dispatched | grep -c '^alpha$')" "2"
+has "...and says which pass each was" "$out" "pass 2/5"
+eq "...and did not run to 5 once nothing was left" "$(printf '%s\n' "$out" | grep -c '^--- alpha: .* pass 3/5')" "0"
+eq "...gamma kept its queue and ran all five" "$(dispatched | grep -c '^gamma$')" "5"
+rm -f "$T/left-alpha"
+
+section "G. the night has one budget across every repo (#1379)"
+out="$(NIGHT_PASSES=1 run)"
+eq "...one pass spent, on the first repo with a queue" "$(dispatched | tr '\n' ' ')" "alpha "
+has "...and the rest are said to wait" "$out" "night budget of 1 pass(es) spent -- gamma and everything after it waits"
+out="$(run)"
+eq "...unset, the budget is the hand list's length (2): both runnable repos ran" \
+  "$(dispatched | wc -l | tr -d ' ')" "2"
+
+section "H. --send starts ONE supervised unit and nothing else (#1379)"
+cat > "$T/bin/systemd-run" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$T/systemd-run.args"
+STUB
+chmod +x "$T/bin/systemd-run"
+out="$(PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --send 3 alpha gamma 2>&1)"; rc "exits 0" 0 "$?"
+has "...says what it sent" "$out" "sending: alpha gamma -- up to 3 pass(es) each"
+has "...as a named unit" "$(cat "$T/systemd-run.args")" "--unit=agent-sent-"
+has "...carrying the pass count" "$(cat "$T/systemd-run.args")" "--setenv=PASSES=3"
+has "...and the repos" "$(cat "$T/systemd-run.args")" "--setenv=ONLY=alpha gamma"
+eq "...and dispatched nothing itself" "$(dispatched | wc -l | tr -d ' ')" "2"
+PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send x alpha >/dev/null 2>&1; rc "...a pass count that is not a number exits 2" 2 "$?"
+PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send 3 >/dev/null 2>&1; rc "...no repo named exits 2" 2 "$?"
+
+section "I. ONLY narrows a run to the repos it was sent with"
+out="$(ONLY="gamma" PASSES=1 run)"
+eq "...only gamma ran" "$(dispatched | tr '\n' ' ')" "gamma "
+has "...and the log says it was a sent run" "$out" "sent run: only gamma"
+
+section "J. repo#n sends one pass at that issue, in the order given"
+out="$(ONLY="alpha#7 beta#3 alpha#9" PASSES=4 run)"
+eq "...each link ran once, in order, queue or no queue" "$(dispatched | tr '\n' ' ')" "alpha#7 beta#3 alpha#9 "
+has "...and the log names the issue" "$out" "pass 1/4 issue #7"
 
 summary
