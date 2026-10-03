@@ -46,7 +46,7 @@ eq "...with no issue named, nothing is commented" "$(cat "$T/gh.calls" 2>/dev/nu
 
 section "D. a branch the pass already pushed is left alone"
 fresh
-out="$(cd "$T/w" && git checkout -q -b done-thing && echo y > y && git add y && git commit -q -m done && git push -q -u origin done-thing && bash "$SALVAGE" S4 9 2>&1)"; rc "exits 0" 0 "$?"
+out="$(cd "$T/w" && git checkout -q -b done-thing && echo y > y && git add y && git commit -q -m landed && git push -q -u origin done-thing && bash "$SALVAGE" S4 9 2>&1)"; rc "exits 0" 0 "$?"
 eq "...says nothing" "$out" ""
 
 summary
