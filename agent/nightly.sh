@@ -15,7 +15,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
 passes="${PASSES:-1}"
-# --send <passes> <repo>...  THE ONE WAY TO START A RUN BY HAND (#1379). It
+# --send <passes> <repo|repo#issue>...  THE ONE WAY TO START A RUN BY HAND (#1379). It
 # re-runs this same file as one supervised, transient systemd unit, so the run
 # is in `systemctl`, in the journal, and killable by name. Zach, 2026-10-01, on
 # the 330-character ssh line this replaces: "That incantation proves the
@@ -141,7 +141,11 @@ queue_count() {
   echo "$n"
 }
 
-for repo in "${repos[@]}"; do
+for target in "${repos[@]}"; do
+  # `repo#n` IS A LINK OF A CHAIN: that issue, one pass, in the order it was
+  # sent. merge-carry lands the previous link first, so the next one builds on it.
+  repo="${target%%#*}"; issue=""
+  [ "$repo" = "$target" ] || issue="${target#*#}"
   # BEFORE the queue check, not after it. A repo is skipped below when its queue
   # is empty -- and a queue is empty precisely when the work is already sitting
   # in the previous pass's unmerged PRs, which is the case that most needs them
@@ -149,29 +153,31 @@ for repo in "${repos[@]}"; do
   # for a skipped repo; both calls are idempotent and the second prints nothing.
   "$here/merge-carry.sh" "$repo" || echo "--- $repo: merge-carry.sh exited $?"
 
-  # Do not spend a container on an empty queue.
-  n="$(queue_count "$repo")"
+  # Do not spend a container on an empty queue. A named issue was sent, not
+  # chosen, so the queue is not asked about it.
+  n=1
+  [ -n "$issue" ] || n="$(queue_count "$repo")"
   case "$n" in
     0)   echo "--- $repo: queue empty, skipping"; continue ;;
     ERR) echo "--- $repo: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
   esac
-  # THE QUEUE IS THE `first` LABEL, and PASSES is how far one run drains it.
-  # One pass per repo was a number based on nothing (Zach, 2026-10-01, #1379);
-  # the default stays 1 until something measured sets it, and a hand-started run
-  # says PASSES=n. A repo with no `first` issue left stops early.
+  # THE QUEUE IS THE MILESTONE, and PASSES is how far one run drains it. There
+  # was a `first` label layered on top: it ordered a queue it could not put an
+  # issue into, so five labelled issues with no milestone never ran. Zach,
+  # 2026-10-03: "the first tag, along with milestones, feels like layered not
+  # replaced." Order is `--send repo#n ...`; the default stays 1 pass.
   i=0
   while :; do
     [ "$spent" -lt "$night" ] || { echo "=== night budget of $night pass(es) spent -- $repo and everything after it waits ==="; break 2; }
     spent=$((spent + 1))
     i=$((i + 1))
-    echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes"   # the timestamp stays third: estate-status-collect.py:181 parses this line
-    "$here/run-agent.sh" "$repo" "$turns" >/dev/null 2>&1 \
+    echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
+    "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 \
       && echo "--- $repo: pass finished" \
       || echo "--- $repo: pass exited $? (its own log has the reason)"
-    [ "$i" -lt "$passes" ] || break
-    f=$(gh issue list --repo "hf7y-estate/$repo" --state open --limit 200 --label first \
-          --search '-label:needs-host -label:needs-human' --json number --jq 'length' 2>/dev/null) || break
-    [ "${f:-0}" -gt 0 ] || break
+    [ -z "$issue" ] && [ "$i" -lt "$passes" ] || break
+    n="$(queue_count "$repo")"
+    case "$n" in 0|ERR) break ;; esac
   done
 done
 
@@ -182,7 +188,7 @@ echo "=== nightly done $(date -u +%FT%TZ) ==="
 # list on every night that opened PRs. Recency is the pass's own artifact.
 since="$(date -u -d '12 hours ago' +%FT%TZ)"
 echo "=== PRs opened on the estate since ${since} ==="
-for repo in "${repos[@]}"; do
+for repo in $(printf '%s\n' "${repos[@]%%#*}" | awk '!seen[$0]++'); do
   # gh's --jq takes no --arg, so both the cutoff and the repo name are
   # stitched in -- the cutoff into the program, the name onto each line.
   gh pr list --repo "hf7y-estate/$repo" --limit 10 \

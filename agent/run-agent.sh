@@ -33,7 +33,7 @@ issue="${3:-}"
 case "$issue" in ''|*[!0-9]*) [ -z "$issue" ] || { echo "run-agent.sh: issue must be a number, got '$issue'" >&2; exit 2; } ;; esac
 # SENT, NOT CHOSEN. With an issue number the pass does not read the queue to pick.
 sent=""
-[ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip steps 0 and 1 below, and do not work any other. If it is too large for one pass, the pass is the split described in step 0."
+[ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip step 1 below, and do not work any other."
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 # The same instant as an ISO-8601 Z string, because the PR list below is
 # partitioned on it and `gh --jq` compares createdAt as text.
@@ -86,11 +86,9 @@ finished from here -- it needs a physical device or a live remote host. Do
 not route around the filter by listing issues without it.
 
 Then:
-0. FIRST COMES FIRST. If any issue in that queue carries the label \`first\`,
-   the lowest-numbered of those IS tonight's issue and you do not choose. If it
-   is too large for one pass, the pass is the split: file its pieces as native
-   sub-issues of it, each finishable in one night, label them \`first\`, take
-   the label off the parent, and report that. Otherwise:
+0. TOO LARGE FOR ONE PASS means the pass is the split: file the issue's pieces
+   as native sub-issues of it, each finishable in one pass and in the same
+   milestone, and report that.
 1. Pick the ONE you can finish AND verify from this container: network, node,
    git, gh, a shell, this checkout. Prefer small and provable over interesting.
    Spend at most a few turns choosing. Choosing is not the work.
