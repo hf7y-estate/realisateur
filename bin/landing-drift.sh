@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # landing-drift.sh -- is there a repo whose green work has nowhere to land?
-# RUNNER: bin/ausculte.sh -- the `landing` probe
+# RUNNER: no -- its runner, the `landing` probe of ausculte.sh, was deleted (#1273); nothing has run this since 2026-09-17 (#1316)
 # GUARD-TEST: bin/tests/landing-drift.test.sh -- offline, behind a fake `gh`
 # GATE: default --all
 # A PILE IS THE FINDING; flagging the route would red every repo forever.

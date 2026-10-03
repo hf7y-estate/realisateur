@@ -23,7 +23,7 @@
 #   realisateur  177 runnable, the deepest queue in the estate. The harness
 #                repo: a pass clones it fresh and lands via PR, and /srv/agent
 #                is never in the clone, so it cannot edit what is running it
-#   bibliothecaire  test_intake.py, test_provenance.py, bin/validate-quotes.py.
+#   bibliothecaire  test_intake.py, test_provenance.py, validate-quotes.py in its bin/.
 #                Added 2026-10-01 for the denominal-verbs milestone; Zach,
 #                2026-09-30: "using realisateur, make sure this work is
 #                scheduled to get picked up with a number of jobs"

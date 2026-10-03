@@ -96,7 +96,7 @@ chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
 
 run() {
   rm -f "$T/dispatched" "$T/srv/nightly."*.log
-  PATH="$T/bin:$PATH" T="$T" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  export T; PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
     AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1
 }
 dispatched() { cat "$T/dispatched" 2>/dev/null; }

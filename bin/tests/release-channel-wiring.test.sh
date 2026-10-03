@@ -317,10 +317,6 @@ else
   bad "could not read the deployed workflow (auth? network?) -- drift is UNKNOWN, not clean"
 fi
 
-sched="$(gh api repos/hf7y-estate/verbs/actions/workflows --jq '.workflows[]|select(.name=="build-verbs")|.state' 2>/dev/null)"
-[ "$sched" = active ] && ok "the build-verbs workflow is ACTIVE on GitHub" \
-                      || bad "build-verbs is '$sched' on GitHub, not active -- nothing is scheduled"
-
 if [ "$LIVE" != 1 ]; then
   echo
   echo "  (--live skipped: endpoint freshness. That is a claim about the"

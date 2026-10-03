@@ -3,10 +3,10 @@
 #
 # NOT A VERB, deliberately (bin/lib/not-a-verb.tsv's test, Zach 2026-08-11:
 # "would another agent or Zach ever call one of those?"). Nobody types
-# `reprise`; ausculte reports the row and --apply opens its own PR. It is LOCAL
+# `reprise`; --apply opens its own PR. It is LOCAL
 # in bin/lib/propagation-set.sh -- it acts on THIS repo's handoff table, so
 # shipping it to twelve accounts would give each one a tool with nothing to do.
-# RUNNER: bin/ausculte.sh (the `handoff` probe), on ausculte --cadence's clock
+# RUNNER: no -- its runner, the `handoff` probe of ausculte.sh, was deleted (#1273); nothing has run this since 2026-09-17 (#1274)
 # GUARD-TEST: bin/tests/reprise.test.sh
 # GATE: none -- `--check` reports and `--apply` opens a PR a human merges. It
 #   deletes nothing that is not already present at its destination, so there is
