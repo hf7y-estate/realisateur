@@ -34,11 +34,15 @@ case "$issue" in ''|*[!0-9]*) [ -z "$issue" ] || { echo "run-agent.sh: issue mus
 # SENT, NOT CHOSEN. With an issue number the pass does not read the queue to pick.
 sent=""
 [ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip steps 0 and 1 below, and do not work any other. If it is too large for one pass, the pass is the split described in step 0."
+# Overridable so a test can drive this script hermetically (#1382); the host
+# default is unchanged.
+dir="${AGENT_DIR:-/srv/agent}"
+state_dir="${AGENT_STATE:-${dir}/state}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 # The same instant as an ISO-8601 Z string, because the PR list below is
 # partitioned on it and `gh --jq` compares createdAt as text.
 started_iso="${stamp:0:4}-${stamp:4:2}-${stamp:6:2}T${stamp:9:2}:${stamp:11:2}:${stamp:13:2}Z"
-log="/srv/agent/${repo}.${stamp}.log"
+log="${dir}/${repo}.${stamp}.log"
 
 # WHAT THE PREVIOUS PASS OPENED, and nothing else. Zach, 2026-09-26, asked which
 # of three options merges the container's PRs: "Next night's pass merges".
@@ -50,7 +54,7 @@ log="/srv/agent/${repo}.${stamp}.log"
 # accident. What IS reliable is that this harness already knows which PRs it
 # opened: it prints them below, partitioned on this pass's own start time. So it
 # writes those numbers down and the next pass merges exactly them.
-carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
+carry="${state_dir}/${repo}.prs"
 mkdir -p "$(dirname "$carry")"
 
 # ONE level, not two. The previous version mounted /srv/agent/work/<repo> at
@@ -64,7 +68,7 @@ mkdir -p "$(dirname "$carry")"
 # (#1341). A standalone run of this script takes whatever docker already has.
 image="${AGENT_IMAGE:-ghcr.io/hf7y-estate/agent:latest}"
 
-root="/srv/agent/work"
+root="${dir}/work"
 checkout="${root}/${repo}"
 mkdir -p "$root"
 
@@ -171,8 +175,8 @@ if m="$(minter)" && tok="$(sudo -n "$m" --token 2>/dev/null)" && [ -n "$tok" ]; 
   # Outside /srv/agent/work on purpose: that directory IS the container's mount,
   # so a token written there would be readable by the agent as a plain file
   # instead of only at /run/gh-token.
-  mkdir -p /srv/agent/state
-  minted="$(mktemp /srv/agent/state/.gh-token.XXXXXX)"
+  mkdir -p "$state_dir"
+  minted="$(mktemp "$state_dir/.gh-token.XXXXXX")"
   chmod 600 "$minted"
   printf '%s\n' "$tok" > "$minted"
   tok=""
@@ -243,6 +247,7 @@ else
   branch="$(g branch --show-current)"
   tree=clean; [ -n "$(g status --porcelain)" ] && tree=dirty
   turns_used="$(sed -n 's/^=== result: .*turns=\([0-9]*\).*/\1/p' "$log" | tail -1)"
+  cost_used="$(sed -n 's/^=== result: .*cost=\$\([0-9.]*\).*/\1/p' "$log" | tail -1)"
 
   # THE AUTHOR IS NOT `claude-agent`. The `git config user.name` above sets
   # that as the COMMITTER, while the PR is authored `hf7y` -- the token's
@@ -300,4 +305,39 @@ EOF
   g log --oneline -5
   echo "=== uncommitted ==="
   g status --porcelain | head
+
+  # SENT means BRAKED (#1382): a pass told which issue to work gets its
+  # attempt recorded, so a brief that keeps failing the same issue stops
+  # silently costing turns forever. Unforced passes (no issue argument) pick
+  # their own work from the queue each night and are not tracked here -- the
+  # brake is for a pass that was SENT, not one that chose.
+  if [ -n "$issue" ]; then
+    outcome=no-change
+    [ -n "$mine" ] && outcome=pr-opened
+    [ "$outcome" = no-change ] && [ "$tree" = dirty ] && outcome=dirty-tree
+    attempts_file="${state_dir}/${repo}.${issue}.attempts.tsv"
+    mkdir -p "$state_dir"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "$(date -u +%FT%TZ)" "$repo" "$issue" "${turns_used:-0}" "${cost_used:-0}" "$outcome" \
+      >> "$attempts_file"
+    attempt_count="$(wc -l < "$attempts_file" | tr -d ' ')"
+    max_attempts="${MAX_ATTEMPTS:-3}"
+    echo "=== forced pass on #${issue}: attempt ${attempt_count} of ${max_attempts}, outcome=${outcome} (${attempts_file}) ==="
+    if [ "$attempt_count" -ge "$max_attempts" ]; then
+      issue_json="$(GH_TOKEN="$(sudo -n cat "$tokfile")" \
+        gh issue view "$issue" --repo "hf7y-estate/${repo}" --json state,labels 2>/dev/null)" || issue_json=""
+      state="$(printf '%s' "$issue_json" | jq -r '.state // "UNKNOWN"' 2>/dev/null)"
+      already="$(printf '%s' "$issue_json" | jq -r '[.labels[]?.name] | any(. == "needs-human")' 2>/dev/null)"
+      if [ "$state" = OPEN ] && [ "$already" != true ]; then
+        GH_TOKEN="$(sudo -n cat "$tokfile")" gh issue edit "$issue" --repo "hf7y-estate/${repo}" \
+          --add-label needs-human 2>&1 | sed 's/^/  /'
+        GH_TOKEN="$(sudo -n cat "$tokfile")" gh issue comment "$issue" --repo "hf7y-estate/${repo}" \
+          --body "NO-DECISION: ${attempt_count} forced passes on this issue did not close it (brake at ${max_attempts}, \`${attempts_file}\`). Labeled \`needs-human\` rather than spending another pass." \
+          2>&1 | sed 's/^/  /'
+        echo "=== #${issue}: ${attempt_count} attempts without closing -- labeled needs-human ==="
+      else
+        echo "=== #${issue}: brake reached but state=${state} already=${already} -- nothing to do ==="
+      fi
+    fi
+  fi
 fi
