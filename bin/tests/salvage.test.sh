@@ -19,7 +19,9 @@ export PATH="$T/bin:$PATH" GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_
 git init -q --bare -b main "$T/origin.git"
 git clone -q "$T/origin.git" "$T/seed" 2>/dev/null
 ( cd "$T/seed" && echo a > a && git add a && git commit -q -m seed && git push -q origin main )
-fresh() { rm -rf "$T/w" "$T/gh.calls"; git clone -q "$T/origin.git" "$T/w"; }
+# --depth 1 over file://, as run-agent.sh clones: single-branch, so a pushed
+# branch gets no remote-tracking ref. A full clone hides that.
+fresh() { rm -rf "$T/w" "$T/gh.calls"; git clone -q --depth 1 "file://$T/origin.git" "$T/w"; }
 heads() { git -C "$T/origin.git" for-each-ref --format='%(refname:short)' refs/heads | tr '\n' ' '; }
 
 section "A. a pass that left nothing pushes nothing"
@@ -48,5 +50,6 @@ section "D. a branch the pass already pushed is left alone"
 fresh
 out="$(cd "$T/w" && git checkout -q -b done-thing && echo y > y && git add y && git commit -q -m landed && git push -q -u origin done-thing && bash "$SALVAGE" S4 9 2>&1)"; rc "exits 0" 0 "$?"
 eq "...says nothing" "$out" ""
+eq "...and the issue is told nothing" "$(cat "$T/gh.calls" 2>/dev/null)" ""
 
 summary
