@@ -15,6 +15,23 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
 passes="${PASSES:-1}"
+# --send <passes> <repo>...  THE ONE WAY TO START A RUN BY HAND (#1379). It
+# re-runs this same file as one supervised, transient systemd unit, so the run
+# is in `systemctl`, in the journal, and killable by name. Zach, 2026-10-01, on
+# the 330-character ssh line this replaces: "That incantation proves the
+# failure." Nothing else about a sent run differs from the 01:00 one.
+if [ "${1:-}" = --send ]; then
+  shift
+  p="${1:-}"; [ $# -gt 0 ] && shift
+  case "$p" in ''|*[!0-9]*) echo "usage: nightly.sh --send <passes> <repo>..." >&2; exit 2 ;; esac
+  [ $# -gt 0 ] || { echo "usage: nightly.sh --send <passes> <repo>..." >&2; exit 2; }
+  unit="agent-sent-$(date -u +%Y%m%dT%H%M%SZ)"
+  echo "sending: $* -- up to $p pass(es) each, as unit $unit"
+  exec sudo -n systemd-run --unit="$unit" --uid="$(id -u)" --gid="$(id -g)" \
+    --setenv=HOME="$HOME" --setenv=PATH="$PATH" --setenv=PASSES="$p" --setenv=ONLY="$*" \
+    "$here/nightly.sh"
+fi
+only="${ONLY:-}"
 list="${REPO_LIST:-$here/repos}"
 # The log and the lock live where the dispatch layer does. Named once, and
 # overridable, so the suite can run this loop somewhere that is not the host.
@@ -92,6 +109,22 @@ if [ "${#extra[@]}" -gt 0 ]; then
   repos+=("${extra[@]}")
 fi
 
+# A SENT RUN NAMES ITS REPOS. The org is still what was listed above; ONLY
+# narrows it to what the sender asked for, in the sender's order.
+if [ -n "$only" ]; then
+  read -ra repos <<<"$only"
+  echo "=== sent run: only ${repos[*]} ==="
+fi
+
+# THE NIGHT HAS ONE BUDGET, NOT ONE PER REPO (Zach, 2026-10-01: "It shouldn't be
+# per-repo at all. It should be ecosystem-wide"). Until something measured sets
+# NIGHT_PASSES, the default is the number of repos the hand list names: what a
+# night cost before the org became the set, and no more. A sent run is bounded
+# by what it was sent with.
+if [ -n "$only" ]; then night="${NIGHT_PASSES:-$(( ${#repos[@]} * passes ))}"
+else night="${NIGHT_PASSES:-$(grep -cvE '^\s*(#|$)' "$list")}"; fi
+spent=0
+
 # The queue predicate: open issues in an open milestone, minus needs-host and
 # needs-human. The same one the brief hands the agent below, so a repo that
 # gets picked always has something the agent's own read will find too (#1383
@@ -128,6 +161,8 @@ for repo in "${repos[@]}"; do
   # says PASSES=n. A repo with no `first` issue left stops early.
   i=0
   while :; do
+    [ "$spent" -lt "$night" ] || { echo "=== night budget of $night pass(es) spent -- $repo and everything after it waits ==="; break 2; }
+    spent=$((spent + 1))
     i=$((i + 1))
     echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes"   # the timestamp stays third: estate-status-collect.py:181 parses this line
     "$here/run-agent.sh" "$repo" "$turns" >/dev/null 2>&1 \

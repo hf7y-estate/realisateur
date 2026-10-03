@@ -74,6 +74,7 @@ case "$1" in
     ;;
   issue)
     [ "$2" = list ] || exit 0
+    case "$args" in *"--label first"*) cat "$T/first-$repo" 2>/dev/null || printf '0\n'; exit 0 ;; esac
     case "$repo" in
       alpha) printf '[{"milestone":{"number":1}}]\n' ;;
       beta)  printf '[{"milestone":{"number":99}}]\n' ;;   # 99 is not open
@@ -91,6 +92,9 @@ STUB
 cat > "$T/agent/run-agent.sh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$1" >> "$T/dispatched"
+# each pass closes one `first` issue, the way a real one would
+[ -f "$T/first-$1" ] && printf '%s\n' "$(( $(cat "$T/first-$1") - 1 ))" > "$T/first-$1"
+exit 0
 STUB
 chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
 
@@ -134,5 +138,44 @@ has "...says the org couldn't be read" "$out" "COULD NOT LIST hf7y-estate -- run
 eq "...and still ran the file's own repos" "$(dispatched | sed -n 1p)" "alpha"
 hasnt "...but appended nothing it couldn't see" "$(dispatched)" "gamma"
 rm -f "$T/fail-repo-list"
+
+
+section "F. PASSES drains a repo's \`first\` issues, and stops when none is left (#1395)"
+printf '2\n' > "$T/first-alpha"                     # alpha holds two `first` issues
+out="$(PASSES=5 NIGHT_PASSES=9 run)"; rc "exits 0" 0 "$?"
+eq "...alpha ran two passes: one per \`first\` issue" \
+  "$(dispatched | grep -c '^alpha$')" "2"
+has "...and says which pass each was" "$out" "pass 2/5"
+hasnt "...and did not run to 5 once nothing was left" "$out" "pass 3/5"
+eq "...gamma, with no \`first\` issue, ran once" "$(dispatched | grep -c '^gamma$')" "1"
+rm -f "$T/first-alpha"
+
+section "G. the night has one budget across every repo (#1379)"
+out="$(NIGHT_PASSES=1 run)"
+eq "...one pass spent, on the first repo with a queue" "$(dispatched | tr '\n' ' ')" "alpha "
+has "...and the rest are said to wait" "$out" "night budget of 1 pass(es) spent -- gamma and everything after it waits"
+out="$(run)"
+eq "...unset, the budget is the hand list's length (2): both runnable repos ran" \
+  "$(dispatched | wc -l | tr -d ' ')" "2"
+
+section "H. --send starts ONE supervised unit and nothing else (#1379)"
+cat > "$T/bin/systemd-run" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" > "$T/systemd-run.args"
+STUB
+chmod +x "$T/bin/systemd-run"
+out="$(PATH="$T/bin:$PATH" T="$T" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --send 3 alpha gamma 2>&1)"; rc "exits 0" 0 "$?"
+has "...says what it sent" "$out" "sending: alpha gamma -- up to 3 pass(es) each"
+has "...as a named unit" "$(cat "$T/systemd-run.args")" "--unit=agent-sent-"
+has "...carrying the pass count" "$(cat "$T/systemd-run.args")" "--setenv=PASSES=3"
+has "...and the repos" "$(cat "$T/systemd-run.args")" "--setenv=ONLY=alpha gamma"
+eq "...and dispatched nothing itself" "$(dispatched | wc -l | tr -d ' ')" "2"
+PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send x alpha >/dev/null 2>&1; rc "...a pass count that is not a number exits 2" 2 "$?"
+PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send 3 >/dev/null 2>&1; rc "...no repo named exits 2" 2 "$?"
+
+section "I. ONLY narrows a run to the repos it was sent with"
+out="$(ONLY="gamma" PASSES=1 run)"
+eq "...only gamma ran" "$(dispatched | tr '\n' ' ')" "gamma "
+has "...and the log says it was a sent run" "$out" "sent run: only gamma"
 
 summary
