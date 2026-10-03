@@ -182,4 +182,13 @@ out="$(ONLY="alpha#7 beta#3 alpha#9" PASSES=4 run)"
 eq "...each link ran once, in order, queue or no queue" "$(dispatched | tr '\n' ' ')" "alpha#7 beta#3 alpha#9 "
 has "...and the log names the issue" "$out" "pass 1/4 issue #7"
 
+section "K. a sent run starts while a night holds the lock; a second night does not"
+( exec 9>"$T/srv/.nightly.lock"; flock 9; sleep 5 ) &
+holder=$!; sleep 0.5
+out="$(ONLY="gamma" run)"
+eq "...the sent run dispatched anyway" "$(dispatched | tr '\n' ' ')" "gamma "
+out="$(run)"
+has "...and an unsent run still yields to the night" "$out" "another nightly holds the lock"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
 summary
