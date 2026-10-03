@@ -165,7 +165,14 @@ minter() {
 
 tokfile=/etc/selfdev/gh-token
 minted=""
-if m="$(minter)" && tok="$(sudo -n "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
+# MINTED FRESH, NOT READ FROM THE MINTER'S CACHE (#1417). `--token` returns the
+# cached token until five minutes before it expires, so a pass could start with
+# five minutes of credential: american-cycle died 5 minutes in, senechal lost
+# its PR, and etalon#81 on 2026-10-03 committed 84 turns of work it could not
+# push. An empty cache directory makes the minter mint, which is a full hour.
+# The cache stays what it was built for, git's credential helper.
+nocache="$(mktemp -d)"
+if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
   # Outside /srv/agent/work on purpose: that directory IS the container's mount,
   # so a token written there would be readable by the agent as a plain file
   # instead of only at /run/gh-token.
@@ -180,6 +187,7 @@ if m="$(minter)" && tok="$(sudo -n "$m" --token 2>/dev/null)" && [ -n "$tok" ]; 
 else
   echo "=== credential: /etc/selfdev/gh-token -- the App mint was unavailable ==="
 fi
+sudo -n rm -rf "$nocache"
 
 rc=0
 sudo -n docker run --rm \
