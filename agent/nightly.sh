@@ -40,8 +40,16 @@ log="${dir}/nightly.$(date -u +%Y%m%dT%H%M%SZ).log"
 
 # One night at a time. Without this, a pass that outlives its interval gets a
 # second container on the same checkout and they fight over the branch.
-exec 9>"${dir}/.nightly.lock"
-flock -n 9 || { echo "another nightly holds the lock -- exiting"; exit 0; }
+#
+# A SENT RUN DOES NOT TAKE IT (Zach, 2026-10-03: "15 minute timer, spawn new
+# ones on timer"). Chains on different repos run side by side, and a chain no
+# longer makes the 01:00 night exit 0 having run nothing. What must not overlap
+# is two containers on ONE checkout, so that lock is per repo and sits on the
+# pass itself, below.
+if [ -z "$only" ]; then
+  exec 9>"${dir}/.nightly.lock"
+  flock -n 9 || { echo "another nightly holds the lock -- exiting"; exit 0; }
+fi
 
 exec > >(tee -a "$log") 2>&1
 export GH_TOKEN="${GH_TOKEN:-$(sudo -n cat /etc/selfdev/gh-token)}"
@@ -172,7 +180,7 @@ for target in "${repos[@]}"; do
     spent=$((spent + 1))
     i=$((i + 1))
     echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
-    "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 \
+    flock "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 \
       && echo "--- $repo: pass finished" \
       || echo "--- $repo: pass exited $? (its own log has the reason)"
     [ -z "$issue" ] && [ "$i" -lt "$passes" ] || break
