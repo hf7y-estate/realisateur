@@ -166,11 +166,10 @@ minter() {
 tokfile=/etc/selfdev/gh-token
 minted=""
 # MINTED FRESH, NOT READ FROM THE MINTER'S CACHE (#1417). `--token` returns the
-# cached token until five minutes before it expires, so a pass could start with
-# five minutes of credential: american-cycle died 5 minutes in, senechal lost
-# its PR, and etalon#81 on 2026-10-03 committed 84 turns of work it could not
-# push. An empty cache directory makes the minter mint, which is a full hour.
-# The cache stays what it was built for, git's credential helper.
+# cached token until shortly before it expires, so a pass could start on a
+# credential that dies before its push. An empty cache directory makes the
+# minter mint, and a pass gets the token's whole life. The cache stays what it
+# was built for, git's credential helper.
 nocache="$(mktemp -d)"
 if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
   # Outside /srv/agent/work on purpose: that directory IS the container's mount,
@@ -222,10 +221,9 @@ sudo -n docker run --rm \
     [ -d "/work/$REPO/.git" ] || { echo "CLONE FAILED after 3 attempts" >&2; exit 1; }
 
     cd "/work/$REPO"
-    # THE TWO TIMEOUTS ABOVE ARE WHY A LONG TEST RUN STAYS IN THE FOREGROUND. At
-    # the 2-minute default the CLI moves the command to the background, the
-    # agent ends its turn to wait, and `claude -p` ends the pass with it: crt,
-    # two nights, turns=39 of 150, nothing committed.
+    # THE BASH_*_TIMEOUT_MS PAIR IS WHY A LONG TEST RUN STAYS IN THE FOREGROUND.
+    # At the CLI default it moves the command to the background, the agent
+    # ends its turn to wait, and `claude -p` ends the pass with it (#1423).
     #
     # AND WHATEVER IS LEFT IS PUSHED, whatever the exit: turn cap, stall, crash.
     rc=0

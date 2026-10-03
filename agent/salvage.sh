@@ -4,9 +4,8 @@
 #
 # The checkout is wiped by the next pass (`rm -rf /work/$REPO`) and the
 # container is `--rm`, so work that was written and not pushed is gone the
-# moment the pass ends. bibliothecaire#117, 2026-10-03: 151 turns, $4.93, the
-# deliverable written and validated, the turn cap reached one step before the
-# commit. Nothing survived.
+# moment the pass ends -- a turn cap reached one step before the commit keeps
+# nothing (#1423).
 #
 # Inside, not outside: the container leaves the checkout root-owned and the
 # harness runs as another user, so only the container can commit to it.

@@ -5,11 +5,11 @@
 # and `flock` is the concurrency control.
 #
 # What replaced what:
-#   usage-paced-runner.sh 1365 lines  ->  this loop
-#   sweep-loop-common.sh  1024 lines  ->  run-agent.sh's docker run
-#   usage-gate.sh          409 lines  ->  nothing. A 429 fails one repo's pass
-#                                         and the loop moves on. A coordinator
-#                                         traded for a retry, deliberately.
+#   usage-paced-runner.sh  ->  this loop
+#   sweep-loop-common.sh   ->  run-agent.sh's docker run
+#   usage-gate.sh          ->  nothing. A 429 fails a repo's pass and the loop
+#                              moves on. A coordinator traded for a retry,
+#                              deliberately.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
