@@ -272,7 +272,7 @@ else
   if [ -f "$report" ]; then
     echo "=== REPORT.md (${report}) ==="
   else
-    cat > "$report" <<EOF
+    sudo -n tee "$report" >/dev/null <<EOF
 # REPORT.md -- WRITTEN BY run-agent.sh, the agent wrote none
 
 harness-report: rc=${rc} turns=${turns_used:-0} of ${turns} tree=${tree} branch=${branch:-none}
