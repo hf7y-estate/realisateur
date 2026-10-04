@@ -4,6 +4,9 @@
 # issue_answered_json() for a caller already holding many issues (#573), and
 # issue_answered() for a caller with just one number.
 ANSWERED_STAMP_ERA="${ANSWERED_STAMP_ERA:-2026-08-14}"
+# The clock `stale` (#1406) grades a named date against. Overridable so a
+# test can pin it -- "today" read from the host clock is untestable otherwise.
+ANSWERED_TODAY="${ANSWERED_TODAY:-$(date -u +%F)}"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/estate-set.sh"
 # A LOGIN, not a namespace -- see GH_ESTATE_HUMAN in estate-set.sh.
 ANSWERED_OWNER="${ANSWERED_OWNER:-$GH_ESTATE_HUMAN}"
@@ -19,6 +22,9 @@ ANSWERED_BY=''   # the ANSWERED-BY target this issue's body names, or empty
 #   0  answered      a human answered, or `answered` says one did elsewhere
 #   1  unanswered    nothing here that could be a human's
 #   2  uncounted     something could be, and cannot be counted -- NOT a silence
+#   3  stale         no human answered, but a named date already passed --
+#                    closed by an EVENT, not a reply (#1406). NOT blocked on
+#                    Zach: only 1 is.
 #   6  BLIND         could not look. Never folded into any of the above.
 issue_answered_json() {
   local issue_json="$1" out
@@ -28,6 +34,7 @@ issue_answered_json() {
     return 6
   }
   out="$(printf '[%s]' "$issue_json" | jq -r --arg owner "$ANSWERED_OWNER" --arg era "$ANSWERED_STAMP_ERA" \
+         --arg today "$ANSWERED_TODAY" \
          "$(cat "$ANSWERED_JQ_FILE")"'.[] | verdict | "\(.verdict)\t\(.at // "")\t\(.answered_by // "")\t\(.why)"' 2>/dev/null)" || {
     ANSWERED_WHY='BLIND -- the predicate could not read that issue'
     return 6
@@ -39,6 +46,7 @@ issue_answered_json() {
     answered)   return 0 ;;
     unanswered) return 1 ;;
     uncounted)  return 2 ;;
+    stale)      return 3 ;;
     # A verdict this does not recognise is a misread, and a misread must never
     # clear a label.
     *) ANSWERED_WHY='BLIND -- the predicate returned no verdict'; return 6 ;;
