@@ -75,70 +75,27 @@ hasnt "A5 an agreeing unlabelled issue is not a finding" "$out" "#2   declares"
 has "A6 the agreeing pair is counted, not just silent" "$out" "2 issue(s) agree"
 eq  "A7 a report writes NOTHING" "$(wc -l < "$T/edits")" "0"
 
-section "A'. an answered DECISION: stops being the human's"
-# The 2026-08-19 finding: 35 of 89 needs-human issues were decisions Zach had
-# ALREADY answered. The label is a view of line 1, and line 1 never changes.
-cat > "$T/f.json" <<'EOF'
+section "A'. line 1 ALONE decides: a comment or label never clears a DECISION:"  # #1433
+# #1373: a relayed owner comment read as a ruling took needs-human off a body
+# that still asked. The label is a view of line 1; to clear it, edit line 1.
+cat > "$T/f.json" <<'EOF2'
 [
- {"number":5,"title":"answered, still labelled","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"}]},
- {"number":6,"title":"unanswered, labelled","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"}]}
+ {"number":5,"title":"owner commented, still labelled","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"}]},
+ {"number":6,"title":"owner commented, not labelled","body":"DECISION: @zach -- pick one","labels":[]},
+ {"number":7,"title":"carries the answered label","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"},{"name":"answered"}]},
+ {"number":8,"title":"line 1 rewritten on ruling","body":"NO-DECISION: ruled 2026-10-01 -- use A","labels":[{"name":"needs-human"}]}
 ]
-EOF
-printf '5\n' > "$T/answered.txt"
+EOF2
+printf '5\n6\n7\n8\n' > "$T/answered.txt"
 : > "$T/edits"; out="$(ANSWERED_FIXTURE="$T/answered.txt" run --apply 2>&1)"
-has "A'1 the answered one is ANSWERED"        "$out" "ANSWERED    #5"
-has "A'2 ...and the label is removed"         "$(cat "$T/edits")" "--remove-label needs-human"
-hasnt "A'3 the unanswered one is untouched"   "$out" "#6"
-
-# A comment BEFORE the stamp era cannot be told from an agent's, and
-# unknowable is not an answer.
-: > "$T/edits"; out="$(ANSWERED_FIXTURE="$T/answered.txt" ANSWERED_STAMP_ERA=2026-12-01 run --apply 2>&1)"
-hasnt "A'4 a pre-stamp comment does not clear the label" "$out" "ANSWERED    #5"
-
-# ...BUT NOT A SILENCE (#553): reported as unanswered it gets asked again.
-has  "A'5 ...and it SAYS SO"                    "$out" "UNCOUNTED   #5"
-has  "A'6 ...naming the date it declined"       "$out" "2026-08-19"
-eq   "A'7 ...and writes no label edit"          "$(grep -c 'remove-label' "$T/edits")" "0"
-
-section "A''. the \`answered\` label is the override for an answer given elsewhere"
-# #568: an answer given on ANOTHER issue. decision-rot read this label already.
-cat > "$T/f.json" <<'EOF'
-[
- {"number":8,"title":"answered elsewhere","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"},{"name":"answered"}]},
- {"number":9,"title":"not answered anywhere","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"}]}
-]
-EOF
-: > "$T/edits"; out="$(run --apply 2>&1)"
-has   "A''1 the labelled one is ANSWERED"        "$out" "ANSWERED    #8"
-has   "A''2 ...and needs-human is removed"       "$(cat "$T/edits")" "--remove-label needs-human"
-hasnt "A''3 the unlabelled one is untouched"     "$out" "#9"
-
-# The override must outrank UNCOUNTED -- that is the case it exists for: the
-# comment on THIS issue is unreadable, and a human answered on another.
-printf '8\t2026-08-01T00:00:00Z\n' > "$T/answered.txt"
-: > "$T/edits"; out="$(ANSWERED_FIXTURE="$T/answered.txt" run --apply 2>&1)"
-has   "A''4 the label beats a pre-era comment"   "$out" "ANSWERED    #8"
-hasnt "A''5 ...so it is not reported UNCOUNTED"  "$out" "UNCOUNTED   #8"
-
-section "A'''. \`unsettled\` is the mirror override: a reply that did not answer"  # #705, baudin#29
-cat > "$T/f.json" <<'EOF'
-[
- {"number":12,"title":"replied but unsettled, still labelled","body":"DECISION: @zach -- pick one\n\nUNSETTLED: which of the two same-day replies is current","labels":[{"name":"needs-human"},{"name":"unsettled"}]},
- {"number":13,"title":"replied but unsettled, not yet labelled","body":"DECISION: @zach -- pick one\n\nUNSETTLED: the vendor mix","labels":[{"name":"unsettled"}]},
- {"number":14,"title":"labelled unsettled but names no residual","body":"DECISION: @zach -- pick one","labels":[{"name":"needs-human"},{"name":"unsettled"}]}
-]
-EOF
-printf '12\n13\n14\n' > "$T/answered.txt"
-: > "$T/edits"; out="$(ANSWERED_FIXTURE="$T/answered.txt" run --apply 2>&1)"
-hasnt "A'''1 the labelled one is not read ANSWERED despite the reply" "$out" "ANSWERED    #12"
-has   "A'''2 the unlabelled one is still MISSING needs-human"         "$out" "MISSING     #13"
-has   "A'''3 ...and --apply adds it back, reply notwithstanding"      "$(cat "$T/edits")" "issue edit 13"
-eq    "A'''4 the already-labelled one gets no edit"                   "$(grep -c 'edit 12' "$T/edits")" "0"
-
-has   "A'''5 unsettled naming no residual does NOT suppress the reply" "$out" "ANSWERED    #14"
-has   "A'''6 ...so needs-human comes off it"                           "$(cat "$T/edits")" "issue edit 14"
-
-printf '5\n' > "$T/answered.txt"
+eq    "A'1 a DECISION: with an owner comment KEEPS needs-human"  "$(grep -c 'edit 5 ' "$T/edits")" "0"
+has   "A'2 ...and one without the label GETS it, comment notwithstanding" "$(cat "$T/edits")" "issue edit 6 --repo o/r --add-label needs-human"
+eq    "A'3 the \`answered\` label does not clear it either"     "$(grep -c 'edit 7 ' "$T/edits")" "0"
+has   "A'4 only a NO-DECISION: line 1 takes it off"              "$(cat "$T/edits")" "issue edit 8 --repo o/r --remove-label needs-human"
+eq    "A'5 exactly those two writes"                             "$(wc -l < "$T/edits" | tr -d ' ')" "2"
+hasnt "A'6 no comment-scan row survives: ANSWERED"               "$out" "ANSWERED"
+hasnt "A'7 ...UNCOUNTED"                                         "$out" "UNCOUNTED"
+hasnt "A'8 ...or a per-issue BLIND"                              "$out" "BLIND"
 
 # B reads the section-A fixture; put it back.
 cat > "$T/f.json" <<'EOF'
