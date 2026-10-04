@@ -73,7 +73,7 @@ A thing that exists and nothing reaches, asked of **what THIS session stood up, 
 - **A mechanism** claims to act -- check, watchdog, guard, timer. Two outcomes, no third: **wired to its repair this session, or deleted this session.** A remedy one file over is a row you can reach, so section 0 applies.
 - **A diagnostic** claims only to record -- log, snapshot, measurement. Its consumer is a person or agent answering a **named open issue**. No such issue means it is not a diagnostic, it is litter.
 
-The answer is a URL either way -- the PR that wired it, or the one that removed it. On mandark the target is `installe list | grep Documents/Projects` (a PATH name resolving into a CLONE), the build's `commands/` and `hooks/` matching `~/.claude/`, and `settings.json` naming each hook at an event. **A hook wired to nothing enforces nothing.**
+The answer is a URL either way -- the PR that wired it, or the one that removed it. On mandark the target is `installe audit | grep repo-link` (a PATH name resolving into a CLONE), the build's `commands/` and `hooks/` matching `~/.claude/`, and `settings.json` naming each hook at an event. **A hook wired to nothing enforces nothing.**
 
 ### Where each goes
 The **owning** repo -- `check-project-busy <target>` first if it isn't this one.
