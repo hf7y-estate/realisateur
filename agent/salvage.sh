@@ -17,11 +17,13 @@ issue="${2:-}"
 # REPORT.md is untracked on purpose; the brief says so.
 git add -A -- . ':!REPORT.md' 2>/dev/null
 dirty=""; git diff --cached --quiet || dirty=1
-# Unpushed means no ref ON THE REMOTE points at HEAD. Asked of the remote, not
-# of `git branch -r`: the pass's clone is `--depth 1`, which is single-branch,
-# so a push of any other branch leaves no remote-tracking ref behind and every
-# landed pass read as unlanded.
-ahead=""; git ls-remote origin 2>/dev/null | cut -f1 | grep -qx "$(git rev-parse HEAD)" || ahead=1
+# Unpushed means HEAD holds a commit the remote does not. Asked of the remote,
+# freshly fetched, and by reachability: the pass's clone is `--depth 1`, so it
+# is single-branch and a pushed branch leaves no tracking ref; and a pass that
+# merged its own PR sits on a `main` the remote has since moved past, which is
+# landed work, not lost work.
+git fetch -q origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null
+ahead=""; [ -z "$(git rev-list -n 1 HEAD --not --remotes=origin 2>/dev/null)" ] || ahead=1
 [ -n "$dirty$ahead" ] || exit 0
 
 b="$(git branch --show-current)"
