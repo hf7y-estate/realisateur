@@ -25,6 +25,12 @@ dirty=""; git diff --cached --quiet || dirty=1
 git fetch -q origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null
 ahead=""; [ -z "$(git rev-list -n 1 HEAD --not --remotes=origin 2>/dev/null)" ] || ahead=1
 [ -n "$dirty$ahead" ] || exit 0
+# A squash-merge lands the work as a NEW commit and deletes the branch, so HEAD
+# is reachable from nothing and is still landed. The merged PR remembers the
+# sha it was merged from; that is the witness.
+if [ -z "$dirty" ] && gh pr list --state merged --head "$(git branch --show-current)" --json headRefOid --jq '.[].headRefOid' 2>/dev/null | grep -qx "$(git rev-parse HEAD)"; then
+  exit 0
+fi
 
 b="$(git branch --show-current)"
 case "$b" in ''|main|master) b="salvage/${issue:+${issue}-}${stamp}"; git checkout -q -b "$b" ;; esac
