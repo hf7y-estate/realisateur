@@ -65,6 +65,54 @@ done
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# #1407 (#132/#139 shape): a ruling gets quoted once, in a closed issue, and
+# then the same question is filed again as a fresh `needs-human` DECISION.
+# Read the quoting convention this estate's bodies already use -- a
+# straight-quoted span near the word "Zach" ('Zach ruled ... ("text")',
+# 'Zach: *"text"*') -- rather than invent a new one for this check.
+defere_quoted_rulings() {  # <text> -- print each ruling-quote found, one per line
+  local text="$1" before rest seg context
+  rest="$text"
+  while :; do
+    case "$rest" in *'"'*) ;; *) break ;; esac
+    before="${rest%%\"*}"
+    rest="${rest#*\"}"
+    case "$rest" in
+      *'"'*) seg="${rest%%\"*}"; rest="${rest#*\"}" ;;
+      *) break ;;
+    esac
+    context="${before: -40}"
+    case "${context,,}" in
+      *zach*) [ "${#seg}" -ge 10 ] && printf '%s\n' "$seg" ;;
+    esac
+  done
+}
+
+# defere_restated_ruling <repo> <text> -- print "<issue>\t<ruling>" of the
+# first CLOSED issue in <repo> already quoting a ruling found verbatim
+# (case-insensitive) inside <text>; 1 when none matches, or gh/jq cannot say.
+# Best-effort: a repo this cannot read is not grounds to block every --human
+# filing, only to skip the check this run.
+defere_restated_ruling() {
+  local repo="$1" text="$2" text_lc line num itext ruling
+  text_lc="${text,,}"
+  have jq || return 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    num="$(jq -r '.number' <<<"$line" 2>/dev/null)" || continue
+    itext="$(jq -r '.text' <<<"$line" 2>/dev/null)" || continue
+    while IFS= read -r ruling; do
+      [ -n "$ruling" ] || continue
+      case "$text_lc" in
+        *"${ruling,,}"*) printf '%s\t%s\n' "$num" "$ruling"; return 0 ;;
+      esac
+    done <<< "$(defere_quoted_rulings "$itext")"
+  done <<< "$(gh issue list --repo "$repo" --state closed --limit 200 \
+                --json number,body,comments 2>/dev/null \
+              | jq -c '.[] | {number, text: ((.body // "") + "\n" + ([(.comments // [])[].body] | join("\n")))}' 2>/dev/null)"
+  return 1
+}
+
 # THE LEDGER FILE -- per branch, inside .git, so it is never committed.
 ledger_path() {
   local gd br
@@ -227,6 +275,20 @@ elif [ -n "$HUMAN" ]; then
   DEST="${REPO:-$OWNER/$FROM}"
   LABEL='needs-human'
   TITLE="$WHAT"
+  if match="$(defere_restated_ruling "$DEST" "$WHAT
+$BODY")"; then
+    rnum="${match%%$'\t'*}"; rtext="${match#*$'\t'}"
+    cat >&2 <<EOF
+defere: refusing -- $DEST#$rnum already quotes a ruling this restates:
+          "$rtext"
+        NOT filing a fresh needs-human DECISION on a question already
+        answered (#132/#139 shape, hf7y-estate/realisateur#1407). Cite
+        $DEST#$rnum instead of asking again -- defere has no rewrite
+        mechanism yet (hf7y-estate/realisateur#1434), so applying the
+        existing ruling to this body is on you, not this script.
+EOF
+    exit 1
+  fi
   BODY="${BODY:+$BODY
 
 }Why this needs a person: $HUMAN"
