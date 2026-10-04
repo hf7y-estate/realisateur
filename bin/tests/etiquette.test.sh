@@ -15,8 +15,7 @@ mkdir -p "$T/bin"
 cat > "$T/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "issue" ] && [ "$2" = "edit" ]; then
-  # GH_EDIT_FAIL: the credential can READ the tracker and cannot LABEL it --
-  # the live shape on 2026-09-24, which reported as a clean sweep.
+  # GH_EDIT_FAIL: the credential can READ the tracker and cannot LABEL it.
   [ -n "${GH_EDIT_FAIL:-}" ] && { echo "GraphQL: Resource not accessible by personal access token (addLabelsToLabelable)" >&2; exit 1; }
   printf '%s\n' "$*" >> "$EDITS"; exit 0
 fi
