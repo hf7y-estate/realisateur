@@ -52,4 +52,12 @@ out="$(cd "$T/w" && git checkout -q -b done-thing && echo y > y && git add y && 
 eq "...says nothing" "$out" ""
 eq "...and the issue is told nothing" "$(cat "$T/gh.calls" 2>/dev/null)" ""
 
+section "E. a clone the remote has moved past is landed, not lost"
+fresh
+( cd "$T/seed" && git pull -q origin main && echo b > b && git add b && git commit -q -m later && git push -q origin main )
+before="$(heads)"
+out="$(cd "$T/w" && bash "$SALVAGE" S5 42 2>&1)"; rc "exits 0" 0 "$?"
+eq "...no branch is pushed for a commit main already holds" "$(heads)" "$before"
+eq "...and says nothing" "$out" ""
+
 summary
