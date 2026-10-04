@@ -6,13 +6,6 @@ projects are graded by, and the machinery that grades them: the guards
 its promotion boundary, self-dev account provisioning, and the cross-project
 view no single project's nightly can have.
 
-Ruled by Zach on 2026-09-03. This file used to describe an idea-to-project
-factory: notice artifacts dropped in a folder, infer the idea, scaffold a wired
-project. That job succeeded — the estate has 19 accounts and every armed one
-carries a milestone — and it stopped. Measured the same day: the inbox is
-empty, and 54 of the 84 open issues are estate plumbing with no relation to
-scaffolding anything. The README described a job the repo was not doing.
-
 ## What governance means here
 
 1. **Grade the estate.** Guards, ratchets and witnesses that other repos call

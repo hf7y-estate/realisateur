@@ -219,11 +219,7 @@ say "$matched issue(s) agree, $findings issue finding(s), $label_findings label 
 say "$changed label(s) reconciled, $provisioned label(s) provisioned."
 [ $((findings + label_findings)) -gt 0 ] && [ "$APPLY" -eq 0 ] && \
   say 'Re-run with --apply. An UNDECLARED body is NOT fixed by a label -- edit line 1.'
-# A REFUSED WRITE IS BLINDNESS, NOT A FINDING. It reported as neither: the
-# `&&` chain here simply did not increment `changed`, so 26 refusals across 7
-# repos printed as `0 label(s) reconciled` and exited on findings alone -- which
-# .github/workflows/etiquette.yml tolerates. Measured 2026-09-24, the last run
-# that went green: 30 repos swept, 0 labels ever written, and no row said so.
+# A REFUSED WRITE IS BLINDNESS, NOT A FINDING.
 if [ "$REFUSED" -gt 0 ]; then
   printf '%s: BLIND -- %s label write(s) REFUSED by the credential, so the derived label is NOT reconciled here.\n' \
     "$CLI_NAME" "$REFUSED" >&2

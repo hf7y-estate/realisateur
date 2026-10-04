@@ -7,8 +7,7 @@ harness_tmp
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
 WIRE="$REPO/bin/wire-agent-dispatch.sh"
 # Read the list OUT OF THE VERB, so adding a dispatch file cannot leave the test
-# asserting a number the verb no longer wires. It said "4" on 2026-09-26 and
-# merge-carry.sh made that wrong in two places at once.
+# asserting a number the verb no longer wires.
 FILES="$(sed -n 's/^FILES=(\(.*\))$/\1/p' "$WIRE")"
 NFILES="$(printf '%s\n' $FILES | wc -l)"
 [ "$NFILES" -ge 4 ] || { echo "cannot read FILES out of $WIRE"; exit 2; }
