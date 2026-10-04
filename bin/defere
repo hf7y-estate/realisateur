@@ -113,6 +113,38 @@ defere_restated_ruling() {
   return 1
 }
 
+# defere_self_caused <text> -- print the first path this run's own changes
+# touched that <text> (the WHAT/BODY about to be filed) also names; 1 when
+# none matches, or there is no merge-base to compare against.
+# "This run" = everything not yet on the branch's upstream: the working tree
+# (staged, unstaged, untracked) plus commits made here that are not yet on
+# ${DEFERE_BASE:-origin/main} (#140 shape, hf7y/musc-2300#140: the agent
+# deleted a rubric checklist, then filed the mismatch it had just created as
+# a DECISION for Zach in the same run -- "so you just created a problem for
+# me?"). Best-effort, like defere_restated_ruling: a checkout this cannot
+# find a merge-base in is not grounds to block every --human filing, only to
+# skip the check this run.
+defere_self_caused() {
+  local text="$1" path base changed b
+  changed="$(
+    { git diff --name-only HEAD -- . 2>/dev/null
+      git ls-files --others --exclude-standard -- . 2>/dev/null
+      b="$(git merge-base HEAD "${DEFERE_BASE:-origin/main}" 2>/dev/null)" \
+        && git diff --name-only "$b" HEAD -- . 2>/dev/null
+    } | sort -u
+  )"
+  [ -n "$changed" ] || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    base="$(basename "$path")"
+    case "$text" in
+      *"$path"*) printf '%s\n' "$path"; return 0 ;;
+      *"$base"*) printf '%s\n' "$path"; return 0 ;;
+    esac
+  done <<< "$changed"
+  return 1
+}
+
 # THE LEDGER FILE -- per branch, inside .git, so it is never committed.
 ledger_path() {
   local gd br
@@ -286,6 +318,18 @@ defere: refusing -- $DEST#$rnum already quotes a ruling this restates:
         $DEST#$rnum instead of asking again -- defere has no rewrite
         mechanism yet (hf7y-estate/realisateur#1434), so applying the
         existing ruling to this body is on you, not this script.
+EOF
+    exit 1
+  fi
+  if selfpath="$(defere_self_caused "$WHAT
+$BODY")"; then
+    cat >&2 <<EOF
+defere: refusing -- $selfpath was changed earlier in this same run, and this
+        filing's own text names it. That makes the condition self-caused
+        (#140 shape, hf7y/musc-2300#140: "so you just created a problem for
+        me?") -- fix what you changed instead of asking a person about it.
+        If the match is a false one, re-run after committing somewhere this
+        run no longer carries the diff.
 EOF
     exit 1
   fi
