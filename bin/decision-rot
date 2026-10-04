@@ -98,7 +98,7 @@ fi
 # `number<TAB>verdict<TAB>at<TAB>state<TAB>title`. DETAIL is OPEN ONLY; COUNT
 # stays all-states, matching `answered` (B2).
 verdicts() {
-  jq -r --arg owner "$1" --arg era "$ANSWERED_STAMP_ERA" "$DECISION_ROT_JQ"'
+  jq -r --arg owner "$1" --arg era "$ANSWERED_STAMP_ERA" --arg today "$ANSWERED_TODAY" "$DECISION_ROT_JQ"'
     .[]
     | . as $i
     | ($i | verdict)
@@ -106,7 +106,7 @@ verdicts() {
 }
 
 rot_scan() {
-  jq -r --arg owner "$1" --arg era "$ANSWERED_STAMP_ERA" \
+  jq -r --arg owner "$1" --arg era "$ANSWERED_STAMP_ERA" --arg today "$ANSWERED_TODAY" \
         --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$DECISION_ROT_JQ"'
     .[]
     | . as $i
