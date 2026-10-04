@@ -11,6 +11,9 @@ SALVAGE="$REPO/agent/salvage.sh"
 mkdir -p "$T/bin"
 cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
+case "$1 $2" in
+  "pr list") cat "$T/merged-heads" 2>/dev/null; exit 0 ;;   # the shas merged PRs were merged from
+esac
 printf '%s\n' "$*" >> "$T/gh.calls"
 STUB
 chmod +x "$T/bin/gh"
@@ -21,7 +24,7 @@ git clone -q "$T/origin.git" "$T/seed" 2>/dev/null
 ( cd "$T/seed" && echo a > a && git add a && git commit -q -m seed && git push -q origin main )
 # --depth 1 over file://, as run-agent.sh clones: single-branch, so a pushed
 # branch gets no remote-tracking ref. A full clone hides that.
-fresh() { rm -rf "$T/w" "$T/gh.calls"; git clone -q --depth 1 "file://$T/origin.git" "$T/w"; }
+fresh() { rm -rf "$T/w" "$T/gh.calls" "$T/merged-heads"; git clone -q --depth 1 "file://$T/origin.git" "$T/w"; }
 heads() { git -C "$T/origin.git" for-each-ref --format='%(refname:short)' refs/heads | tr '\n' ' '; }
 
 section "A. a pass that left nothing pushes nothing"
@@ -59,5 +62,14 @@ before="$(heads)"
 out="$(cd "$T/w" && bash "$SALVAGE" S5 42 2>&1)"; rc "exits 0" 0 "$?"
 eq "...no branch is pushed for a commit main already holds" "$(heads)" "$before"
 eq "...and says nothing" "$out" ""
+
+section "F. a squash-merged branch is landed though nothing on the remote reaches it"
+fresh; before="$(heads)"
+out="$(cd "$T/w" && git checkout -q -b squashed && echo z > z && git add z && git commit -q -m work && git rev-parse HEAD > "$T/merged-heads" && bash "$SALVAGE" S6 150 2>&1)"; rc "exits 0" 0 "$?"
+eq "...the deleted branch is not pushed back" "$(heads)" "$before"
+eq "...and the issue is told nothing" "$(cat "$T/gh.calls" 2>/dev/null)" ""
+rm -f "$T/merged-heads"
+out="$(cd "$T/w" && bash "$SALVAGE" S7 150 2>&1)"
+has "...but the same branch with no merged PR is salvaged" "$out" "SALVAGED: pushed squashed"
 
 summary
