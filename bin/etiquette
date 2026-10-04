@@ -27,7 +27,6 @@ CLI_EXITS='  0  the repo carries the declared labels and every derived one match
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/cli-guard.sh"
 cli_guard "$@"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/body-grammar.sh"
-. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/answered.sh"
 
 APPLY=0
 REPO=''
@@ -148,45 +147,27 @@ say ""
 # [] means both "missing repo" and "empty one" -- only the exit code separates
 # "nothing waiting" from "could not look".
 json="$(gh issue list --repo "$REPO" --state open --limit 200 \
-        --json number,title,body,labels,comments 2>&1)" || {
+        --json number,title,body,labels 2>&1)" || {
   printf '%s: BLIND -- could not read %s: %s\n' "$CLI_NAME" "$REPO" "$json" >&2
   printf '%s: that is "I could not look", not "nothing needs a human".\n' "$CLI_NAME" >&2
   exit 6
 }
 
-findings=0; matched=0; changed=0; BLIND_READS=0
+findings=0; matched=0; changed=0
+# Line 1 ALONE decides the label (#1433): no comment, and no other label,
+# can take it off a body that still says DECISION:. To clear it, edit line 1.
 while IFS=$'\t' read -r num has_label title; do
   [ -n "$num" ] || continue
-  # Sliced from the bulk read above -- comments included, no `gh` call here.
-  issue_json="$(printf '%s' "$json" | jq -c --argjson n "$num" '.[]|select(.number==$n)')"
-  body="$(printf '%s' "$issue_json" | jq -r '.body')"
-  want='' ; answered=0 ; noted=0
+  body="$(printf '%s' "$json" | jq -r --argjson n "$num" '.[]|select(.number==$n)|.body')"
   case "$(grammar_declaration "$body")" in
-    # An answered decision is an agent's work: left labelled it brakes dispatch.
-    decision)
-      want=yes
-      # UNCOUNTED and BLIND keep the label (clearing is forgery) but REPORT (#553).
-      issue_answered_json "$issue_json"
-      case $? in
-        0) want=no; answered=1 ;;
-        2) findings=$((findings + 1)); noted=1
-           row UNCOUNTED "$num" "$ANSWERED_WHY -- ${title:0:46}" ;;
-        6) findings=$((findings + 1)); noted=1; BLIND_READS=$((BLIND_READS + 1))
-           row BLIND "$num" "$ANSWERED_WHY -- ${title:0:46}" ;;
-      esac ;;
+    decision)    want=yes ;;
     no-decision) want=no ;;
     none)
       findings=$((findings + 1))
       row UNDECLARED "$num" "line 1 declares neither DECISION: nor NO-DECISION: -- ${title:0:52}"
       continue ;;
   esac
-  # Answered is not agreement: the body still ASKS what a comment already ruled.
-  # Report before the label check below, which returns early on a match.
-  if [ "$answered" = 1 ] && [ "$noted" -eq 0 ]; then
-    findings=$((findings + 1)); noted=1
-    row ANSWERED "$num" "body still asks a call a comment already ruled -- ${title:0:52}"
-  fi
-  [ "$has_label" = "$want" ] && { [ "$noted" -eq 1 ] || matched=$((matched + 1)); continue; }
+  [ "$has_label" = "$want" ] && { matched=$((matched + 1)); continue; }
   findings=$((findings + 1))
   if [ "$want" = yes ]; then
     row MISSING "$num" "declares DECISION: but is not labelled $LABEL -- ${title:0:52}"
@@ -198,11 +179,7 @@ while IFS=$'\t' read -r num has_label title; do
       fi
     fi
   else
-    if [ "$answered" = 1 ]; then
-      row ANSWERED "$num" "declares DECISION: and has been answered -- ${title:0:52}"
-    else
-      row STALE "$num" "labelled $LABEL but declares NO-DECISION: -- ${title:0:52}"
-    fi
+    row STALE "$num" "labelled $LABEL but declares NO-DECISION: -- ${title:0:52}"
     if [ "$APPLY" -eq 1 ]; then
       if gh issue edit "$num" --repo "$REPO" --remove-label "$LABEL" >/dev/null; then
         changed=$((changed + 1)); row "  -label" "$num" "$LABEL removed"
@@ -223,12 +200,6 @@ say "$changed label(s) reconciled, $provisioned label(s) provisioned."
 if [ "$REFUSED" -gt 0 ]; then
   printf '%s: BLIND -- %s label write(s) REFUSED by the credential, so the derived label is NOT reconciled here.\n' \
     "$CLI_NAME" "$REFUSED" >&2
-  exit 6
-fi
-# A BLIND read is neither a finding --apply can fix nor a clean run.
-if [ "$BLIND_READS" -gt 0 ]; then
-  printf '%s: BLIND -- %s issue(s) could not be read, so the report above is INCOMPLETE.\n' \
-    "$CLI_NAME" "$BLIND_READS" >&2
   exit 6
 fi
 [ $((findings + label_findings)) -eq 0 ] || exit 1
