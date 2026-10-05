@@ -91,6 +91,7 @@ STUB
 cat > "$T/agent/run-agent.sh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$1${3:+#$3}" >> "$T/dispatched"
+[ -f "$T/refuse" ] && exit 3   # run-agent.sh's own code for "no bot token"
 # each pass closes one queued issue, the way a real one would
 [ -f "$T/left-$1" ] && printf '%s\n' "$(( $(cat "$T/left-$1") - 1 ))" > "$T/left-$1"
 exit 0
@@ -193,5 +194,15 @@ eq "...the sent run dispatched anyway" "$(dispatched | tr '\n' ' ')" "gamma "
 out="$(run)"
 has "...and an unsent run still yields to the night" "$out" "another nightly holds the lock"
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
+section "L. a pass that refuses for want of a bot token stops the night and tells a person"
+mkdir -p "$T/bin/lib"
+printf 'zaxon_send() { printf "%%s\\n" "$1" >> "$T/sent"; }\n' > "$T/bin/lib/zaxon.sh"
+: > "$T/refuse"; rm -f "$T/sent"
+out="$(run)"; rc "exits 0" 0 "$?"
+has "...says so in the night's log" "$out" "NO BOT TOKEN: alpha refused, dispatching nothing more"
+eq "...tried one repo and no more" "$(dispatched | tr '\n' ' ')" "alpha "
+eq "...and sent ONE message" "$(wc -l < "$T/sent" | tr -d ' ')" "1"
+rm -f "$T/refuse"
 
 summary
