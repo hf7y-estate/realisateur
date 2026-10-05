@@ -45,14 +45,14 @@ actually found, not a stale mental model.
   The highest-leverage finding this command produces, since no single project's
   nightly-batch has the cross-project view.
 
-## 2.5. Milestones: the loop is `bin/vision.sh`, one at a time
+## 2.5. Milestones: the loop is `vision.sh` (on the path via `installe personal realisateur`), one at a time
 
-1. `bin/vision.sh queue` — every open milestone, worst first. Take the top
+1. `vision.sh queue` — every open milestone, worst first. Take the top
    `none` row: no stated close, and the most closes landed under it last week.
-2. `bin/vision.sh card <repo> <n>` — show Zach exactly what it prints.
+2. `vision.sh card <repo> <n>` — show Zach exactly what it prints.
 3. Ask the ONE question the card ends with. Offer candidate sentences if the
    issues suggest them; the answer is his.
-4. `bin/vision.sh record <repo> <n> --quote '<his words>' --title '<a sentence
+4. `vision.sh record <repo> <n> --quote '<his words>' --title '<a sentence
    true when done>' --closes-when '<command, else a sentence>' --apply`.
    `--quote` is verbatim or it is not written. A command beats a sentence.
 5. Move each open issue that does not serve that close to the milestone it
