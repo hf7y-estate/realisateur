@@ -499,7 +499,7 @@ if [ -n "$pr_report" ]; then
     printf '%s' "$pr_report"
     echo
     echo "Merging is the middle of the job, not the end of it. Three honest exits:"
-    echo "  gh pr merge <n> --repo <slug> --squash --auto --delete-branch"
+    echo "  gh pr merge <n> --repo <slug> --merge --auto --delete-branch"
     echo "      arm auto-merge -- it lands when the required checks pass. PREFER THIS."
     echo "  land it now, if every required check is already green."
     echo "  convert it to a DRAFT -- a draft claims nothing, for work still in flight."
