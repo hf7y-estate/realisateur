@@ -36,7 +36,7 @@ while read -r n; do
   case "$st" in
     "OPEN false MERGEABLE")
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "hf7y-estate/${repo}" \
-           --squash --delete-branch </dev/null >/dev/null 2>&1; then
+           --merge --delete-branch </dev/null >/dev/null 2>&1; then
         echo "  MERGED   #${n}"
       else
         # A merge that fails is not a merge that was not wanted, so it stays on
