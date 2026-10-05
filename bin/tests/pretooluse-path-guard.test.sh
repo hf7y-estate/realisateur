@@ -26,6 +26,9 @@ rc "A1 a Read of a denied path is not this guard's business -- exit 0" 0 "$RC"
 RC="$(rcof Bash /usr/local/bin/gh)"
 rc "A2 same for Bash" 0 "$RC"
 
+RC="$(printf '{"tool_name":"Bash","tool_input":{"command":"cat > /usr/local/bin/gh"}}' | PATH_GUARD_TABLE="$TABLE" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?")"
+rc "A3 a Bash heredoc writing a table-guarded path is NOT caught -- deliberate limit, not coverage (#1092)" 0 "$RC"
+
 section "B. table-driven rows, first match wins"
 
 RC="$(rcof Write /usr/local/bin/gh)"
@@ -104,6 +107,9 @@ rc "D5 an account owning no \$root/\$me is not a project account -- not blocked 
 
 RC="$(rcof_h Write "$HUMAN/another/deep/path.sh")"
 rc "D6 and that holds however deep the path is" 0 "$RC"
+
+RC="$(printf '{"tool_name":"Bash","tool_input":{"command":"cat > %s/some-other-project/bin/foo.sh"}}' "$T/Projects" | PATH_GUARD_TABLE="$TABLE" SELFDEV_PROJECTS_ROOT="$T/Projects" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?")"
+rc "D7 the ownership rule has the same gap through Bash -- deliberate limit, not coverage (#1092)" 0 "$RC"
 
 section "F. the vault's read door (#742) -- both routes, and the deposit exemption"
 
