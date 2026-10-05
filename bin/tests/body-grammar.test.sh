@@ -19,6 +19,8 @@ harness_tmp
 mkdir -p "$T/bin"
 cat > "$T/bin/gh" <<EOF
 #!/usr/bin/env bash
+# A read is not a write: the shim resolves the repo before it grades the body.
+[ "\$1 \$2" = 'repo view' ] && exit 0
 printf '%s\n' "\$*" >> "$T/reached"
 cat > "$T/last-body" 2>/dev/null || true
 EOF
@@ -246,8 +248,8 @@ out="$(run_shim issue create --title T --body-file "$T/bad.md")"; got=$?
 rc   'S1 a malformed issue body is REFUSED (7): nothing was created' 7 "$got"
 has  'S2 it says what is wrong'          "$out" MISPLACED-DECISION
 has  'S3 it prints the block to paste'   "$out" '<!-- DEFERRED -->'
-if [ -f "$T/reached" ]; then bad 'S4 gh was never called' "gh ran: $(cat "$T/reached")"
-else ok 'S4 gh was never called'; fi
+if [ -f "$T/reached" ]; then bad 'S4 no write reached gh' "gh ran: $(cat "$T/reached")"
+else ok 'S4 no write reached gh'; fi
 
 out="$(run_shim issue create --title T --body-file "$T/good.md")"
 if [ -f "$T/reached" ]; then ok 'S5 a well-formed body reaches gh'

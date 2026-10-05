@@ -31,8 +31,8 @@ keep=""
 while read -r n; do
   [ -n "$n" ] || continue
   st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "hf7y-estate/${repo}" \
-    --json state,isDraft,mergeable,statusCheckRollup \
-    --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
+    --json state,isDraft,mergeable,statusCheckRollup,createdAt \
+    --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
   case "$st" in
     "OPEN false MERGEABLE")
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "hf7y-estate/${repo}" \
@@ -46,6 +46,9 @@ while read -r n; do
       fi ;;
     # RED is a failed check. MERGEABLE only ever meant "no conflict", and
     # realisateur#1440 landed on a failed suite and turned main red.
+    # PENDING is a check still running, YOUNG a PR under five minutes old whose
+    # checks may not have registered. #1481 and #1482 merged 45s after opening,
+    # their suites failed two minutes later, and main was red again (#1516).
     OPEN*)
       # Draft, CONFLICTING, or mergeability not computed yet: all states that can
       # change on their own, so none is a reason to forget the PR.
