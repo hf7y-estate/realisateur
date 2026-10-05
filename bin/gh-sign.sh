@@ -62,6 +62,9 @@ gh-sign -- the shim that stands in front of `gh` and signs what an agent writes.
   gh --stamp                the stamp this host and account would append
   gh issue close <n>        refused when it closes as completed with nothing
                             landed and nothing said -- see close_check below
+  gh issue create           refused into a LIVE repo with no --milestone;
+                            --no-milestone files it labelled `parked` instead
+                            -- see milestone_gate below
   gh --check-body <path>    grade a body; `-` reads stdin
   gh --default-after <f>    read a DECISION body's DEFAULT-AFTER: prints
                             "<days><TAB><action>"; 1 = none (blocks forever)
@@ -158,6 +161,13 @@ GRAMMAR="${GH_SIGN_LIB:-${SELF%/*}/lib}/body-grammar.sh"
 grammar_ok=0
 # shellcheck source=lib/body-grammar.sh
 [ -r "$GRAMMAR" ] && . "$GRAMMAR" && grammar_ok=1
+
+# Own override, not GH_SIGN_LIB: a test double for "is this repo live" should
+# not also have to carry a working body-grammar.sh beside it.
+ARMING="${GH_SIGN_ARMING_LIB:-${SELF%/*}/lib}/arming.sh"
+arming_ok=0
+# shellcheck source=lib/arming.sh
+[ -r "$ARMING" ] && . "$ARMING" && arming_ok=1
 
 case "${1:-}" in
   --stamp)      stamp; exit 0 ;;
@@ -406,9 +416,83 @@ close_check() {
   exit 7
 }
 
+# `gh issue create` into a LIVE repo names a milestone or says it is parked.
+# Zach ruled this 2026-09-07 (hf7y/realisateur#1072): "yes, they should name
+# milestones when they file." /ideate's own text said so since the milestone
+# gate landed and 125 of 211 open issues had none anyway -- a rule only an
+# agent's attention enforces is not enforced.
+#
+# BLIND (no arming lib, or the roster unreachable) FAILS OPEN: refusing an
+# issue because a network read failed loses it entirely, worse than filing it
+# unmilestoned. A `parked` or absent-from-the-roster repo passes exactly as it
+# does today -- a parked project's issues buy nothing from this gate.
+milestone_open_milestones() {
+  "$GH" api "repos/$1/milestones?state=open&per_page=100" --jq -r '.[].title' 2>/dev/null \
+    | while IFS= read -r _t; do printf '  - %s\n' "$_t" >&2; done
+}
+milestone_gate() {
+  local repo='' ms='' no_ms=0 i
+
+  for ((i = 2; i < ${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      -R|--repo)      repo="${args[$((i + 1))]:-}" ;;
+      --repo=*)       repo="${args[$i]#--repo=}" ;;
+      -m|--milestone) ms="${args[$((i + 1))]:-}" ;;
+      --milestone=*)  ms="${args[$i]#--milestone=}" ;;
+      --no-milestone) no_ms=1 ;;
+    esac
+  done
+  [ -n "$repo" ] || repo="$("$GH" repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
+  [ -n "$repo" ] || return 0   # no repo resolvable at all: not this guard's call
+
+  [ "$arming_ok" -eq 1 ] || return 0
+  arming_load || return 0
+  [ "$(arming_state "${repo#*/}")" = live ] || return 0
+
+  if [ "$no_ms" -eq 1 ]; then
+    # `--no-milestone` is not a real `gh` flag: drop it, and record the state
+    # it chose -- "filed, deliberately not in the current window" -- as a
+    # label, not a silent allow. A guard with an override that permits and
+    # records nothing is a toll booth (Zach, 2026-08-15). Rebuilt rather than
+    # `unset` in place: that leaves a gap index and ${#args[@]} undercounts,
+    # which shortens any later loop that recomputes it as the bound.
+    local -a kept=()
+    for ((i = 0; i < ${#args[@]}; i++)); do
+      [ "${args[$i]}" = --no-milestone ] || kept+=("${args[$i]}")
+    done
+    args=("${kept[@]}")
+    args+=(--label parked)
+    return 0
+  fi
+
+  if [ -z "$ms" ]; then
+    printf 'gh-sign: REFUSED -- %s is live and this issue names no milestone.\n' "$repo" >&2
+    printf 'gh-sign: Zach, 2026-09-07: "yes, they should name milestones when they file."\n' >&2
+    printf 'gh-sign: Pass --milestone <title>, or --no-milestone to file it parked instead.\n' >&2
+    printf 'gh-sign: Open milestones on %s:\n' "$repo" >&2
+    milestone_open_milestones "$repo"
+    exit 7
+  fi
+
+  # `gh issue create --milestone` takes a NAME, never a number (unlike the
+  # `pr edit` REST workaround above): gh already errors on an unknown one, so
+  # this only fails BEFORE the body is written rather than after.
+  command -v jq >/dev/null 2>&1 || return 0
+  local found
+  found="$("$GH" api "repos/$repo/milestones?state=open&per_page=100" --paginate 2>/dev/null \
+             | jq -r --arg m "$ms" '.[] | select(.title == $m)')"
+  if [ -z "$found" ]; then
+    printf 'gh-sign: REFUSED -- no open milestone "%s" on %s.\n' "$ms" "$repo" >&2
+    printf 'gh-sign: Open milestones there:\n' >&2
+    milestone_open_milestones "$repo"
+    exit 7
+  fi
+}
+
 # Read the body out of argv, whichever spelling; no body at all opens $EDITOR.
 body=''; found=0; idx=0; bi=0; kind=''
 args=("$@")
+[ "${1:-} ${2:-}" = 'issue create' ] && milestone_gate
 # `issue close` spells it --comment, everything else --body: the same thing to
 # a reader of the thread, so both get signed.
 for ((i = 0; i < ${#args[@]}; i++)); do

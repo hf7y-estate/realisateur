@@ -27,6 +27,11 @@ printf '%s\n' "${GH_TOKEN:-}" >> "${GH_TOKEN_LOG:-/dev/null}"
 for a in "$@"; do
   case "$a" in
     */comments) [ -n "${GH_COMMENTS_JSON:-}" ] && { printf '%s' "$GH_COMMENTS_JSON"; exit 0; } ;;
+    # A TRAILING NEWLINE, unlike the other fixtures here: milestone_gate's
+    # listing helper pipes `--jq -r` output into a `while read` loop, and a
+    # last "line" with no newline at all is the classic read-loses-it case.
+    # Real `gh --jq -r` always newline-terminates, so this fixture must too.
+    */milestones*) [ -n "${GH_MILESTONES_JSON:-}" ] && { printf '%s\n' "$GH_MILESTONES_JSON"; exit 0; } ;;
   esac
 done
 [ -n "${GH_ISSUE_JSON:-}" ] && { printf '%s' "$GH_ISSUE_JSON"; exit 0; }
@@ -486,6 +491,66 @@ reset; check "a mint that fails leaves the write alone" \
   "$(asbot "$mint_bad" issue comment 7 --repo hf7y/widget --body hi)" ""
 reset; check "so does an App command that is not there at all" \
   "$(asbot "$TMP/nope.sh" issue comment 7 --repo hf7y/widget --body hi)" ""
+
+# --- 14. milestone_gate: `issue create` into a LIVE repo names a milestone --
+# (hf7y/realisateur#1072, decision-by: zach 2026-09-07). lib/arming.sh needs a
+# live roster to answer; a double stands in so these cases don't depend on
+# dexter's tailnet being reachable from wherever this suite runs.
+mkdir -p "$TMP/arminglib"
+cat > "$TMP/arminglib/arming.sh" <<'EOF'
+ARMING_LIB=1
+arming_load() { [ "${TEST_ARMING_BLIND:-0}" = 0 ] && return 0 || return 6; }
+arming_state() { printf '%s' "${TEST_ARMING_STATE:-absent}"; }
+EOF
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       run issue create --repo hf7y/widget --title t --body "$GOOD" 2>&1)"; rc=$?
+check "a LIVE repo with no --milestone is REFUSED (7)" "$rc" "7"
+contains "...and the refusal names the open milestones" "$out" "Ship it"
+case "$(cat "$TMP/gh.log")" in
+  *'issue create'*) bad "the refused create still reached gh" "$(cat "$TMP/gh.log")" ;;
+  *) ok "...and the create itself never reached gh" ;;
+esac
+
+reset
+rc=0
+GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+  run issue create --repo hf7y/widget --title t --body "$GOOD" --no-milestone >/dev/null 2>&1 || rc=$?
+check "--no-milestone on a LIVE repo files it (0), not refused" "$rc" "0"
+contains "...labelled parked, so the override records something" "$(cat "$TMP/gh.log")" "--label parked"
+case "$(cat "$TMP/gh.log")" in
+  *--no-milestone*) bad "--no-milestone forwarded to real gh" "$(cat "$TMP/gh.log")" ;;
+  *) ok "...and --no-milestone itself (not a real gh flag) never reaches it" ;;
+esac
+
+reset
+rc=0
+GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=parked \
+  run issue create --repo hf7y/widget --title t --body "$GOOD" >/dev/null 2>&1 || rc=$?
+check "a PARKED repo files with no milestone, exactly as today" "$rc" "0"
+
+reset
+rc=0
+GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live TEST_ARMING_BLIND=1 \
+  run issue create --repo hf7y/widget --title t --body "$GOOD" >/dev/null 2>&1 || rc=$?
+check "BLIND (roster unreachable) fails OPEN, not refused" "$rc" "0"
+
+reset
+rc=0
+GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+  GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+  run issue create --repo hf7y/widget --title t --body "$GOOD" --milestone "Ship it" \
+  >/dev/null 2>&1 || rc=$?
+check "a --milestone matching an open one is accepted" "$rc" "0"
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       run issue create --repo hf7y/widget --title t --body "$GOOD" --milestone "Nope" 2>&1)"; rc=$?
+check "a --milestone naming no open milestone is REFUSED (7)" "$rc" "7"
+contains "...and the refusal still lists what IS open" "$out" "Ship it"
 
 echo
 summary
