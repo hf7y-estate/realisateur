@@ -163,6 +163,10 @@ for target in "${repos[@]}"; do
 
   # Do not spend a container on an empty queue. A named issue was sent, not
   # chosen, so the queue is not asked about it.
+  # THE EXECUTOR `DEFAULT-AFTER` NEVER HAD (#1410). The label is what keeps an
+  # issue out of the queue below, and nothing on any clock re-derived it.
+  "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "hf7y-estate/$repo" --apply 2>&1 \
+    | grep -E '^ +[-+]label|REFUSED|BLIND' || true
   n=1
   [ -n "$issue" ] || n="$(queue_count "$repo")"
   case "$n" in

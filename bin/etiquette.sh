@@ -147,7 +147,7 @@ say ""
 # [] means both "missing repo" and "empty one" -- only the exit code separates
 # "nothing waiting" from "could not look".
 json="$(gh issue list --repo "$REPO" --state open --limit 200 \
-        --json number,title,body,labels 2>&1)" || {
+        --json number,title,body,labels,createdAt 2>&1)" || {
   printf '%s: BLIND -- could not read %s: %s\n' "$CLI_NAME" "$REPO" "$json" >&2
   printf '%s: that is "I could not look", not "nothing needs a human".\n' "$CLI_NAME" >&2
   exit 6
@@ -160,7 +160,17 @@ while IFS=$'\t' read -r num has_label title; do
   [ -n "$num" ] || continue
   body="$(printf '%s' "$json" | jq -r --argjson n "$num" '.[]|select(.number==$n)|.body')"
   case "$(grammar_declaration "$body")" in
-    decision)    want=yes ;;
+    # A DECISION: states what happens when nobody answers, and for five weeks
+    # nothing did it (#1410): the window closed and the issue stayed parked.
+    # Zach, 2026-10-05, on 21 of them in one repo: "there's a deeper sickness
+    # there." Past its own window the default IS the ruling, so no human is
+    # needed. `0d` is the grammar's "no default", and never lapses.
+    decision)    want=yes
+      if da="$(grammar_default_after "$body")" && [ "${da%%$'\t'*}" -gt 0 ]; then
+        created="$(printf '%s' "$json" | jq -r --argjson n "$num" '.[]|select(.number==$n)|.createdAt // empty')"
+        lapse="$(date -u -d "${created:0:10} + ${da%%$'\t'*} days" +%F 2>/dev/null)" || lapse=''
+        [ -n "$lapse" ] && [[ "$lapse" < "${ETIQUETTE_TODAY:-$(date -u +%F)}" ]] && want=no
+      fi ;;
     no-decision) want=no ;;
     none)
       findings=$((findings + 1))
@@ -179,7 +189,7 @@ while IFS=$'\t' read -r num has_label title; do
       fi
     fi
   else
-    row STALE "$num" "labelled $LABEL but declares NO-DECISION: -- ${title:0:52}"
+    row STALE "$num" "labelled $LABEL but declares NO-DECISION:, or its DEFAULT-AFTER lapsed -- ${title:0:52}"
     if [ "$APPLY" -eq 1 ]; then
       if gh issue edit "$num" --repo "$REPO" --remove-label "$LABEL" >/dev/null; then
         changed=$((changed + 1)); row "  -label" "$num" "$LABEL removed"
