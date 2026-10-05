@@ -120,21 +120,37 @@ section "G. a PR this run opened, still open, is not a finished run"
 G="$T/g"; newrepo "$G"
 TR="$T/g-transcript"; transcript_pr "$TR"
 
-printf 'open\tfalse\tfalse\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
+printf 'open\tfalse\tfalse\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
 rc  "G1 an open non-draft PR blocks the stop" 2 "$RC"
 has "G2 and names the PR" "$OUT" "pull/7"
 has "G3 and says a draft is the honest way to stop" "$OUT" "convert it to a DRAFT"
 
-printf 'open\ttrue\tfalse\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
+printf 'open\ttrue\tfalse\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
 RC="$(rcof "$G" "$TR")"
 rc "G4 a DRAFT claims nothing, so it does not block" 0 "$RC"
 
-printf 'closed\tfalse\tfalse\tNO-DECISION: x' > "$T/pr-state"
+printf 'closed\tfalse\tfalse\tclean\tNO-DECISION: x' > "$T/pr-state"
 RC="$(rcof "$G" "$TR")"
 rc "G5 a merged or closed PR does not block" 0 "$RC"
 
-printf 'open\tfalse\tfalse\tNO-DECISION: no ledger here' > "$T/pr-state"
+printf 'open\tfalse\ttrue\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
+OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
+rc  "G5a an armed, mergeable PR does not block" 0 "$RC"
+has "G5b and says so" "$OUT" "AUTO-MERGE ARMED"
+
+# ARMED AND CONFLICTED NEVER LANDS (#1155).
+printf 'open\tfalse\ttrue\tdirty\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
+OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
+rc    "G5c armed but mergeable_state=dirty blocks -- it will never land" 2 "$RC"
+has   "G5d and names the conflict" "$OUT" "mergeable_state=DIRTY"
+hasnt "G5e does not claim it lands when its checks pass" "$OUT" "it lands when its required checks pass"
+
+printf 'open\tfalse\ttrue\tunknown\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' > "$T/pr-state"
+RC="$(rcof "$G" "$TR")"
+rc "G5f armed with mergeable_state=unknown (a cold read) does not block" 0 "$RC"
+
+printf 'open\tfalse\tfalse\tclean\tNO-DECISION: no ledger here' > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"
 has "G6 an open PR with no DELIVERS block says nothing can check it" "$OUT" "no DELIVERS block"
 
@@ -143,11 +159,11 @@ RC="$(rcof "$G" "$TR")"
 rc "G7 an unreadable tracker reports but does not block" 0 "$RC"
 
 # CI has no closeout-lint and takes the fallback path; the check runs on both.
-printf 'open\tfalse\tfalse\tNO-DECISION: x' > "$T/pr-state"
+printf 'open\tfalse\tfalse\tclean\tNO-DECISION: x' > "$T/pr-state"
 RC="$(payload "$G" "$TR" | STUB_PR="$T/pr-state" PATH="$T/bin:/usr/bin:/bin" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?")"
 rc "G8 it blocks even with no closeout-lint on PATH (the fallback path)" 2 "$RC"
 
-printf 'open\tfalse\tfalse\tNO-DECISION: x' > "$T/pr-state"
+printf 'open\tfalse\tfalse\tclean\tNO-DECISION: x' > "$T/pr-state"
 QTR="$T/g-quoted"; transcript_pr_quoted "$QTR"
 OUT="$(runpr "$G" "$QTR")"; RC="$(rcof "$G" "$QTR")"
 rc  "G9 a PR URL the agent only READ does not block" 0 "$RC"

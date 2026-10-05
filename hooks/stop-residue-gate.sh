@@ -448,6 +448,14 @@ if command -v gh >/dev/null 2>&1; then
     # land, and which only the agent can fix -- read as handled work. That is
     # this estate's signature defect sitting inside the guard meant to catch it.
     if [ "$am" = true ]; then
+      # ARMED AND CONFLICTED NEVER LANDS (#1155): a dirty PR's checks are
+      # stale passes, so the failing-check read below would clear it.
+      # `unknown` is a cold read, not a finding, and passes.
+      if [ "$mergeable_state" = dirty ]; then
+        pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=DIRTY -- a merge conflict"$'\n'
+        pr_report+="    armed is not landing: auto-merge waits on checks, never on a conflict"$'\n'
+        continue
+      fi
       failing="$(pr_failing_checks "$slug" "$headsha")"
       if [ "$failing" = 0 ]; then
         # NOTHING FAILING IS NOT NOTHING BLOCKING (#1260): mergeable_state=blocked
