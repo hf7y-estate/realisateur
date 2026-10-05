@@ -215,6 +215,7 @@ reprise.sh
 narrowed-close-check.sh
 verb-name-taken.sh
 selfdev-home-check.sh
+ci-fail-lines.sh
 "
 # carry.sh and reprise.sh are LOCAL: they write to a BRANCH of this repo, not a
 # host, so per-account copies would be many writers racing one force-with-lease.

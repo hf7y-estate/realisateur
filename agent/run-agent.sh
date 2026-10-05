@@ -83,7 +83,9 @@ open issues in an open milestone, minus needs-host and needs-human:
 No milestone, or a closed one, is not in scope -- same as the two label
 exclusions, not a suggestion. \`needs-host\` means the issue cannot be
 finished from here -- it needs a physical device or a live remote host. Do
-not route around the filter by listing issues without it.
+not route around the filter by listing issues without it. A body that opens
+\`DECISION:\` and is in this list has outlived its \`DEFAULT-AFTER\` window:
+the action on that line is the ruling. Do it, and say so on the issue.
 
 Then:
 0. TOO LARGE FOR ONE PASS means the pass is the split: file the issue's pieces

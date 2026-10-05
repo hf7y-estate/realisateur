@@ -273,4 +273,17 @@ out="$(run --apply 2>&1)"; rc_ok=$?
 rc    "L6 the same sweep with a working credential exits 1, on the finding"  1 "$rc_ok"
 has   "L7 ...and reconciles the label"                       "$out" "1 label(s) reconciled"
 
+section "M. a DECISION: past its own DEFAULT-AFTER window needs no human"  # #1410
+cat > "$T/f.json" <<'EOF'
+[
+ {"number":1,"title":"lapsed","createdAt":"2026-09-08T00:00:00Z","body":"DECISION: @zach -- pick one\n\nDEFAULT-AFTER 7d: take the first","labels":[{"name":"needs-human"}]},
+ {"number":2,"title":"still open","createdAt":"2026-10-01T00:00:00Z","body":"DECISION: @zach -- pick one\n\nDEFAULT-AFTER 14d: take the first","labels":[{"name":"needs-human"}]},
+ {"number":3,"title":"no default","createdAt":"2026-08-01T00:00:00Z","body":"DECISION: @zach -- pick one\n\nDEFAULT-AFTER 0d: block -- irreversible, no default","labels":[{"name":"needs-human"}]}
+]
+EOF
+: > "$T/edits"; out="$(ETIQUETTE_TODAY=2026-10-05 run --apply 2>&1)"
+has   "M1 the lapsed one loses the label"        "$(cat "$T/edits")" "issue edit 1 --repo o/r --remove-label needs-human"
+eq    "M2 and it is the only write"              "$(wc -l < "$T/edits")" "1"
+has   "M3 an open window and a 0d both still agree" "$out" "2 issue(s) agree"
+
 summary

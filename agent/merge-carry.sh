@@ -31,8 +31,8 @@ keep=""
 while read -r n; do
   [ -n "$n" ] || continue
   st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "hf7y-estate/${repo}" \
-    --json state,isDraft,mergeable \
-    --jq '[.state,(.isDraft|tostring),.mergeable]|join(" ")' </dev/null 2>/dev/null)" || st=""
+    --json state,isDraft,mergeable,statusCheckRollup \
+    --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
   case "$st" in
     "OPEN false MERGEABLE")
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "hf7y-estate/${repo}" \
@@ -44,6 +44,8 @@ while read -r n; do
         echo "  FAILED   #${n} -- merge refused, kept for the next pass"
         keep="${keep}${n}"$'\n'
       fi ;;
+    # RED is a failed check. MERGEABLE only ever meant "no conflict", and
+    # realisateur#1440 landed on a failed suite and turned main red.
     OPEN*)
       # Draft, CONFLICTING, or mergeability not computed yet: all states that can
       # change on their own, so none is a reason to forget the PR.
