@@ -146,6 +146,17 @@ rc  "C5f armed, nothing failing, but mergeable_state=BLOCKED still blocks" 2 "$R
 has "C5g and names BLOCKED rather than claiming checks will land it" "$OUT" "mergeable_state=BLOCKED"
 hasnt "C5h does not claim it lands when its checks pass" "$OUT" "it lands when its checks pass"
 
+# ARMED AND CONFLICTED NEVER LANDS (#1155): its checks are stale passes.
+printf 'open\tfalse\ttrue\t%s\tdeadbee\tdirty\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+OUT="$(runpr "$G" "$TR")"; RC="$(rcof "$G" "$TR")"
+rc    "C5i armed, nothing failing, but mergeable_state=DIRTY blocks" 2 "$RC"
+has   "C5j and names the conflict" "$OUT" "mergeable_state=DIRTY"
+hasnt "C5k does not claim it lands when its checks pass" "$OUT" "it lands when its checks pass"
+
+printf 'open\tfalse\ttrue\t%s\tdeadbee\tunknown\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
+RC="$(rcof "$G" "$TR")"
+rc "C5l armed with mergeable_state=unknown (a cold read) does not block" 0 "$RC"
+
 printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"
 has "C7 the refusal names arming auto-merge as the preferred exit" "$OUT" "--auto"
