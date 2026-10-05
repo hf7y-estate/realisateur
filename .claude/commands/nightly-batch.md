@@ -28,8 +28,7 @@ pass MAY file a striking candidate as an issue for the next interactive pass. It
 anything, or change a weight. A promotion nobody stated is the silent reorder
 `/ideate` 4.5 forbids.
 
-For per-project git health and open questions use `scheduler status
-<project>` directly. The survey scripts that wrapped it are retired;
+The per-project survey scripts are retired;
 `bin/tests/guard-estate.test.sh` holds the survivors.
 
 **Read the answers on your own issues and process them.** Zach answers by
