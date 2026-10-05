@@ -192,6 +192,7 @@ PROP_LEAK_BOUND=7
 # PATH, run by dexter's crontab from a live `git pull --ff-only` clone.
 # Before cutting anything in this list, ask what invokes it FROM SOMEWHERE ELSE.
 PROP_LOCAL_SCRIPTS="
+vision.sh
 estate-watch.sh
 estate-status-collect.py
 healing-census.py
