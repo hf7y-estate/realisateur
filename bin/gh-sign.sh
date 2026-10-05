@@ -428,6 +428,52 @@ if [ "$api_comment" -eq 1 ] || [ "$api_edit" -eq 1 ]; then
     esac
   done
 fi
+# `pr edit --milestone` reads the same deprecated projectCards field as the
+# body edit above (#1357) and fails on gh 2.45.0 even for a milestone-only
+# edit, which carries no --body/--comment and so never reaches that branch.
+# Substitute the REST PATCH hf7y/realisateur#1259 verified works: resolve a
+# milestone TITLE to its number first, since the REST field wants the number.
+if [ "${1:-} ${2:-}" = 'pr edit' ] && [ "$found" -ne 1 ]; then
+  _n='' _r='' _ms='' _other=0
+  for ((i = 2; i < ${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      -R|--repo)       _r="${args[$((i + 1))]:-}"; i=$((i + 1)) ;;
+      --repo=*)        _r="${args[$i]#--repo=}" ;;
+      --milestone)     _ms="${args[$((i + 1))]:-}"; i=$((i + 1)) ;;
+      --milestone=*)   _ms="${args[$i]#--milestone=}" ;;
+      [0-9]*)          _n="${args[$i]}" ;;
+      *)               _other=1 ;;
+    esac
+  done
+  if [ -n "$_n" ] && [ -n "$_ms" ] && [ "$_other" -eq 0 ]; then
+    [ -n "$_r" ] || _r="$("$GH" repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
+    _num=''
+    case "$_ms" in
+      ''|*[!0-9]*)
+        # `gh api --jq` has no `--arg`; that is real jq's flag, so the title
+        # match runs locally over the raw list instead (same gate as line 306).
+        if [ -n "$_r" ] && command -v jq >/dev/null 2>&1; then
+          _num="$("$GH" api "repos/$_r/milestones?state=all&per_page=100" --paginate 2>/dev/null \
+                     | jq -r --arg t "$_ms" '.[] | select(.title == $t) | .number' | head -n1)"
+        fi ;;
+      *) _num="$_ms" ;;
+    esac
+    if [ -n "$_num" ]; then
+      "$GH" api -X PATCH "repos/$_r/issues/$_n" -f "milestone=$_num" --jq .html_url
+      exit $?
+    fi
+    if [ -n "$_r" ]; then
+      printf 'gh-sign: REFUSED -- no milestone named "%s" found on %s (or jq/network was\n' "$_ms" "$_r" >&2
+      printf 'gh-sign: unavailable to check). `gh pr edit --milestone` fails on this gh build\n' >&2
+      printf 'gh-sign: anyway (2.45.0, deprecated projectCards field, hf7y/realisateur#1259).\n' >&2
+      printf 'gh-sign: Open milestones there:\n' >&2
+      "$GH" api "repos/$_r/milestones?state=open&per_page=100" --jq -r '.[].title' 2>/dev/null \
+        | while IFS= read -r _t; do printf '  - %s\n' "$_t" >&2; done
+      exit 7
+    fi
+  fi
+fi
+
 # Graded BEFORE the no-body bail-out: a close with no --comment at all is the
 # very case the guard is for, and used to exit here unseen.
 if [ "$found" -ne 1 ] || [ "$bi" -ge "${#args[@]}" ]; then

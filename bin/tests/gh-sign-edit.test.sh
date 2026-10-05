@@ -23,6 +23,15 @@ case "$*" in
   'api repos/'*'/pulls/'[0-9]*' --jq .body')
     [ -n "${GH_STUB_PR_BODY:-}" ] && cat "$GH_STUB_PR_BODY" 2>/dev/null
     exit 0 ;;
+  'repo view --json nameWithOwner -q .nameWithOwner')
+    printf '%s\n' "${GH_STUB_REPO:-hf7y/widget}"
+    exit 0 ;;
+  'api repos/'*'/milestones?state=all&per_page=100 --paginate')
+    printf '%s' "${GH_STUB_MILESTONES:-[]}"
+    exit 0 ;;
+  'api repos/'*'/milestones?state=open&per_page=100 --jq -r .[].title')
+    [ -n "${GH_STUB_OPEN_TITLES:-}" ] && printf '%s\n' "$GH_STUB_OPEN_TITLES"
+    exit 0 ;;
 esac
 : > "$GH_LAST_BODY"
 prev=''
@@ -125,6 +134,32 @@ reset
 GH_STUB_PR_BODY="$TMP/pr.stub-body" GH_EXIT=1 \
   run pr edit 5 --repo hf7y/widget --title T --body "$GOOD" >/dev/null 2>&1
 check "...a real gh failure still propagates its own exit code" "$?" "1"
+
+section "A3. pr edit --milestone fails the same way (#1259) -- REST PATCH substitute"
+reset
+GH_STUB_MILESTONES='[{"title":"Keep it live","number":9}]' \
+  run pr edit 5 --repo hf7y/widget --milestone "Keep it live" >/dev/null 2>&1
+check "a milestone-only pr edit exits 0" "$?" "0"
+contains "...by resolving the title to a number and PATCHing issues, not pr edit" \
+  "$(cat "$TMP/gh.log")" "api -X PATCH repos/hf7y/widget/issues/5 -f milestone=9 --jq .html_url"
+
+reset
+run pr edit 5 --repo hf7y/widget --milestone 9 >/dev/null 2>&1
+check "a numeric --milestone skips the title lookup and exits 0" "$?" "0"
+contains "...going straight to the PATCH" \
+  "$(cat "$TMP/gh.log")" "api -X PATCH repos/hf7y/widget/issues/5 -f milestone=9 --jq .html_url"
+
+reset
+GH_STUB_MILESTONES='[{"title":"Keep it live","number":9}]' GH_STUB_OPEN_TITLES='Keep it live' \
+  run pr edit 5 --repo hf7y/widget --milestone "No such milestone" >/dev/null 2>"$TMP/stderr"
+check "an unknown milestone title is REFUSED (7), not sent to the broken gh pr edit" "$?" "7"
+contains "...naming #1259" "$(cat "$TMP/stderr")" "1259"
+contains "...and listing what IS open there" "$(cat "$TMP/stderr")" "Keep it live"
+
+reset
+run pr edit 5 --repo hf7y/widget --milestone "Keep it live" --title T >/dev/null 2>&1
+contains "a mixed milestone+other-flag edit still goes to the real (broken) gh pr edit" \
+  "$(cat "$TMP/gh.log")" "pr edit 5 --repo hf7y/widget --milestone Keep it live --title T"
 
 section "B. gh api PATCH to the same path -- the route named in #970"
 reset
