@@ -446,6 +446,31 @@ has 'N9 composed: NEGATED-CLOSE is reported too'   "$(codes "$_compose")" NEGATE
 has 'N10 composed: so is UNSHIPPED'                "$(codes "$_compose")" UNSHIPPED
 eq  'N11 composed: four findings, not one'         "$(findings "$_compose")" 4
 
+# --- PARTIAL-CLOSE -----------------------------------------------------------
+# hf7y/crt#196 opened "Closes the mount half of hf7y/crt#195." and GitHub shut
+# all of #195, README half undone.
+section "PARTIAL-CLOSE"
+
+has 'P1 the sentence that shut crt#195 is refused' \
+  "$(codes "$(_nc 'Closes the mount half of hf7y/crt#195.')")" PARTIAL-CLOSE
+has 'P2 an adverb before the keyword scopes it too' \
+  "$(codes "$(_nc 'Partially fixes #195.')")" PARTIAL-CLOSE
+has 'P3 the message names the bare-#N remedy' \
+  "$(grammar_check "$(_nc 'Resolves part of #195')")" 'bare `#N`'
+eq 'P4 a plain close is still allowed' \
+  "$(findings "$(_nc 'Closes #195')")" 0
+eq 'P5 a bare #N beside a qualifier is the fix, not the defect' \
+  "$(findings "$(_nc 'Does the mount half of #195; the README half stays open.')")" 0
+eq 'P6 a qualifier in another clause scopes nothing' \
+  "$(findings "$(_nc 'Fixes half the flakes in the suite and closes #195')")" 0
+eq 'P7 a qualifier after the ref scopes nothing GitHub reads' \
+  "$(findings "$(_nc 'Closes #195, the mount half and the README half')")" 0
+eq 'P8 a code span is a quotation' \
+  "$(findings "$(_nc 'Never write `closes the mount half of #195`.')")" 0
+_pc="$(codes "$(_nc 'This does not close hf7y/scheduler#79.')")"
+has 'P9 a denied close is still NEGATED-CLOSE' "$_pc" NEGATED-CLOSE
+hasnt 'P10 ... and is reported once, not twice' "$_pc" PARTIAL-CLOSE
+
 section 'L. grammar_landing_ref -- what a close names that a check could follow'
 
 _lr() { grammar_landing_ref "$1" || printf 'NONE'; }

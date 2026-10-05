@@ -19,6 +19,7 @@
 #   BAD-ANSWERED-BY     an ANSWERED-BY line that is not `<owner>/<repo>#<n>`
 #   NO-DEFAULT          a DECISION: body carrying no DEFAULT-AFTER at all
 #   NEGATED-CLOSE       a closing keyword + reference in a sentence DENYING it
+#   PARTIAL-CLOSE       a closing keyword whose reference a qualifier SCOPES
 #
 # DEFAULT-AFTER -- MANDATORY ON A DECISION SINCE #680 (Zach, 2026-08-28),
 # because 21 of 45 open `needs-human` blocked by omission. Past the window the
@@ -33,14 +34,18 @@
 # scheduler#79; GitHub shut the ROSTER consolidation anyway. A BARE reference
 # shuts nothing, so the remedy is to drop the verb -- which is why this is NOT
 # a ban (Zach 2026-08-04: batch agents shut shipped issues automatically).
+#
+# PARTIAL-CLOSE -- the same principle for a qualifier. "Closes the mount half
+# of hf7y/crt#195" denies nothing, and GitHub shut the whole of #195 from it.
+# The remedy is the same bare `#N`.
 
 GRAMMAR_DECIDER_RE='@[A-Za-z0-9][-A-Za-z0-9_/]*'
 GRAMMAR_CLOSING_WORDS=' close closes closed closing fix fixes fixed fixing resolve resolves resolved resolving '
 
-grammar_negated_close() {  # <line> <heading-negates> -- print "<keyword> <ref>", 1 if clean
-  local text="$1" heading_negates="$2" out='' words=() i w ref prefix=''
-  local IFS=$' \t\n'
+GRAMMAR_SCOPING_WORDS=' half halves part parts partial partially partly portion some most '
 
+_grammar_unquote() {  # <line> -- the line with its code spans dropped
+  local text="$1" out=''
   while [ -n "$text" ]; do   # a code span is a quotation, not a close
     case "$text" in *'`'*) ;; *) out="$out$text"; break ;; esac
     out="$out${text%%'`'*}"; text="${text#*'`'}"
@@ -49,18 +54,29 @@ grammar_negated_close() {  # <line> <heading-negates> -- print "<keyword> <ref>"
       *)     out="$out$text"; break ;;   # unterminated: it is literal text
     esac
   done
+  printf '%s' "$out"
+}
 
+_grammar_is_ref() {
+  case "$1" in
+    '#'[0-9]*) ;;                                    # bare #79 -- with a verb
+    *[a-zA-Z0-9]/[a-zA-Z0-9]*'#'[0-9]*) ;;           # hf7y/scheduler#79
+    *://*/issues/[0-9]*|*://*/pull/[0-9]*) ;;        # the full URL
+    *) return 1 ;;
+  esac
+}
+
+grammar_negated_close() {  # <line> <heading-negates> -- print "<keyword> <ref>", 1 if clean
+  local text="$1" heading_negates="$2" out words=() i w ref prefix=''
+  local IFS=$' \t\n'
+
+  out="$(_grammar_unquote "$text")"
   read -ra words <<<"$out"
   for ((i = 0; i < ${#words[@]} - 1; i++)); do
     w="${words[i],,}"; w="${w%:}"; w="${w%,}"
     case "$GRAMMAR_CLOSING_WORDS" in *" $w "*) ;; *) prefix="$prefix$w "; continue ;; esac
     ref="${words[i + 1]}"
-    case "$ref" in
-      '#'[0-9]*) ;;                                    # bare #79 -- with a verb
-      *[a-zA-Z0-9]/[a-zA-Z0-9]*'#'[0-9]*) ;;           # hf7y/scheduler#79
-      *://*/issues/[0-9]*|*://*/pull/[0-9]*) ;;        # the full URL
-      *) prefix="$prefix$w "; continue ;;
-    esac
+    _grammar_is_ref "$ref" || { prefix="$prefix$w "; continue; }
     if [ "$heading_negates" -eq 1 ]; then :
     else case "$prefix" in   # `not ` covers "does not", "do not", "cannot"
         *'not '*|*"doesn't "*|*"don't "*|*"won't "*|*'never '*|*'without '*|\
@@ -70,6 +86,34 @@ grammar_negated_close() {  # <line> <heading-negates> -- print "<keyword> <ref>"
     fi
     printf '%s %s\n' "$w" "$ref"
     return 0
+  done
+  return 1
+}
+
+grammar_partial_close() {  # <line> -- print "<keyword> ... <ref>", 1 if clean
+  local out words=() i j w q ref prev=''
+  local IFS=$' \t\n'
+
+  out="$(_grammar_unquote "$1")"
+  read -ra words <<<"$out"
+  for ((i = 0; i < ${#words[@]} - 1; i++)); do
+    w="${words[i],,}"; w="${w%:}"; w="${w%,}"
+    case "$GRAMMAR_CLOSING_WORDS" in *" $w "*) ;; *) prev="$w"; continue ;; esac
+    # "Partially fixes #5": the adverb right before the keyword scopes it.
+    # "Closes the mount half of #195": a qualifier between keyword and ref does.
+    q=" $prev "; prev="$w"
+    for ((j = i + 1; j < ${#words[@]}; j++)); do
+      ref="${words[j]%[.,;:)]}"
+      if _grammar_is_ref "$ref"; then
+        for w in $GRAMMAR_SCOPING_WORDS; do
+          case "$q" in *" $w "*) printf '%s ... %s\n' "${words[i]}" "$ref"; return 0 ;; esac
+        done
+        break
+      fi
+      case "$GRAMMAR_CLOSING_WORDS" in *" ${words[j],,} "*) break ;; esac
+      case "${words[j]}" in *[.,\;:]) break ;; esac
+      q="$q ${words[j],,} "
+    done
   done
   return 1
 }
@@ -328,6 +372,8 @@ grammar_check() {
     esac
     if nc="$(grammar_negated_close "$stripped" "$head_neg")"; then
       _find NEGATED-CLOSE "line $lineno: \`$nc\` in a sentence that denies it -- GitHub closes the issue from the keyword alone. Use a bare \`#N\` to reference without closing, or move the closing keyword to its own line: ${stripped:0:70}"
+    elif nc="$(grammar_partial_close "$stripped")"; then
+      _find PARTIAL-CLOSE "line $lineno: \`$nc\` scopes the close to part of the issue -- GitHub closes the whole issue from the keyword alone. Use a bare \`#N\` to reference without closing: ${stripped:0:70}"
     fi
 
     # Indented four spaces, a marker is an EXAMPLE, not a second block.
