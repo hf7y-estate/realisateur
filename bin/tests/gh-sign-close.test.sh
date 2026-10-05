@@ -86,6 +86,10 @@ rc "B9 a close typed in the DELIVERS vocabulary -- passes" 0 "$?"
 run issue close 7 --repo hf7y/widget --comment 'Already done -- `bin/lib/carries.tsv` carries it.'
 rc "B10 a close naming a file -- passes" 0 "$?"
 
+# hf7y-estate/abletim#82: an issue whose outcome is a person's reply, not a change.
+run issue close 7 --repo hf7y/widget --comment 'answered in https://github.com/hf7y/widget/issues/7#issuecomment-5997150200'
+rc "B10a a close naming the comment that answers it -- passes" 0 "$?"
+
 # Without its own arm the equals form arrives as an EMPTY comment, and an
 # honest close is refused over a formatting choice.
 run issue close 7 --repo hf7y/widget --comment=closed-by-hf7y/scheduler#118

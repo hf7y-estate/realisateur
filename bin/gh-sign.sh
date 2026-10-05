@@ -410,6 +410,7 @@ close_check() {
   printf '  | gh issue close %s --reason "not planned"\n' "$sel" >&2
   printf '  | gh issue close %s --comment "closed by %s/%s#<n>"\n' "$sel" "$o" "$r" >&2
   printf '  | gh issue close %s --comment "landed as path:/usr/local/bin/<verb> on <host>"\n' "$sel" >&2
+  printf '  | gh issue close %s --comment "answered in <url of the comment that answers it>"\n' "$sel" >&2
   printf '  +--------------------------------------------------------------\n\n' >&2
   printf 'gh-sign: 317 of 936 agent-filed closed issues closed with nothing landed and\n' >&2
   printf 'gh-sign: nothing said -- 33.9%%, the largest class measured (hf7y/realisateur#752).\n' >&2
