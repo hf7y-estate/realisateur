@@ -103,7 +103,8 @@ stated_defects() { # <this turn's assistant text> -> one line per sentence asser
         if (s ~ /(is|are|was|were|remains|remain|stays|stay) (still )?(wrong|false|stale|dead|broken|inert|a no-?op|a noop|vacuous|out of date|not true|never true)/ ||
             s ~ /never (fires|fired|runs|ran|looks|looked|checks|checked|reads|read|evaluates|evaluated|executed)/ ||
             s ~ /(does|do) not exist|no longer exists/ ||
-            s ~ /nothing (reads|calls|checks|enforces|evaluates|holds|watches)/)
+            s ~ /nothing (reads|calls|checks|enforces|evaluates|holds|watches|bounds|flags|limits|guards|defends|catches|refuses)/ ||
+            s ~ /(^|[^a-z])no (bound|check|validator|guard|test|limit|witness) (in|on|for|covers|exists)/)   # #1465: "no bound in `types.yml`" is the same finding in a noun
           { print substr(sent[i], 1, 140); next }
       }
     }
