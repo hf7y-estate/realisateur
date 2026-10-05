@@ -180,9 +180,17 @@ for target in "${repos[@]}"; do
     spent=$((spent + 1))
     i=$((i + 1))
     echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
-    flock "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 \
-      && echo "--- $repo: pass finished" \
-      || echo "--- $repo: pass exited $? (its own log has the reason)"
+    flock "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 && rc=0 || rc=$?
+    case "$rc" in
+      0) echo "--- $repo: pass finished" ;;
+      # 3 is run-agent.sh refusing to run as hf7y. The mint is per host, not per
+      # repo, so every later pass would refuse too: stop, and tell a person once.
+      3) echo "=== NO BOT TOKEN: $repo refused, dispatching nothing more ==="
+         ( . "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/lib/zaxon.sh" \
+             && zaxon_send "nightly stopped on dexter: no bot token, nothing dispatched" nightly ) || true
+         break 2 ;;
+      *) echo "--- $repo: pass exited $rc (its own log has the reason)" ;;
+    esac
     [ -z "$issue" ] && [ "$i" -lt "$passes" ] || break
     n="$(queue_count "$repo")"
     case "$n" in 0|ERR) break ;; esac
