@@ -22,7 +22,7 @@ echo "$*" >> "$T_CALLS"
 [ -n "${STUB_FAIL:-}" ] && exit 1
 case "$*" in
   *'-X PATCH'*) echo 'written: https://example/milestone/1' ;;
-  *'issues?milestone'*) echo '  #7  2026-08-01  3 comment(s)  an old one' ;;
+  *'issues?milestone'*) echo '  #7  2026-08-01  3 comment(s)  an old one  [needs-human]' ;;
   *milestones/1*) echo '{"title":"v1-stabilization","open_issues":23,"closed_issues":60,"description":"Keep the running fleet up."}' ;;
 esac
 EOF2
@@ -54,6 +54,7 @@ section "B. card asks the one question"
 out="$(run card senechal 1 2>&1)"; n=$?
 rc 'B1 exits 0' 0 "$n"
 has 'B2 counts' "$out" 'open 23  closed 60'
+has 'B2b lists the issue with its title' "$out" 'an old one'
 has 'B3 the question' "$out" 'What is true when this is done?'
 
 section "C. could not look is BLIND"

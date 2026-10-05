@@ -45,23 +45,34 @@ actually found, not a stale mental model.
   The highest-leverage finding this command produces, since no single project's
   nightly-batch has the cross-project view.
 
-## 2.5. Milestones: the loop is `vision.sh` (on the path via `installe personal realisateur`), one at a time
+## 2.5. Milestones: the loop is `vision.sh` (on the path via `installe personal realisateur`), one repo at a time
 
-1. `vision.sh queue` — every open milestone, worst first. Take the top
-   `none` row: no stated close, and the most closes landed under it last week.
-2. `vision.sh card <repo> <n>` — show Zach exactly what it prints.
-3. Ask the ONE question the card ends with. Offer candidate sentences if the
-   issues suggest them; the answer is his.
-4. `vision.sh record <repo> <n> --quote '<his words>' --title '<a sentence
+1. `vision.sh queue` — every open milestone, worst first. A `none` row states
+   no close; a repo whose milestones are all `none` gets this pass.
+2. `vision.sh card <repo> <n>` for each of its milestones — every open issue,
+   with its title. Read them all before grouping any.
+3. Close what is dead, each on ONE command: its own done-when already holds,
+   its premise names something retired, or it duplicates another.
+4. Group the rest by theme, then ask of each theme what it waits on. The theme
+   the others wait on is the bottleneck.
+5. Show Zach the themes as a table, **every issue number with its title**, and
+   ask the ONE question: which theme, and what is true when it is done?
+6. `vision.sh record <repo> <n> --quote '<his words>' --title '<a sentence
    true when done>' --closes-when '<command, else a sentence>' --apply`.
    `--quote` is verbatim or it is not written. A command beats a sentence.
-5. Move each open issue that does not serve that close to the milestone it
-   does serve, or close it with evidence. Then back to 1.
+7. The bottleneck theme is the one OPEN milestone, its first issues in order in
+   the description. Other themes get CLOSED milestones, so no pass picks them
+   yet. What the session cannot judge goes to one open "close with evidence or
+   move" milestone for unattended passes.
 
 ## 3. Ask, don't guess
 
 For genuine forks, ask directly (`AskUserQuestion`, options with real
 tradeoffs). Don't scaffold speculatively while waiting.
+
+**Search for a ruling before the question.** `gh search issues --owner
+hf7y-estate "<mechanism>" --match body` first: a question about a mechanism he
+has already ruled on gets an answer that contradicts the ruling (#1379, #1543).
 
 ## 4. Record and queue, don't build
 
