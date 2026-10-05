@@ -481,3 +481,44 @@ grammar_check() {
   [ "$n" -gt 125 ] && n=125
   return "$n"
 }
+
+# grammar_rewrite_on_ruling <body> <ruling> -- given a DECISION: body and the
+# ruling text that answers it, print a NO-DECISION: body: line 1 is the
+# ruling, the original DECISION: line and its prose are preserved as a `>`
+# quote (so the question stays legible beside its answer, per #1324's
+# convention), and the DEFERRED/DELIVERS blocks carry through unchanged. #1434
+# builds the mechanism only -- nothing calls this yet; the caller decides how
+# a ruling is detected.
+#
+# `>` IS LOAD-BEARING: grammar_check and grammar_header both skip a quoted
+# line before parsing a declaration out of it, so the quoted original
+# DECISION:/DEFAULT-AFTER cannot be read as still live (#1324).
+grammar_rewrite_on_ruling() {
+  local body="$1" ruling="${2//$'\n'/ }" line stripped header='' blocks='' in_blocks=0
+
+  while IFS= read -r line; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    if [ "$in_blocks" -eq 0 ]; then
+      case "$stripped" in
+        '<!-- DEFERRED -->'|'<!--DEFERRED-->') in_blocks=1 ;;
+      esac
+    fi
+    if [ "$in_blocks" -eq 1 ]; then
+      blocks="$blocks$line"$'\n'
+    else
+      header="$header$line"$'\n'
+    fi
+  done <<<"$body"
+
+  # Trailing blank lines in the header would quote as bare `>` for nothing.
+  while [ "${header: -2}" = $'\n\n' ]; do header="${header%$'\n'}"; done
+  header="${header%$'\n'}"
+
+  printf 'NO-DECISION: %s\n\n' "$ruling"
+  printf 'The question this answers, quoted below as it was asked:\n\n'
+  while IFS= read -r line; do
+    [ -n "$line" ] && printf '> %s\n' "$line" || printf '>\n'
+  done <<<"$header"
+  printf '\n'
+  printf '%s' "$blocks"
+}
