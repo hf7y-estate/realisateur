@@ -19,6 +19,7 @@ cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 n=""; for a in "$@"; do case "$a" in [0-9]*) n="$a"; break ;; esac; done
 case "$2" in
+  list)  [ ! -f "$T/listfail" ] || exit 1; cat "$T/list" 2>/dev/null ;;
   view)  [ -f "$T/view/$n" ] || exit 1; cat "$T/view/$n" ;;
   merge) printf '%s\n' "$n" >> "$T/merged"; exit "$(cat "$T/merge/$n" 2>/dev/null || echo 0)" ;;
 esac
@@ -95,6 +96,17 @@ out="$(run "$repo")"
 has "says it could not be read" "$out" "UNREADABLE #66"
 eq  "...and does not guess" "$(cat "$T/merged" 2>/dev/null)" ""
 eq  "...and keeps it" "$(left)" "66"
+
+section "G2. an open PR the App authored is adopted, listed or not"
+repo=adopt; rm -f "$T/state/${repo}.prs"; state 77 "OPEN false MERGEABLE"; echo 77 > "$T/list"
+out="$(run "$repo")"
+has "merges a PR no pass wrote down" "$out" "MERGED   #77"
+carry 77; out="$(run "$repo")"
+eq  "...and one both listed and adopted is merged once" "$(grep -c 77 "$T/merged")" "1"
+rm -f "$T/list"; touch "$T/listfail"; carry 77
+out="$(run "$repo")"
+has "a listing that fails still runs the list" "$out" "MERGED   #77"
+rm -f "$T/listfail"
 
 section "H. a mixed list: each one is decided on its own"
 repo=mixed; carry 11 55 66 33

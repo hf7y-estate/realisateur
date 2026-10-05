@@ -23,10 +23,21 @@ set -uo pipefail
 repo="${1:?usage: merge-carry.sh <repo>}"
 carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
 
+tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
+
+# ADOPT WHAT THE APP OPENED. The list alone orphans a PR whose pass died before
+# writing it down: senechal#1094 sat open with nobody to merge it (a 75-minute
+# pass, #1504). Since #1460 every pass's PR is authored by the App, so author
+# now separates a pass's work from a person's, which it could not when the list
+# was introduced. A listing that fails adopts nothing and the list still runs.
+mkdir -p "$(dirname "$carry")"
+adopt="$(GH_TOKEN="$tok" gh pr list --repo "hf7y-estate/${repo}" --state open \
+  --author "app/${AGENT_APP:-unattended-monkey}" --json number --jq '.[].number' 2>/dev/null)" || adopt=""
+{ cat "$carry" 2>/dev/null; printf '%s\n' "$adopt"; } | awk 'NF && !seen[$0]++' > "$carry.new" && mv "$carry.new" "$carry"
+
 [ -s "$carry" ] || exit 0
 
 echo "=== the previous pass's PRs on ${repo} ==="
-tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 keep=""
 while read -r n; do
   [ -n "$n" ] || continue
