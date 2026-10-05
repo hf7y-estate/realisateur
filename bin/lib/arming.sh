@@ -3,7 +3,7 @@
 # Authority: the roster service on dexter. `dose <project> --arm|--park` is the
 # only supported writer and refuses a uid 3000-3099 self-dev caller -- not "a
 # human edits it", which misled an agent twice (hf7y/scheduler#521).
-# Read-only HERE is enforced by decision-rot.test.sh I14, not prose.
+# Read-only HERE is enforced by arming.test.sh, not prose.
 # NOT lib/roster-set.sh, which is the SWEEP set. BLIND classifies NOTHING.
 
 [ -n "${ARMING_LIB:-}" ] && return 0

@@ -173,7 +173,6 @@ notify-senechal.sh
 gh-sign.sh
 consigne
 atteste.sh
-decision-rot.sh
 unarmed.sh
 cutover-check.sh
 "
