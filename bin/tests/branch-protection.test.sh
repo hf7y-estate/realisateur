@@ -14,15 +14,15 @@ BRANCH="${BRANCH_PROTECTION_BRANCH:-main}"
 # THE CONTRACT, and the only place this repo's expected protection is written.
 # REQUIRED gates a merge; ADVISORY runs, reports, and does not.
 #
-# An EMPTY REQUIRED is a deliberate state, not a gap. With no required check,
-# "all required checks passed" is vacuously true, so `--auto` merges on arming
-# rather than on green and a red suite lands anyway. Verify a change by running
-# the suite, never by reading the gate.
+# `suites` IS REQUIRED (Zach, 2026-10-05: "yes require suites"). It was empty,
+# and three PRs merged onto a main that had been red since 11:04Z that day
+# (#1516). So `--auto` now merges on green, not on arming. The other jobs stay
+# advisory: red there reports and does not block.
 #
 # enforce_admins is asserted separately, in section B: it answers a different
 # question, and it is the half with an incident behind it.
-REQUIRED=()
-ADVISORY=("prose / prose" "shellcheck" "suites" "comment-claims" "deploy-drift")
+REQUIRED=("suites")
+ADVISORY=("prose / prose" "shellcheck" "comment-claims" "deploy-drift")
 
 section "A. the required check set on $REPO@$BRANCH"
 
