@@ -212,4 +212,15 @@ ssh dexter 'cd ~/realisateur && git pull -q --ff-only; printf \"a\nb\n\" > /srv/
 \`\`\`"; } > "$T/m3.jsonl"
 rc "M3 the same command reported, not handed over -> exit 0" 0 "$(rcof "$R" "$T/m3.jsonl")"
 
+section "N. a missing check named as a noun is a stated defect (#1465)"
+{ user_turn "what checks a page for size"
+  asst_turn "No bound in \`types.yml\` or the validators covers it."; } > "$T/n1.jsonl"
+rc "N1 'no bound in \`types.yml\`' with nothing filed -> exit 2" 2 "$(rcof "$R" "$T/n1.jsonl")"
+{ user_turn "what checks a page for size"
+  asst_turn "Nothing bounds a page in \`types.yml\`."; } > "$T/n2.jsonl"
+rc "N2 'nothing bounds' -> exit 2" 2 "$(rcof "$R" "$T/n2.jsonl")"
+{ user_turn "what checks a page for size"
+  asst_turn "The bound lives in \`types.yml\` and the validators read it."; } > "$T/n3.jsonl"
+rc "N3 a check that exists -> exit 0" 0 "$(rcof "$R" "$T/n3.jsonl")"
+
 summary || exit 1
