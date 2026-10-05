@@ -150,10 +150,9 @@ echo "=== image: ${image} ==="
 # it minted granted 23 `hf7y/*` repos and could not read `hf7y-estate/dog` at all.
 # Fixed in the host config and in `estate-set.sh`'s default (#1313).
 #
-# FALLS BACK, DELIBERATELY. A mint needs the network and /etc/selfdev/app.pem; if
-# either is unavailable this is the difference between a pass on the old
-# credential and no pass at all. The log says which one it used, because "it
-# pushed" and "it pushed as whom" are different questions.
+# NO FALLBACK. `/etc/selfdev/gh-token` is `hf7y`, Zach's own login, and a pass
+# that runs on it opens PRs nobody can tell from his. Zach, 2026-10-04: "fix
+# identity before more unattended runs". A pass that cannot mint does not run.
 minter() {
   local m
   for m in /usr/local/libexec/selfdev/selfdev-gh-app.sh \
@@ -163,7 +162,7 @@ minter() {
   return 1
 }
 
-tokfile=/etc/selfdev/gh-token
+tokfile=""
 minted=""
 # MINTED FRESH, NOT READ FROM THE MINTER'S CACHE (#1417). `--token` returns the
 # cached token until shortly before it expires, so a pass could start on a
@@ -184,7 +183,9 @@ if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" "$m" --token 2>
   trap 'rm -f "$minted"' EXIT
   echo "=== credential: App installation token, minted for this pass ==="
 else
-  echo "=== credential: /etc/selfdev/gh-token -- the App mint was unavailable ==="
+  sudo -n rm -rf "$nocache"
+  echo "=== REFUSED: the App mint was unavailable, and this pass will not run as hf7y ===" >&2
+  exit 3
 fi
 sudo -n rm -rf "$nocache"
 
