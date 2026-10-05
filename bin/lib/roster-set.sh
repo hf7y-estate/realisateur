@@ -42,7 +42,8 @@ sweep_unswept() {
 }
 
 # ECOSYSTEM: carries decisions, never dispatches. WIRED, NOT ARMED -- swept by
-# decision-rot, given no account, no crontab row and no quota.
+# etiquette/stale-paths/decision-drift and the like, given no account, no
+# crontab row and no quota.
 #
 # ARMING IS A SEPARATE ACT and deliberately not done here: being swept costs
 # one API read per run, being armed costs quota every night.
