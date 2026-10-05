@@ -39,6 +39,13 @@ esac
 
 case "$tool" in
   Write|Edit) ;;
+  # DELIBERATE LIMIT, not an oversight (#1092): the table-driven rows below and
+  # the project-ownership rule both key off a tool call's file_path argument,
+  # which only Write/Edit carry. A Bash heredoc, `cat >`, or `python3 -c` that
+  # writes the same path is NOT checked by either -- only the vault text-match
+  # above runs on Bash, and only for the literal string ecosystem1-vault.
+  # Widening this to parse file paths out of arbitrary shell text was judged
+  # much more intrusive than the gap it would close (#1092) and was not done.
   *) exit 0 ;;  # not a file write this guard has an opinion about
 esac
 
