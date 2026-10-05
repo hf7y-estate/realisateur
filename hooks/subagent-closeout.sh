@@ -288,13 +288,22 @@ if command -v gh >/dev/null 2>&1; then
   while IFS= read -r url; do
     [ -n "$url" ] || continue
     slug="${url#https://github.com/}"; num="${slug##*/}"; slug="${slug%/pull/*}"
-    meta="$(gh api "repos/$slug/pulls/$num" --jq '"\(.state)\t\(.draft)\t\(.auto_merge != null)\t\(.body // "")"' 2>/dev/null)" || {
+    meta="$(gh api "repos/$slug/pulls/$num" --jq '"\(.state)\t\(.draft)\t\(.auto_merge != null)\t\(.mergeable_state // "unknown")\t\(.body // "")"' 2>/dev/null)" || {
       log "could not read $url -- not blocking on a tracker this hook cannot reach"; continue; }
     st="${meta%%$'\t'*}"; rest="${meta#*$'\t'}"; dr="${rest%%$'\t'*}"
-    rest="${rest#*$'\t'}"; am="${rest%%$'\t'*}"; body="${rest#*$'\t'}"
+    rest="${rest#*$'\t'}"; am="${rest%%$'\t'*}"; rest="${rest#*$'\t'}"
+    mergeable_state="${rest%%$'\t'*}"; body="${rest#*$'\t'}"
     [ "$st" = open ] || continue
     if [ "$dr" = true ]; then
       log "note: $url is still a DRAFT -- a draft claims nothing, which is a valid way to stop."
+      continue
+    fi
+    # ARMED AND CONFLICTED NEVER LANDS (#1155): auto-merge waits on checks,
+    # not on conflicts, so a dirty PR sits armed forever. `unknown` is a cold
+    # read, not a finding, and passes.
+    if [ "$am" = true ] && [ "$mergeable_state" = dirty ]; then
+      pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=DIRTY -- a merge conflict"$'\n'
+      pr_report+="    armed is not landing: auto-merge waits on checks, never on a conflict"$'\n'
       continue
     fi
     if [ "$am" = true ]; then
