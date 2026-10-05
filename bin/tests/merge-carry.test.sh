@@ -61,7 +61,7 @@ eq  "...asked gh to merge exactly it" "$(tr '\n' ' ' < "$T/merged" | sed 's/ $//
 eq  "...and the list is now empty" "$(left)" ""
 
 section "D. every state that can still change is KEPT, not dropped"
-for case in "draft:OPEN true MERGEABLE" "conflict:OPEN false CONFLICTING" \
+for case in "red:OPEN false MERGEABLE RED" "draft:OPEN true MERGEABLE" "conflict:OPEN false CONFLICTING" \
             "uncomputed:OPEN false UNKNOWN"; do
   repo="${case%%:*}"; carry 22
   state 22 "${case#*:}"
