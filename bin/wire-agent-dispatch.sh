@@ -36,7 +36,7 @@ done
 
 SRC="${AGENT_SRC:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../agent}"
 DST="${AGENT_DIR:-/srv/agent}"
-FILES=(nightly.sh run-agent.sh merge-carry.sh repos Dockerfile)
+FILES=(nightly.sh run-agent.sh merge-carry.sh repos Dockerfile usage-gate.sh burn-tick.sh)
 
 # --state prints `<file><TAB><state>`, one line per file, and changes nothing.
 # It exists so estate-status-collect.py publishes THIS classification instead
