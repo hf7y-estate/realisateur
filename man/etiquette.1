@@ -35,30 +35,31 @@ the point of the file:
 .TP
 .B derived:decision
 Line 1 of the issue body declares
-.BR DECISION: .
+.BR DECISION:
+or
+.BR NO-DECISION: .
 Never typed by hand \(em
 .B --apply
 writes it, reading
 .B bin/lib/body-grammar.sh
-for the declaration and
-.B bin/lib/answered.sh
-for whether anyone has answered, and editing line 1 is how you change it.
-Typed by hand it was wrong three times out of three. This is the same
+for line 1 alone (#1433): a
+.B DECISION:
+gets the label, a
+.B NO-DECISION:
+loses it, and nothing else \(em not a comment, not the
+.B answered
+label \(em can clear it. A
+.B DECISION:
+past its own declared
+.B DEFAULT-AFTER
+window loses the label too, since the default already ran and no human is
+waiting on it. To change the label, edit line 1: a ruling given out loud or
+in a comment is rewritten into line 1 itself when it lands (#1434), rather
+than left for a reader to reconcile against the body. This is the same
 declaration
 .BR gh-sign (1)
 enforces when the issue is created, so the label is a view of the body rather
 than a second opinion about it.
-.PP
-An owner who answers OUT LOUD rather than by typing a comment has still
-answered \(em but nothing sees it until an agent relays the ruling. Do that
-with
-.B "<!-- decision-by: <who> -->"
-on the comment carrying the ruling, not with the
-.B answered
-label: that label means the answer lives somewhere this predicate cannot
-see at all, and reaching for it when the ruling is right there in the
-comment you just wrote spends its audit value for nothing
-(hf7y/realisateur#924).
 .TP
 .BI written: verb
 That verb applies the label at filing time and nothing else should. A person

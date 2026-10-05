@@ -122,9 +122,10 @@ lib/selfdev-app-key.sh
 #
 # WHY DERIVED, AND WHY NO EXTENSION WHITELIST. Hand-typed, the list said four
 # and seven were missing: decision-rot.sh walked ZERO repos and exited 0. Its
-# replacement matched only `.sh|.tsv`, so `lib/answered.jq` -- the predicate
-# itself -- still never shipped and rot went BLIND on monkey. An extension list
-# is that second source of truth in a smaller costume; `-f` below is the guard.
+# replacement matched only `.sh|.tsv`, so a predicate's bare `.jq` file --
+# shipped beside a `.sh` feeder, with no `.sh` suffix of its own -- still
+# never shipped and rot went BLIND on monkey. An extension list is that
+# second source of truth in a smaller costume; `-f` below is the guard.
 prop_support_libs() {
   local bindir="${1:-}" s f
   if [ ! -d "$bindir" ]; then printf '%s\n' $PROP_BOOTSTRAP_SUPPORT; return 0; fi

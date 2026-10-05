@@ -63,9 +63,10 @@ fi
 # a missing carry still goes red the moment it merges.
 # THE TABLE COMES FROM origin/main TOO, not the working tree. Reading it from
 # the branch reintroduced the same wedge one line down: a PR that ADDS a row
-# (bin/lib/answered.jq, #571) asks "is this carried yet?" about a file main has
-# never shipped, and the honest answer -- not yet -- was a red required check.
-# Found by checking #571's log instead of assuming the first fix covered it.
+# for a file main has never shipped (#571's shape) asks "is this carried yet?"
+# about something not yet merged, and the honest answer -- not yet -- was a
+# red required check. Found by checking #571's log instead of assuming the
+# first fix covered it.
 REF_MAIN=""
 GIT_TERMINAL_PROMPT=0 SSH_ASKPASS_REQUIRE=never GIT_ASKPASS=/bin/true \
   git -C "$REPO" fetch -q $depth origin main:refs/remotes/origin/main 2>/dev/null || true

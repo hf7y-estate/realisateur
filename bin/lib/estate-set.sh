@@ -15,7 +15,8 @@ GH_ESTATE_SITE_REPO="${GH_ESTATE_SITE_REPO:-hf7y.github.io}"
 # #673 gave these names one home to prevent, caught BY that home.
 GH_ESTATE_SITE_OWNER="${GH_ESTATE_SITE_OWNER:-hf7y}"
 # THE HUMAN IS NOT THE NAMESPACE. Before the cutover both were `hf7y`, so one
-# name served two jobs and nothing noticed. `answered.jq:38` matches
+# name served two jobs and nothing noticed. The comment-scanning predicate
+# that gated `needs-human` until it was retired (#1436) matched
 # `.author.login == $owner` -- Zach's GitHub login -- and flipping the namespace
 # to the org made it match nobody, so every DECISION he had already answered
 # would have kept its `needs-human` label and gone on braking dispatch. Caught

@@ -21,7 +21,7 @@ EOF
 chmod +x "$T/bin/gh"
 export PATH="$T/bin:$PATH"
 
-printf '{"truncated":false,"tree":[{"path":"bin","type":"tree"},{"path":"bin/carry.sh","type":"blob"},{"path":"bin/lib","type":"tree"},{"path":"bin/lib/answered.jq","type":"blob"}]}\n' > "$T/tree.json"
+printf '{"truncated":false,"tree":[{"path":"bin","type":"tree"},{"path":"bin/carry.sh","type":"blob"},{"path":"bin/lib","type":"tree"},{"path":"bin/lib/arming.sh","type":"blob"}]}\n' > "$T/tree.json"
 
 run() { FIXTURE="$T/f.json" TREE_FIXTURE="${TREE_FIXTURE:-$T/tree.json}" bash "$SCRIPT" "$@"; }
 
@@ -39,7 +39,7 @@ hasnt "A4 the stripped locator does not survive" "$out" "publish_fa26.py:12"
 
 section "B. real paths only is clean"
 cat > "$T/f.json" <<'EOF'
-[{"number":2,"title":"cites what is there","body":"See bin/lib/answered.jq."}]
+[{"number":2,"title":"cites what is there","body":"See bin/lib/arming.sh."}]
 EOF
 out="$(run o/r 2>&1)"; code=$?
 rc    "B1 exit 0" 0 "$code"
