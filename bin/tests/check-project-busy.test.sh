@@ -34,4 +34,28 @@ chmod 755 "$T/homes/sealed/.local/share"
 rc  "C1 an unreadable owner home is BLIND (6), never free" 6 "$r"
 has "C2 and it refuses in those words" "$out" "Refusing to answer 'free'"
 
+section "D. no account on this host is not not-busy either (#1158)"
+# Registered with the scheduler, but this host has no /home/<project> at all
+# -- groc-mangr@monkey probed from mandark, where groc-mangr has no home.
+: > "$T/sched/schedule/elsewhere.conf"
+rc  "D1 a registered project absent from BUSY_HOME_ROOT is BLIND (6), never free" \
+    6 "$(rcof elsewhere)"
+has "D2 and it refuses in those words, not a silent fallback to the caller's own home" \
+    "$(run elsewhere)" "Refusing to answer 'free'"
+
+section "E. a live human session is BUSY, not just a job lock (#1158)"
+mk human
+reg="$T/homes/human/.local/share/scheduler-registry"
+printf 'pid=%s\nstarted_at=2026-01-01\ncwd=/tmp\n' "$$" > "$reg/human.interactive"
+rc  "E1 a .interactive marker whose pid is alive is BUSY (1)" 1 "$(rcof human)"
+has "E2 and it says so" "$(run human)" "BUSY: interactive session"
+
+mk stalehuman
+reg="$T/homes/stalehuman/.local/share/scheduler-registry"
+deadpid=99999
+while kill -0 "$deadpid" 2>/dev/null; do deadpid=$((deadpid + 1)); done
+printf 'pid=%s\nstarted_at=2026-01-01\ncwd=/tmp\n' "$deadpid" > "$reg/stalehuman.interactive"
+rc  "E3 a .interactive marker whose pid is gone is NOT busy -- litter, not a human" \
+    0 "$(rcof stalehuman)"
+
 summary
