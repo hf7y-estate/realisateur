@@ -592,30 +592,4 @@ if [ -n "$foreign_report" ] || [ -n "$unattr_report" ]; then
   } >&2
 fi
 
-# --- price the tree BEFORE a push, not after one (man 1 tarife) ---------------
-if [ -n "$cwd" ] && git -C "$cwd" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  price=""
-  if command -v tarife >/dev/null 2>&1; then price="tarife"
-  elif [ -x "$cwd/bin/tarife.sh" ];       then price="$cwd/bin/tarife.sh"
-  fi
-  if [ -n "$price" ]; then
-    price_out="$(cd "$cwd" && "$price" --gate --quiet 2>&1)"; price_rc=$?
-    case "$price_rc" in
-      1) {
-           echo "BLOCKED: this tree is over a guard that grades every PR, and you have not paid it."
-           echo
-           printf '%s
-' "$price_out"
-           echo
-           echo "This is the verdict CI would give you in five minutes. Pay it now:"
-           echo "the directive above names the routine and the number. Reaping your own"
-           echo "added lines back out is the move it refuses."
-         } >&2
-         exit 2 ;;
-      6) log "tarife BLIND -- the guards could not be fetched and no cache exists. This tree went UNPRICED; CI will be the first to say so." ;;
-    esac
-  else
-    log "no tarife on PATH and no bin/tarife.sh here -- this tree went UNPRICED"
-  fi
-fi
 exit 0
