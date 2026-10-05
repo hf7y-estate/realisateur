@@ -1,3 +1,6 @@
 link	.claude/commands/cloture.md	~/.claude/commands
 link	.claude/commands/ideate.md	~/.claude/commands
 link	.claude/commands/reap.md	~/.claude/commands
+bin	bin/vision.sh
+payload	bin/lib/cli-guard.sh
+payload	bin/lib/estate-set.sh
