@@ -5,14 +5,19 @@
 # Tested by bin/tests/check-project-busy.test.sh; deliberately not declared
 # a guard -- this is a front door, and that census is for guards.
 #
-# One narrow question: is a scheduler-dispatched job running against <project>
-# right now? It gates a DIRECT write into that project's tree while its own
-# automation is mid-run -- the same spirit as the "a dirty tree is a stop"
-# rule -- the gate is about the tree.
+# One narrow question: is a scheduler-dispatched job OR a human running
+# against <project> right now? It gates a DIRECT write into that project's
+# tree while its own automation is mid-run -- the same spirit as the "a dirty
+# tree is a stop" rule -- the gate is about the tree.
 #
-# Mechanism: a scheduler job dir holds a sweep.lock (or run.lock) taken via
-# `flock` for the run's duration. A non-blocking flock probe on that file
-# answers with no AI cost and no race window -- no PID files, no mtimes.
+# Mechanism, the same two-half lockout as scheduler/lib/registry-lock.sh:
+#   job vs job   -- a scheduler job dir holds a sweep.lock (or run.lock), or
+#                   the registry's <project>.lock, taken via `flock` for the
+#                   run's duration. A non-blocking flock probe answers with no
+#                   AI cost and no race window -- no PID files, no mtimes.
+#   job vs human -- the registry's <project>.interactive marker, pid-probed
+#                   with `kill -0` (#1158): the marker can outlive the session
+#                   that wrote it, so its mere existence is not read as busy.
 #
 # usage and exit codes: `--help`. One source.
 set -uo pipefail
@@ -62,15 +67,19 @@ fi
 BUSY_HOME_ROOT="${BUSY_HOME_ROOT:-/home}"
 # Right for the caller's own project; explicit so a test can redirect it.
 share_dir="${BUSY_SHARE_DIR:-$HOME/.local/share}"
-if [ "$project" != "$(id -un)" ] && [ -d "$BUSY_HOME_ROOT/$project" ]; then
+if [ "$project" != "$(id -un)" ]; then
   owner_share="$BUSY_HOME_ROOT/$project/.local/share"
-  if [ -r "$owner_share" ] && [ -x "$owner_share" ]; then
+  if [ -d "$BUSY_HOME_ROOT/$project" ] && [ -r "$owner_share" ] && [ -x "$owner_share" ]; then
     share_dir="$owner_share"
   else
-    # COULD-NOT-LOOK IS NOT NOT-BUSY: the account exists and its state is
-    # sealed to this caller, so there is no answer to give. 6, not 0.
+    # COULD-NOT-LOOK IS NOT NOT-BUSY, and NO ACCOUNT HERE IS NOT NOT-BUSY
+    # EITHER (#1158): the project's account can be sealed, OR simply not on
+    # this host at all -- groc-mangr@monkey has no /home/groc-mangr on
+    # mandark, and falling through to the CALLER's own share_dir answered
+    # "free" about the wrong host's job state entirely. Both are BLIND, 6.
     echo "check-project-busy.sh: BLIND -- $project's job state is in $owner_share," >&2
-    echo "  which this account ($(id -un)) cannot read. Refusing to answer 'free'." >&2
+    echo "  which this account ($(id -un)) cannot read (no such account on this host," >&2
+    echo "  or its home is sealed). Refusing to answer 'free'." >&2
     exit 6
   fi
 fi
@@ -87,6 +96,20 @@ if [ -f "$reg_lock" ] && ! flock -n "$reg_lock" -c true 2>/dev/null; then
   holder="$(cat "$registry_dir/$project.active" 2>/dev/null || echo 'unknown job')"
   echo "BUSY: $holder"
   busy=1
+fi
+
+# -- 1b. JOB vs HUMAN, the other half of the lockout (#1158) -----------------
+# scheduler/lib/registry-lock.sh writes this marker and reads it with a PID
+# probe, never the file's mere existence (a crash leaves no SessionEnd to
+# clean up after it) -- this is the same test, `registry_human_pid`'s reader
+# copied so the two cannot drift apart by field name or liveness rule.
+interactive="$registry_dir/$project.interactive"
+if [ -f "$interactive" ]; then
+  human_pid="$(awk -F= '$1=="pid"{print $2}' "$interactive" 2>/dev/null)"
+  if [ -n "$human_pid" ] && kill -0 "$human_pid" 2>/dev/null; then
+    echo "BUSY: interactive session (pid $human_pid)"
+    busy=1
+  fi
 fi
 
 # -- 2. per-job-dir fallback (pre-registry jobs) ------------------------------
