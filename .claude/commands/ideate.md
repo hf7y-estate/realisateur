@@ -20,8 +20,8 @@ response.** Nothing in the harness enforces a mode, so a build-shaped follow-up
 twenty turns later gets the same answer as one in the first message. #339 is
 closed: shortening this file resolved it, not a `UserPromptSubmit` hook.
 
-**`$ARGUMENTS`:** with a project name, scope to that project — run
-`scheduler status <project>` and read its open issues, skip the ecosystem sweep.
+**`$ARGUMENTS`:** with a project name, scope to that project — read
+its open issues and skip the ecosystem sweep.
 With no argument, run the full sweep.
 
 ## 1. Orient
