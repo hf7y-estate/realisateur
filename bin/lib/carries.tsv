@@ -16,7 +16,6 @@ bin/gh	bin/gh-sign.sh
 bin/atteste	bin/atteste.sh
 bin/check-project-busy	bin/check-project-busy.sh
 bin/cutover-check	bin/cutover-check.sh
-bin/decision-rot	bin/decision-rot.sh
 bin/defere	bin/defere.sh
 bin/etiquette	bin/etiquette.sh
 bin/tarife	bin/tarife.sh
@@ -43,10 +42,12 @@ bin/lib/path-guard.tsv	bin/lib/path-guard.tsv
 bin/lib/propagation-set.sh	bin/lib/propagation-set.sh
 bin/lib/roster-set.sh	bin/lib/roster-set.sh
 bin/lib/estate-set.sh	bin/lib/estate-set.sh
-# arming.sh is bin/decision-rot.sh's only lib not already carried for another
-# reason (#894 made decision-rot.sh a verb, riding this row instead of
-# prop_support_libs()'s libexec derivation). Uncarried, bin/decision-rot
-# sources a lib/arming.sh that is not on the branch it lands on.
+# arming.sh is a lib PAYLOAD scripts source (bin/gh-sign.sh conditionally;
+# bin/decision-rot.sh did too, #894, before its retirement, #1435) that
+# prop_support_libs()'s derivation never reaches -- it only greps
+# PROP_BOOTSTRAP_SCRIPTS and the host tools, not PROP_PAYLOAD_SCRIPTS.
+# Uncarried, a caller sources a lib/arming.sh that is not on the branch it
+# lands on.
 bin/lib/arming.sh	bin/lib/arming.sh
 # registry-set.sh is bin/unarmed.sh's only lib not already carried for another
 # reason (#894 made unarmed.sh a verb too, riding this row instead of the
