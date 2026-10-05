@@ -11,7 +11,7 @@ CLI_NAME='vision.sh'
 CLI_SUMMARY='one milestone at a time: which states no close, what it holds, and the answer written onto it'
 CLI_USAGE="  vision.sh queue                      every open milestone, worst first:
                                        kind  open  closed-7d  repo  number  title
-  vision.sh card <repo> <number>       title, counts, three open issues, the one question
+  vision.sh card <repo> <number>       title, counts, every open issue, the one question
   vision.sh record <repo> <number> --quote '<his words>'
             [--title '<a sentence true when done>'] [--closes-when '<command or sentence>']
             [--apply]                  default prints the milestone it would write"
@@ -50,10 +50,12 @@ card)
   [ -n "$repo" ] && [ -n "$n" ] || cli_die "card needs <repo> <number>"
   m="$(gh api "repos/$OWNER/$repo/milestones/$n" 2>/dev/null)" || blind "could not read $OWNER/$repo milestone $n"
   jq -r '"\(.title)\n  open \(.open_issues)  closed \(.closed_issues)\n\n\((.description // "(no description)") | split("\n")[:6] | join("\n"))\n"' <<<"$m"
-  # Three that span it: the oldest, the most argued over, the newest.
+  # Every open issue, oldest first, with its title and labels. Three samples
+  # hid why a milestone could not close (Zach, 2026-10-05: "Not really
+  # comprehensible", #1542).
   gh api "repos/$OWNER/$repo/issues?milestone=$n&state=open&per_page=100" \
-    --jq '[.[]|select(.pull_request|not)] | sort_by(.created_at) | [first, (.[1:-1] | max_by(.comments)), last] | map(select(.)) | unique_by(.number)[]
-          | "  #\(.number)  \(.created_at[:10])  \(.comments) comment(s)  \(.title)"' \
+    --jq '[.[]|select(.pull_request|not)] | sort_by(.created_at)[]
+          | "  #\(.number)  \(.created_at[:10])  \(.comments) comment(s)  \(.title)\([.labels[].name] | if length>0 then "  [" + join(",") + "]" else "" end)"' \
     || blind "could not list $OWNER/$repo milestone $n's issues"
   printf '\nWhat is true when this is done?\n'
   ;;
