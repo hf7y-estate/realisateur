@@ -50,10 +50,11 @@ fi
 
 transcript="$(sed -n 's/.*"transcript_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;q' <<<"$payload")"  # not agent_transcript_path -- that's SubagentStop's field
 
-human_step_violations() { # <this-turn's assistant text> -> one line per HUMAN-STEP block with no verified: field (#714 Rule 2)
+human_step_violations() { # <this-turn's assistant text> -> one BLOCKED line per HUMAN-STEP block with no verified: field (#714 Rule 2)
   awk '
+    function flag() { print "BLOCKED: HUMAN-STEP no verified:" (what == "" ? "" : " (" what ")") " -- confirm it works, then fill it in" }
     /^[[:space:]]*HUMAN-STEP[[:space:]]*$/ {
-      if (inblock && !sawverified) print "HUMAN-STEP block with no verified: field" (what == "" ? "" : " (" what ")")
+      if (inblock && !sawverified) flag()
       inblock = 1; sawverified = 0; what = ""; next
     }
     inblock && /^[[:space:]]*what:/ { line = $0; sub(/^[[:space:]]*what:[[:space:]]*/, "", line); what = line }
@@ -63,10 +64,10 @@ human_step_violations() { # <this-turn's assistant text> -> one line per HUMAN-S
       next
     }
     inblock && /^[[:space:]]*$/ {
-      if (!sawverified) print "HUMAN-STEP block with no verified: field" (what == "" ? "" : " (" what ")")
+      if (!sawverified) flag()
       inblock = 0
     }
-    END { if (inblock && !sawverified) print "HUMAN-STEP block with no verified: field" (what == "" ? "" : " (" what ")") }
+    END { if (inblock && !sawverified) flag() }
   '
 }
 
@@ -123,7 +124,7 @@ left_unfixed() { # <this turn's assistant text> -> one line per sentence that NA
         if (s !~ /(have|has|had|did|was|were|is|are) not (been |yet )?(edit|edited|fix|fixed|patch|patched|correct|corrected|update|updated|touch|touched)/) continue
         if (line !~ /#[0-9]+|`[^`]+`/) continue                        # the LINE must name what was left: an issue, a PR, a file
         if (s ~ /cannot|can not|cant|refused|denied|not mine|\?$/) continue   # out of reach, or put as a question, is a different statement
-        print substr(sent[i], 1, 140)
+        print "BLOCKED: unfixed: \"" substr(sent[i], 1, 140) "\" -- fix now, cannot+why, or ask"
       }
     }
   '
@@ -135,7 +136,7 @@ incantations() { # <this turn's assistant text> -> one line per shell command ha
       c = $0; sub(/^[[:space:]]*/, "", c)
       if (c !~ /^! /) next                                 # only what the turn asks the HUMAN to type: the `! <command>` form
       n = gsub(/;|&&|\|\|/, "&", c)
-      if (length(c) > 160 || n >= 3) print substr(c, 1, 100) "..."
+      if (length(c) > 160 || n >= 3) print "BLOCKED: incantation: " substr(c, 1, 100) "... -- build the verb or file the issue that does"
     }
   '
 }
@@ -168,7 +169,7 @@ milestone_gaps() { # <transcript> -> one line per OPEN issue this turn wrote to 
       printf 'BLIND: %s could not be read, so its milestone is unknown.\n' "$u"; continue; }
     st="${meta%%$'\t'*}"; ms="${meta#*$'\t'}"
     [ "$st" = open ] || continue
-    [ -n "$ms" ] || printf '%s is OPEN and in no milestone\n' "$u"
+    [ -n "$ms" ] || printf 'BLOCKED: no milestone: %s -- gh issue edit <n> --milestone "<title>"\n' "$u"
   done <<<"$urls"
 }
 
@@ -191,14 +192,7 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
   ' "$transcript" 2>/dev/null)" || turn_text=""
   hs_report="$(human_step_violations <<<"$turn_text")"
   if [ -n "$hs_report" ]; then
-    {
-      echo "BLOCKED: this turn asked a human to perform a manual step without confirming it can work."
-      echo
-      printf '%s\n' "$hs_report"
-      echo
-      echo "verified: is the load-bearing field -- state HOW you confirmed the target system will"
-      echo "accept this, even if the honest answer is that you have not checked yet. Then check."
-    } >&2
+    printf '%s\n' "$hs_report" >&2
     exit 2
   fi
 
@@ -214,7 +208,7 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
   defect_report=""
   defer_report=""
   while IFS= read -r claim; do
-    case "$claim" in F*) cited_already "$claim" "$transcript" || defer_report+="  ${claim#?}"$'\n' ;; esac
+    case "$claim" in F*) cited_already "$claim" "$transcript" || defer_report+="BLOCKED: deferred: \"${claim#?}\" -- do it now or file #N with a milestone"$'\n' ;; esac
   done < <(completion_claims <<<"$turn_text")
   if ! grep -qE "$ACT_RE" <<<"$turn_acts"; then
     while IFS= read -r claim; do
@@ -222,37 +216,19 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
         F*) continue ;;                                                             # a deferral has its own block, with its own remedy
         P*) cited_already "$claim" "$transcript" && continue ;;                     # a done-claim naming an artifact this transcript has already seen is a citation, not a fresh claim
       esac
-      claim_report+="  ${claim#?}"$'\n'
+      claim_report+="BLOCKED: unshown claim: \"${claim#?}\" -- do it now or cite #N"$'\n'
     done < <(completion_claims <<<"$turn_text")
     while IFS= read -r found; do
       cited_already "$found" "$transcript" && continue
-      defect_report+="  $found"$'\n'
+      defect_report+="BLOCKED: defect: \"$found\" -- fix it now or cite #N"$'\n'
     done < <(stated_defects <<<"$turn_text")
   fi
   if [ -n "$claim_report" ]; then
-    {
-      echo "BLOCKED: this turn states an act that its own tool calls do not show."
-      echo
-      printf '%s' "$claim_report"
-      echo
-      echo "Fix it in the turn you found it; file only what you cannot reach. Do the act"
-      echo "NOW -- Edit, git commit, gh issue create, gh pr create -- or cite the artifact"
-      echo "that already carries it (#N, or a URL this transcript has seen). A finding"
-      echo "stated in a reply and left there dies with the transcript."
-    } >&2
+    printf '%s' "$claim_report" >&2
     exit 2
   fi
   if [ -n "$defer_report" ]; then
-    {
-      echo "BLOCKED: this turn puts its own remaining work off to a later turn."
-      echo
-      printf '%s' "$defer_report"
-      echo
-      echo "A later turn may not come, and a promise made in a reply dies with the"
-      echo "transcript. Do it NOW, or give it a URL -- an issue in the owning repo,"
-      echo "with a milestone so something dispatches to it. An act elsewhere in this"
-      echo "turn does not pay for the part you deferred."
-    } >&2
+    printf '%s' "$defer_report" >&2
     exit 2
   fi
   ms_report="$(milestone_gaps "$transcript")"
@@ -260,57 +236,21 @@ if [ -n "$transcript" ] && [ -r "$transcript" ] && command -v jq >/dev/null 2>&1
   ms_gaps="$(grep -v '^BLIND:' <<<"$ms_report" | grep -v '^$')"
   [ -n "$ms_blind" ] && printf '%s\n' "$ms_blind" >&2
   if [ -n "$ms_gaps" ]; then
-    {
-      echo "BLOCKED: this turn wrote to an issue that nothing dispatches to."
-      echo
-      printf '%s\n' "$ms_gaps"
-      echo
-      echo "A project runs only while a milestone holds an open issue, so an open issue"
-      echo "in no milestone is a finding nothing will ever pick up -- built-not-wired,"
-      echo "in the tracker. Put it in one: gh issue edit <n> --milestone \"<title>\"."
-      echo "If none fits, write that into the issue body and give it the nearest"
-      echo "anyway. Leaving it unplaced and explaining why in the reply is the failure."
-    } >&2
+    printf '%s\n' "$ms_gaps" >&2
     exit 2
   fi
   spell_report="$(incantations <<<"$turn_text")"
   if [ -n "$spell_report" ]; then
-    {
-      echo "BLOCKED: this turn hands Zach a command no one should have to type."
-      echo
-      printf '%s\n' "$spell_report"
-      echo
-      echo "Zach, 2026-10-01: \"That incantation proves the failure. This needs to be properly"
-      echo "owned by an agent that can take it on.\" A command over 160 characters, or three"
-      echo "chained steps, is a missing verb: build the verb, or name the issue that builds it,"
-      echo "and hand over the short form."
-    } >&2
+    printf '%s\n' "$spell_report" >&2
     exit 2
   fi
   unfixed_report="$(left_unfixed <<<"$turn_text")"   # NOT under the no-act guard above: an act elsewhere in the turn does not excuse this
   if [ -n "$unfixed_report" ]; then
-    {
-      echo "BLOCKED: this turn names something it found wrong and says it left it unfixed."
-      echo
-      printf '%s\n' "$unfixed_report"
-      echo
-      echo "Zach, 2026-10-01: \"You fix when you find. Not flag for me.\" Make the edit now"
-      echo "and say what changed. If it is out of reach, say cannot and why in that"
-      echo "sentence; if it is his decision, ask it as a question."
-    } >&2
+    printf '%s\n' "$unfixed_report" >&2
     exit 2
   fi
   if [ -n "$defect_report" ]; then
-    {
-      echo "BLOCKED: this turn states that something is broken and files nothing."
-      echo
-      printf '%s' "$defect_report"
-      echo
-      echo "Fix it in the turn you found it; file only what you cannot reach. Do the act"
-      echo "NOW -- Edit, git commit, gh issue create -- or cite the artifact that already"
-      echo "carries it (#N, or a URL this transcript has seen). This is the residue #681"
-      echo "measured: a defect named in prose, with no owner, dies with the transcript."
-    } >&2
+    printf '%s' "$defect_report" >&2
     exit 2
   fi
 fi
@@ -398,30 +338,6 @@ for t in "${trees[@]}"; do
 done
 [ "$any_repo" -eq 1 ] || exit 0
 
-advice() {
-  echo
-  echo "A dirty tree at the end of a turn is a failed run, not a handoff -- an"
-  echo "uncommitted change to a live script is indistinguishable from an"
-  echo "abandoned one. An unpushed commit is the same failure one step later."
-  echo
-  echo "For the changes listed as YOURS, do ONE of these:"
-  echo "  1. Commit the work you meant to keep, to a BRANCH (never main):"
-  echo "       git add <specific paths>   # never 'git add -A'"
-  echo "       git commit -F <msgfile>"
-  echo "  2. Push it, so the branch exists on origin and not only on this host:"
-  echo "       git push -u origin <branch>"
-  echo "  3. Revert what you did not mean to keep:  git restore <paths>"
-  echo "  4. If the user wrote the change and says to commit it as theirs, author it to them:"
-  echo "       git commit --author='<their name> <their email>' -F <msgfile>"
-  echo "     Take the identity from their own past commits (git log --format='%an <%ae>')."
-  echo "  5. If a file is deliberately untracked, add it to .gitignore and commit that."
-  echo
-  echo "NONE of those apply to a path this report did not list as YOURS. Those files"
-  echo "are not yours: leave them exactly as they are, say so in your reply, and stop."
-  echo "If no permitted commit is open to you, name the paths and stop there too --"
-  echo "destroying work to get past this hook is the one outcome it exists to prevent."
-}
-
 # The SessionStart baseline's mtime is when this session began; a PR older than
 # it was not opened here. WITH NO BASELINE IT STILL BLOCKS -- a no-baseline pass
 # is indistinguishable from disabling the check, and the bail-out that used to
@@ -460,8 +376,7 @@ if command -v gh >/dev/null 2>&1; then
       # stale passes, so the failing-check read below would clear it.
       # `unknown` is a cold read, not a finding, and passes.
       if [ "$mergeable_state" = dirty ]; then
-        pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=DIRTY -- a merge conflict"$'\n'
-        pr_report+="    armed is not landing: auto-merge waits on checks, never on a conflict"$'\n'
+        pr_report+="BLOCKED: PR mergeable_state=DIRTY, armed won't land: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n'
         continue
       fi
       failing="$(pr_failing_checks "$slug" "$headsha")"
@@ -470,8 +385,7 @@ if command -v gh >/dev/null 2>&1; then
         # on a repo with zero required checks means a required review, not a
         # check, is what holds it -- checks passing was never the condition.
         if [ "$mergeable_state" = blocked ]; then
-          pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=BLOCKED with nothing failing"$'\n'
-          pr_report+="    armed is not landing: something other than a check holds it (commonly a required review)"$'\n'
+          pr_report+="BLOCKED: PR mergeable_state=BLOCKED, armed won't land: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n'
           continue
         fi
         log "note: $url has AUTO-MERGE ARMED and nothing failing -- it lands when its checks pass. Valid way to stop."
@@ -481,15 +395,13 @@ if command -v gh >/dev/null 2>&1; then
         log "note: $url has AUTO-MERGE ARMED; its checks could not be read, so this hook is not blocking on them."
         continue
       fi
-      pr_report+="  $url has AUTO-MERGE ARMED but $failing required check(s) FAILING"$'\n'
-      pr_report+="    armed is not landing: it merges when the checks pass, and they do not"$'\n'
+      pr_report+="BLOCKED: PR failing checks ($failing), armed won't land: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n'
       continue
     fi
     # A PR predating the session is another run's work in flight, and every
     # exit offered here would damage it.
     if [ -z "$session_started" ]; then
-      pr_report+="  $url is still open and not a draft"$'\n'
-      pr_report+="    (no SessionStart baseline, so this hook cannot tell whether you opened it)"$'\n'
+      pr_report+="BLOCKED: PR open, ownership unknown (no baseline): $url -- arm --auto, land now, or convert it to a DRAFT"$'\n'
       continue
     fi
     created_epoch="$(date -d "$created" +%s 2>/dev/null)" || created_epoch=''
@@ -501,25 +413,14 @@ if command -v gh >/dev/null 2>&1; then
       log "note: $url predates this session ($created) -- mentioned, not opened here."
       continue
     fi
-    pr_report+="  $url is still open and not a draft"$'\n'
     case "$body" in
-      *DELIVERS*) : ;;
-      *) pr_report+="    and carries no DELIVERS block, so nothing can check whether it landed"$'\n' ;;
+      *DELIVERS*) pr_report+="BLOCKED: PR open: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n' ;;
+      *) pr_report+="BLOCKED: PR open, no DELIVERS block: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n' ;;
     esac
   done < <(discover_prs_mentioned "$transcript")
 fi
 if [ -n "$pr_report" ]; then
-  {
-    echo "BLOCKED: this turn opened a pull request that is still open."
-    echo
-    printf '%s' "$pr_report"
-    echo
-    echo "Merging is the middle of the job, not the end of it. Three honest exits:"
-    echo "  gh pr merge <n> --repo <slug> --merge --auto --delete-branch"
-    echo "      arm auto-merge -- it lands when the required checks pass. PREFER THIS."
-    echo "  land it now, if every required check is already green."
-    echo "  convert it to a DRAFT -- a draft claims nothing, for work still in flight."
-  } >&2
+  printf '%s' "$pr_report" >&2
   exit 2
 fi
 
@@ -538,65 +439,40 @@ for t in "${trees[@]}"; do
 
   had_base=0; base=""
   baseline_has_tree "$t" && { had_base=1; base="$(baseline_dirty "$t")"; }
-  own=""; foreign=""; unattr=""; own_count=0
+  own_count=0; own_paths=""; foreign_paths=""; unattr_paths=""
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     path="$(printf '%s\n' "$line" | porcelain_paths | head -1)"
     if [ "$had_base" -eq 1 ] && printf '%s\n' "$base" | grep -qxF "$path"; then
-      foreign+="    $line"$'\n'
+      foreign_paths+="${foreign_paths:+, }$path"
     elif [ "$had_base" -eq 1 ] || is_written "$t/$path"; then
-      own+="    $line"$'\n'; own_count=$((own_count + 1)); own_total=$((own_total + 1))
+      own_paths+="${own_paths:+, }$path"; own_count=$((own_count + 1)); own_total=$((own_total + 1))
     else
-      unattr+="    $line"$'\n'
+      unattr_paths+="${unattr_paths:+, }$path"
     fi
   done <<<"$dirty"
 
-  [ -n "$own" ]     && own_report+="  tree: $t ($own_count uncommitted change(s))"$'\n'"$own"
-  [ -n "$foreign" ] && foreign_report+="  tree: $t"$'\n'"$foreign"
-  [ -n "$unattr" ]  && unattr_report+="  tree: $t"$'\n'"$unattr"
+  [ -n "$own_paths" ]     && own_report+="YOURS, tree: $t ($own_count): $own_paths"$'\n'
+  [ -n "$foreign_paths" ] && foreign_report+="NOT YOURS, tree: $t (Leave these exactly as they are): $foreign_paths"$'\n'
+  [ -n "$unattr_paths" ]  && unattr_report+="UNATTRIBUTED, tree: $t (no baseline, not charged to you): $unattr_paths"$'\n'
 done
 
 if [ "$own_total" -gt 0 ]; then
   {
-    echo "BLOCKED: you are leaving $own_total uncommitted change(s) of your own."
+    echo "BLOCKED: leaving $own_total uncommitted change(s) of your own."
     echo
-    echo "YOURS -- new since this session started:"
-    printf '%s' "$own_report"
-    if [ -n "$foreign_report" ]; then
-      echo
-      echo "NOT YOURS -- already there when this session started. Context only:"
-      printf '%s' "$foreign_report"
-      echo "  Leave these exactly as they are. They are not part of this gate."
-    fi
-    if [ -n "$unattr_report" ]; then
-      echo
-      echo "UNATTRIBUTED -- no baseline for this tree, so ownership is unknown:"
-      printf '%s' "$unattr_report"
-      echo "  Not attributed to you and not blocking. Do not revert or commit them."
-    fi
-    advice
+    printf '%s\n' "$own_report"
+    [ -n "$foreign_report" ] && printf '%s\n' "$foreign_report"
+    [ -n "$unattr_report" ] && printf '%s\n' "$unattr_report"
+    echo "commit to a branch (or --author= if it's theirs), push -u origin <branch>, or git restore -- never main, never git add -A"
   } >&2
   exit 2
 fi
 
 if [ -n "$foreign_report" ] || [ -n "$unattr_report" ]; then
   {
-    echo "stop-residue-gate: nothing in these trees is attributable to this session --"
-    echo "not blocking. Reported so it is not mistaken for a clean checkout:"
-    if [ -n "$foreign_report" ]; then
-      echo
-      echo "NOT YOURS -- already there when this session started:"
-      printf '%s' "$foreign_report"
-    fi
-    if [ -n "$unattr_report" ]; then
-      echo
-      echo "UNATTRIBUTED -- no SessionStart baseline was recorded for this tree, so this"
-      echo "hook cannot tell your changes from a concurrent session's:"
-      printf '%s' "$unattr_report"
-    fi
-    echo
-    echo "Leave all of the above alone: none of it is yours to commit or revert."
-    echo "Mention in your reply that you stopped with it present."
+    [ -n "$foreign_report" ] && printf '%s\n' "$foreign_report"
+    [ -n "$unattr_report" ] && printf '%s\n' "$unattr_report"
   } >&2
 fi
 

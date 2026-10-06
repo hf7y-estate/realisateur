@@ -43,7 +43,7 @@ rc "A1 claims to have filed, and did -> exit 0" 0 "$(rcof "$R" "$T/a1.jsonl")"
 A2_OUT="$(run "$R" "$T/a2.jsonl")"
 rc  "A2 claims to have filed, and did not -> BLOCKED (2)" 2 "$(rcof "$R" "$T/a2.jsonl")"
 has "A2 quotes the claim it could not verify" "$A2_OUT" "I filed the gap as an issue."
-has "A2 names the rule, not a policy file"    "$A2_OUT" "Fix it in the turn you found it"
+has "A2 names the rule, not a policy file"    "$A2_OUT" "do it now or cite #N"
 
 { user_turn "what does the gate do?"
   asst_turn "It blocks an open non-draft PR and a dirty tree. The unfiled-finding half was never attempted, which is what hooks/stop-residue-gate.sh:2 records."; } > "$T/a3.jsonl"
@@ -98,7 +98,7 @@ DEFECT="${DEFECT//@/$BT}"
 C1_OUT="$(run "$R" "$T/c1.jsonl")"
 rc  "C1 a stated defect with no artifact -> BLOCKED (2)" 2 "$(rcof "$R" "$T/c1.jsonl")"
 has "C1 quotes the sentence that carries the finding" "$C1_OUT" "does not exist on any account"
-has "C1 names the rule, not a policy file"            "$C1_OUT" "Fix it in the turn you found it"
+has "C1 names the rule, not a policy file"            "$C1_OUT" "fix it now or cite #N"
 
 { user_turn "have a look at the propagation set"
   bash_act "gh issue create -R hf7y/realisateur -F /tmp/body"
@@ -165,7 +165,7 @@ section "L. a thing named and left unfixed is not a report, it is residue (#1389
 { user_turn "check the handoff"
   asst_turn "#1374 still states 117; the real count is 110. I have not edited it."; } > "$T/l1.jsonl"
 rc  "L1 names an issue and says it was not edited -> BLOCKED (2)" 2 "$(rcof "$R" "$T/l1.jsonl")"
-has "L1 the block quotes the ruling" "$(run "$R" "$T/l1.jsonl")" "You fix when you find"
+has "L1 the block names the remedy" "$(run "$R" "$T/l1.jsonl")" "fix now, cannot+why, or ask"
 
 { user_turn "check the handoff"
   edit_act "/tmp/memory.md"
@@ -194,7 +194,7 @@ section "M. a long or chained command handed to the human is a missing verb (#13
 ! ssh dexter 'cd ~/realisateur && git pull -q --ff-only; printf \"a\nb\n\" > /srv/agent/state/sent.list; sudo systemd-run --unit=agent-sent --uid=zach --setenv=PASSES=3 /srv/agent/nightly.sh'
 \`\`\`"; } > "$T/m1.jsonl"
 rc  "M1 a 200-character chained command for the human -> BLOCKED (2)" 2 "$(rcof "$R" "$T/m1.jsonl")"
-has "M1 the block quotes the ruling" "$(run "$R" "$T/m1.jsonl")" "incantation proves the failure"
+has "M1 the block names the remedy" "$(run "$R" "$T/m1.jsonl")" "build the verb or file the issue"
 
 { user_turn "start the run"
   asst_turn "Run this:
