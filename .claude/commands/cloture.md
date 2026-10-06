@@ -40,7 +40,7 @@ git status --porcelain -uall             # uncommitted AND untracked
 Every branch and path resolves **against the remote, not asserted**:
 
 - **Reflects main** -- record branch and sha, reap it. No judgement required.
-- **Open PR** -- draft if unfinished, ready if not. Re-read the body; `gh` grades it at the write, nothing after.
+- **Open PR** -- draft if unfinished, ready if not. Re-read the body; `gh` grades it at the write, nothing after. **Name what merges it**: the dispatcher adopts only App-authored, non-draft PRs, so yours needs an open issue whose pass lands it, or it is not resolved.
 - **Unlanded** -- push and open a PR, or say why it stays, with a URL.
 - **Uncommitted** -- commit (message via file) or discard deliberately. Paths predating this session get an issue in the owning repo naming them.
 - **Untracked, not ignored** -- commit, ignore, or move it out.
