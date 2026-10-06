@@ -109,17 +109,19 @@ Then:
        <!-- DELIVERS -->
        - path:<file> -- what takes effect outside the repo when this lands
        <!-- /DELIVERS -->
-4. Write REPORT.md in the repo root before you finish, WHATEVER happened: the
-   issue number, the branch, the test command and its actual output, the PR
-   URL, and anything you could not do. Leave it untracked, do not commit it.
-   If you achieved nothing, say so plainly and say why -- "nothing finishable
-   from here, because X" is a SUCCESSFUL run of this mechanism. A silent or
-   empty report is the only real failure.
+
+If you land nothing -- too large, needs a host, nothing finishable from here --
+say so as a comment on the issue: plainly, and why. That comment, the PR above
+if you opened one, and this log's own \`=== result:\` line are the whole record
+of the pass; nothing else is read back. "nothing finishable from here, because
+X" in a comment is a SUCCESSFUL run of this mechanism. Landing nothing AND
+saying nothing reads as a crash.
 
 If \`git push\` is refused, the branch is the only copy of the work: say so in
-REPORT.md with the exact error and LEAVE IT ALONE. \`git branch -D\` after a
-failed push destroys the pass -- the container is \`--rm\`, so nothing survives
-it. That is what crt did on 2026-09-26 with a verified fix in hand.
+a comment on the issue with the exact error, and LEAVE IT ALONE. \`git branch
+-D\` after a failed push destroys the pass -- the container is \`--rm\`, so
+nothing survives it. That is what crt did on 2026-09-26 with a verified fix in
+hand.
 
 You are running non-interactively. Nothing will notify you, nothing will wake
 you, and there is no one to ask: a backgrounded command, a \`ScheduleWakeup\`,
@@ -253,17 +255,11 @@ sudo -n docker run --rm \
 echo
 echo "=== $(date -u +%FT%TZ) container exited (rc=${rc}) ==="
 
-# SAY WHICH IT IS. The previous version printed "(no REPORT.md written)" while a
-# report sat one directory away, because it looked in the wrong place -- the
-# harness hiding its own evidence, the third time in one session. "not found at
-# <path>" is a different claim from "never looked", and both differ from "empty".
 if [ ! -d "$checkout" ]; then
   echo "=== NO CHECKOUT at ${checkout} -- the clone never landed ==="
 else
   g() { git -c safe.directory="$checkout" -C "$checkout" "$@"; }
   branch="$(g branch --show-current)"
-  tree=clean; [ -n "$(g status --porcelain)" ] && tree=dirty
-  turns_used="$(sed -n 's/^=== result: .*turns=\([0-9]*\).*/\1/p' "$log" | tail -1)"
 
   # THE AUTHOR IS NOT `claude-agent`. The `git config user.name` above sets
   # that as the COMMITTER, while the PR is authored `hf7y` -- the token's
@@ -284,30 +280,13 @@ else
   prior="$(printf '%s\n' "$prs" | awk -F'\t' -v s="$started_iso" \
     '$1!="" && $1<s { printf "  #%s  %s  %s  %s\n", $2, $1, $3, $4 }')"
 
-  # A pass that landed nothing and said nothing is indistinguishable from one
-  # that crashed (#1329) -- crt, two nights running. The harness cannot say WHY
-  # the agent stopped, only what it left, so it writes that down and signs it,
-  # and the collector grades a signed report on its facts rather than on its
-  # absence.
-  report="${checkout}/REPORT.md"
-  if [ -f "$report" ]; then
-    echo "=== REPORT.md (${report}) ==="
-  else
-    cat > "$report" <<EOF
-# REPORT.md -- WRITTEN BY run-agent.sh, the agent wrote none
-
-harness-report: rc=${rc} turns=${turns_used:-0} of ${turns} tree=${tree} branch=${branch:-none}
-
-The agent exited without writing a report, so this says only what the harness
-can see from outside the container. It is NOT a verdict on the pass: rc 0, a
-clean tree and turns well under the cap is an orderly exit that landed nothing,
-which the brief calls a successful run. rc non-zero or a dirty tree is not.
-EOF
-    echo "=== REPORT.md (${report}) -- WRITTEN BY run-agent.sh, the agent wrote none ==="
-  fi
-  cat "$report"
-
-  echo
+  # NOTHING IS SYNTHESIZED HERE (#1416: the harness-written fallback report is
+  # retired -- the write died with "Permission denied" on dexter, the checkout
+  # is root-owned and the harness runs as zach, and that took crt's pass to
+  # exit 1 on 2026-10-02 and 2026-10-03 with nothing to show for it). What the
+  # pass left is read back from what it already produced: the PR section
+  # below, a comment it may have left on its issue, and the `=== result:` line
+  # printed above -- never from a file the harness writes for it.
   echo "=== PRs opened by THIS pass (since ${started_iso}) ==="
   printf '%s\n' "${mine:-  (none)}"
 

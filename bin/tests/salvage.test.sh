@@ -29,16 +29,15 @@ heads() { git -C "$T/origin.git" for-each-ref --format='%(refname:short)' refs/h
 
 section "A. a pass that left nothing pushes nothing"
 fresh; before="$(heads)"
-out="$(cd "$T/w" && echo report > REPORT.md && bash "$SALVAGE" S1 7 2>&1)"; rc "exits 0" 0 "$?"
-eq "...no new branch, REPORT.md alone is not work" "$(heads)" "$before"
+out="$(cd "$T/w" && bash "$SALVAGE" S1 7 2>&1)"; rc "exits 0" 0 "$?"
+eq "...no new branch" "$(heads)" "$before"
 eq "...and says nothing" "$out" ""
 
 section "B. uncommitted work on main is committed to a salvage branch and pushed"
 fresh
-out="$(cd "$T/w" && echo work > deliverable.json && echo report > REPORT.md && bash "$SALVAGE" S2 117 2>&1)"; rc "exits 0" 0 "$?"
+out="$(cd "$T/w" && echo work > deliverable.json && bash "$SALVAGE" S2 117 2>&1)"; rc "exits 0" 0 "$?"
 has "...says where it went" "$out" "SALVAGED: pushed salvage/117-S2"
 eq "...the file is on origin" "$(git -C "$T/origin.git" show salvage/117-S2:deliverable.json)" "work"
-eq "...REPORT.md stayed out of the commit" "$(git -C "$T/origin.git" ls-tree --name-only salvage/117-S2 | grep -c REPORT.md)" "0"
 eq "...main was not touched" "$(git -C "$T/origin.git" ls-tree --name-only main | tr '\n' ' ')" "a "
 has "...and the issue is told the branch" "$(cat "$T/gh.calls")" "issue comment 117"
 
