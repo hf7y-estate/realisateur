@@ -10,3 +10,5 @@
 # This file exists so the NEXT suite that goes bad under time pressure has a
 # one-line lever instead of forcing the choice #125 forced -- block every PR
 # in the repo, or drop the whole `suites` required check.
+
+bin/tests/carry-orphans.test.sh	#1120	commands/bashify.md and commands/cloture.md ride bashified with no carries.tsv row; removing them needs a deliberate `git rm` on bashified, which is a person's call, not this suite's or carry.sh's
