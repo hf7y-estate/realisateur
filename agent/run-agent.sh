@@ -73,14 +73,12 @@ You are working unattended on hf7y-estate/${repo}. ONE issue, ONE branch, then s
 ${sent}
 
 \`gh\` is authenticated and the network works. Start by reading the queue --
-open issues in an open milestone, minus needs-host, needs-human, and any
-issue with an open native blocker:
+open issues in an open milestone, minus needs-host and needs-human:
 
     ms=\$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]')
     gh issue list --repo hf7y-estate/${repo} --state open --limit 200 \\
-      --search '-label:needs-host -label:needs-human' --json number,title,milestone,blockedBy \\
-      | jq --argjson ms "\$ms" '.[] | select(.milestone and (.milestone.number as \$m | \$ms|index(\$m)))
-          | select((.blockedBy.nodes // []) | map(select(.state == "OPEN")) | length == 0)'
+      --search '-label:needs-host -label:needs-human' --json number,title,milestone \\
+      | jq --argjson ms "\$ms" '.[] | select(.milestone and (.milestone.number as \$m | \$ms|index(\$m)))'
 
 No milestone, or a closed one, is not in scope -- same as the two label
 exclusions, not a suggestion. \`needs-host\` means the issue cannot be
@@ -88,15 +86,6 @@ finished from here -- it needs a physical device or a live remote host. Do
 not route around the filter by listing issues without it. A body that opens
 \`DECISION:\` and is in this list has outlived its \`DEFAULT-AFTER\` window:
 the action on that line is the ruling. Do it, and say so on the issue.
-
-Cross-repo work is chained the same way everywhere: an edge is a native
-blocked-by (\`gh issue edit <n> --add-blocked-by <other>\`), drawn by whoever
-files or by the pass that finds the dependency. An issue the queue above
-would drop for an open blocker is not yours to pick -- wait for the blocker
-to close, do not work around the edge. A piece that needs another repo is
-filed THERE with an edge, not worked from here. A \`needs-host\` issue waits
-for a host pass, same as above, even once every one of its blockers is
-closed.
 
 Then:
 0. TOO LARGE FOR ONE PASS means the pass is the split: file the issue's pieces
