@@ -205,4 +205,17 @@ eq "...tried one repo and no more" "$(dispatched | tr '\n' ' ')" "alpha "
 eq "...and sent ONE message" "$(wc -l < "$T/sent" | tr -d ' ')" "1"
 rm -f "$T/refuse"
 
+section "M. a repo locked by another chain is deferred, not waited on (#1476)"
+( exec 9>"$T/srv/.pass.alpha.lock"; flock 9; sleep 30 ) &
+holder=$!; sleep 0.5
+rm -f "$T/dispatched" "$T/srv/nightly."*.log
+out="$(timeout 10 env PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1)"
+rc "...does not hang waiting on the lock -- exits well inside the pass's own 30s hold" 0 "$?"
+has "...says alpha is locked and is not waiting on it" "$out" "alpha: locked by another chain, not waiting -- deferring"
+has "...gamma still ran while alpha's lock was held" "$(dispatched)" "gamma"
+has "...alpha is said to still be locked on its one retry" "$out" "alpha: still locked on retry -- skipping for the rest of the night"
+hasnt "...and alpha itself never ran" "$(dispatched)" "alpha"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
 summary

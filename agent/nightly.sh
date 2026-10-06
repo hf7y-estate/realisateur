@@ -149,7 +149,17 @@ queue_count() {
   echo "$n"
 }
 
-for target in "${repos[@]}"; do
+# A LOCKED REPO GETS ONE REQUEUE, NOT A WAIT. `.pass.<repo>.lock` is the
+# per-repo lock named above -- a sent chain on the same repo holds it too --
+# and blocking on it here is how one long sent pass stalled the whole night
+# behind it (#1476). `flock -n` fails fast instead, with `-E 254` so "the
+# lock was held" cannot be confused with run-agent.sh's own exit codes; the
+# repo goes to the back of the queue once and is skipped for the night if it
+# is still held on the second try.
+declare -A relocked=()
+repo_i=0
+while [ "$repo_i" -lt "${#repos[@]}" ]; do
+  target="${repos[$repo_i]}"; repo_i=$((repo_i + 1))
   # `repo#n` IS A LINK OF A CHAIN: that issue, one pass, in the order it was
   # sent. merge-carry lands the previous link first, so the next one builds on it.
   repo="${target%%#*}"; issue=""
@@ -179,14 +189,21 @@ for target in "${repos[@]}"; do
   # 2026-10-03: "the first tag, along with milestones, feels like layered not
   # replaced." Order is `--send repo#n ...`; the default stays 1 pass.
   i=0
+  locked=0
   while :; do
     [ "$spent" -lt "$night" ] || { echo "=== night budget of $night pass(es) spent -- $repo and everything after it waits ==="; break 2; }
     spent=$((spent + 1))
     i=$((i + 1))
     echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
-    flock "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 && rc=0 || rc=$?
+    flock -n -E 254 "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 && rc=0 || rc=$?
     case "$rc" in
       0) echo "--- $repo: pass finished" ;;
+      # 254 is flock -n refusing the lock, not a run-agent.sh exit: another
+      # chain holds this repo's pass. Give the budget back -- nothing ran --
+      # and try the rest of the night before coming back to it once.
+      254) spent=$((spent - 1)); i=$((i - 1)); locked=1
+           echo "--- $repo: locked by another chain, not waiting -- deferring"
+           break ;;
       # 3 is run-agent.sh refusing to run as hf7y. The mint is per host, not per
       # repo, so every later pass would refuse too: stop, and tell a person once.
       3) echo "=== NO BOT TOKEN: $repo refused, dispatching nothing more ==="
@@ -199,6 +216,15 @@ for target in "${repos[@]}"; do
     n="$(queue_count "$repo")"
     case "$n" in 0|ERR) break ;; esac
   done
+  if [ "$locked" -eq 1 ]; then
+    if [ -z "${relocked[$target]:-}" ]; then
+      relocked[$target]=1
+      echo "--- $repo: back of the queue for one retry this night"
+      repos+=("$target")
+    else
+      echo "--- $repo: still locked on retry -- skipping for the rest of the night"
+    fi
+  fi
 done
 
 echo "=== nightly done $(date -u +%FT%TZ) ==="
