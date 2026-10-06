@@ -50,7 +50,11 @@ EOF
 chmod +x "$T/bin/gh"
 runpr() { payload "$1" "${2:-}" | STUB_PR="$T/pr-state" PATH="$T/bin:$PATH" "$SCRIPT" 2>&1; }
 rcof()  { payload "$1" "${2:-}" | STUB_PR="$T/pr-state" PATH="$T/bin:$PATH" "$SCRIPT" >/dev/null 2>&1; printf '%s' "$?"; }
-transcript_pr() { printf 'opened https://github.com/hf7y/widget/pull/7 today\n' > "$1"; }
+cmd_result() { # cmd_result <command> <stdout> -- a Bash call and its paired result
+  jq -nc --arg c "$1" '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tu1","name":"Bash","input":{"command":$c}}]}}'
+  jq -nc --arg o "$2" '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tu1","content":$o}]},"toolUseResult":{"stdout":$o}}'
+}
+transcript_pr() { cmd_result 'gh pr create --fill' 'https://github.com/hf7y/widget/pull/7' > "$1"; }
 
 section "A. baseline behavior"
 
@@ -160,6 +164,12 @@ rc "C5l armed with mergeable_state=unknown (a cold read) does not block" 0 "$RC"
 printf 'open\tfalse\tfalse\t%s\tdeadbee\tclean\tNO-DECISION: x\n\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->' "$AFTER" > "$T/pr-state"
 OUT="$(runpr "$G" "$TR")"
 has "C7 the refusal names arming auto-merge as the preferred exit" "$OUT" "--auto"
+
+# A PR a `gh pr list` only SHOWED is not one this turn opened (#1172).
+cmd_result 'gh pr list' '7  fix  https://github.com/hf7y/widget/pull/7' > "$T/g-listed"
+OUT="$(runpr "$G" "$T/g-listed")"; RC="$(rcof "$G" "$T/g-listed")"
+rc    "C7a a PR URL in a gh pr list result, no gh pr create -> does not block" 0 "$RC"
+hasnt "C7b and is not reported at all" "$OUT" "pull/7"
 
 # `gh pr comment` prints .../pull/N#issuecomment-ID, which read as a PR this
 # turn opened.
