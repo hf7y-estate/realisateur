@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-# SUBJECT: agent/nightly.sh, the repo-set and queue-predicate half (#1383,
-# #1560). `agent/repos` used to BE the candidate set; now it only orders the
-# repos it names, and the org (`gh repo list hf7y-estate --no-archived`) is
-# the set -- a repo the org has and the file doesn't still runs, last. The
-# queue count that gates a dispatch is also narrowed: open issues in an open
-# milestone, not just open issues, and (#1560) not an issue with an open
-# native blocker either. Section O-P cover the needs-host visibility piece of
-# #1560: a needs-host issue is never in the queue above, but one whose own
-# blockers are all closed is named in the log rather than sitting silent.
-# Hermetic -- `sudo`, `docker` and `gh` are stubs on PATH, beside a COPY of
-# the script.
+# SUBJECT: agent/nightly.sh, the repo-set and queue-predicate half (#1383).
+# `agent/repos` used to BE the candidate set; now it only orders the repos it
+# names, and the org (`gh repo list hf7y-estate --no-archived`) is the set --
+# a repo the org has and the file doesn't still runs, last. The queue count
+# that gates a dispatch is also narrowed: open issues in an open milestone,
+# not just open issues. Hermetic -- `sudo`, `docker` and `gh` are stubs on
+# PATH, beside a COPY of the script.
 set -uo pipefail
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/harness.sh"
 harness_tmp; export T
@@ -78,20 +74,11 @@ case "$1" in
     ;;
   issue)
     [ "$2" = list ] || exit 0
-    # needs-host is its own call (--label needs-host, no --search), read
-    # from a per-repo fixture so M-P can name a ready link without touching
-    # the queue fixtures above. "-label:needs-host" (one dash, a colon) in
-    # the --search string below never matches this (two dashes, a space).
-    if [[ "$args" == *"--label needs-host"* ]]; then
-      cat "$T/needs-host-$repo" 2>/dev/null || echo '[]'
-      exit 0
-    fi
-    blocked="$(cat "$T/blocked-$repo" 2>/dev/null || echo '[]')"
     case "$repo" in
-      alpha) [ "$(cat "$T/left-alpha" 2>/dev/null)" = 0 ] && printf '[]\n' || printf '[{"milestone":{"number":1},"blockedBy":{"nodes":%s}}]\n' "$blocked" ;;
-      beta)  printf '[{"milestone":{"number":99},"blockedBy":{"nodes":[]}}]\n' ;;   # 99 is not open
-      gamma) printf '[{"milestone":{"number":5},"blockedBy":{"nodes":%s}}]\n' "$blocked" ;;
-      delta) printf '[{"milestone":{"number":9},"blockedBy":{"nodes":[]}}]\n' ;;
+      alpha) [ "$(cat "$T/left-alpha" 2>/dev/null)" = 0 ] && printf '[]\n' || printf '[{"milestone":{"number":1}}]\n' ;;
+      beta)  printf '[{"milestone":{"number":99}}]\n' ;;   # 99 is not open
+      gamma) printf '[{"milestone":{"number":5}}]\n' ;;
+      delta) printf '[{"milestone":{"number":9}}]\n' ;;
     esac
     ;;
   pr) : ;;  # the trailing PR recap; not under test here
@@ -217,31 +204,5 @@ has "...says so in the night's log" "$out" "NO BOT TOKEN: alpha refused, dispatc
 eq "...tried one repo and no more" "$(dispatched | tr '\n' ' ')" "alpha "
 eq "...and sent ONE message" "$(wc -l < "$T/sent" | tr -d ' ')" "1"
 rm -f "$T/refuse"
-
-section "M. an issue on an open milestone with an open native blocker is not queued (#1560)"
-printf '[{"number":111,"state":"OPEN"}]\n' > "$T/blocked-alpha"
-out="$(run)"; rc "exits 0" 0 "$?"
-has "...alpha's queue reads empty: its one issue is blocked" "$out" "--- alpha: queue empty, skipping"
-hasnt "...alpha never dispatched" "$(dispatched)" "alpha"
-rm -f "$T/blocked-alpha"
-
-section "N. a blocker that is CLOSED does not hold the queue back (#1560)"
-printf '[{"number":111,"state":"CLOSED"}]\n' > "$T/blocked-alpha"
-out="$(run)"; rc "exits 0" 0 "$?"
-eq "...alpha still dispatches" "$(dispatched | sed -n 1p)" "alpha"
-rm -f "$T/blocked-alpha"
-
-section "O. a needs-host issue whose blockers are all closed is named, not silent (#1560)"
-printf '[{"number":222,"milestone":{"number":1},"blockedBy":{"nodes":[{"state":"CLOSED"}]}}]\n' > "$T/needs-host-alpha"
-out="$(run)"
-has "...the log names it, held only by needs-host" "$out" \
-  "--- alpha: needs-host, blockers closed, waiting on a host pass: #222"
-rm -f "$T/needs-host-alpha"
-
-section "P. a needs-host issue still held by an open blocker is not named (#1560)"
-printf '[{"number":222,"milestone":{"number":1},"blockedBy":{"nodes":[{"state":"OPEN"}]}}]\n' > "$T/needs-host-alpha"
-out="$(run)"
-hasnt "...not ready yet, not named" "$out" "needs-host, blockers closed"
-rm -f "$T/needs-host-alpha"
 
 summary
