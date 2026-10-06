@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# run-agent.sh <repo> [max_turns] [issue] -- one unattended pass over a repo's open
-# issues in a container, or over the ONE issue named (#1382: a pass that can be
-# sent, not only left to choose). This is the whole dispatch mechanism: no ROSTER, no
-# pacer, no rotation index, no ledger, no flock, no unix account.
+# run-agent.sh <repo> [max_turns] [issue] [max_attempts] -- one unattended pass
+# over a repo's open issues in a container, or over the ONE issue named (#1382:
+# a pass that can be sent, not only left to choose). This is the whole dispatch
+# mechanism: no ROSTER, no pacer, no rotation index, no flock, no unix account.
+# A forced pass (one with an issue) is the one exception to "no ledger": see
+# the brake at the bottom, which is the only thing that reads one back.
 #
 # THE FLAG THAT MAKES IT UNATTENDED, and it took four runs to find:
 #
@@ -27,10 +29,15 @@
 # stay out of `docker inspect`, `ps` and shell history.
 set -euo pipefail
 
-repo="${1:?usage: run-agent.sh <repo> [max_turns] [issue]}"
+repo="${1:?usage: run-agent.sh <repo> [max_turns] [issue] [max_attempts]}"
 turns="${2:-150}"
 issue="${3:-}"
 case "$issue" in ''|*[!0-9]*) [ -z "$issue" ] || { echo "run-agent.sh: issue must be a number, got '$issue'" >&2; exit 2; } ;; esac
+# N IS THE CALLER'S, NOT A CONSTANT (Zach, 2026-10-01: "those numbers should be
+# variable, set by whatever files the agent pass"). Only meaningful with an
+# issue; a queue-picked pass has no brake to trip.
+max_attempts="${4:-3}"
+case "$max_attempts" in *[!0-9]*|'') echo "run-agent.sh: max_attempts must be a number, got '$max_attempts'" >&2; exit 2 ;; esac
 # SENT, NOT CHOSEN. With an issue number the pass does not read the queue to pick.
 sent=""
 [ -z "$issue" ] || sent="YOUR ISSUE IS #${issue}. It was chosen for you: read it with its comments, skip step 1 below, and do not work any other. If a comment on it names a salvage branch, start from that branch: an earlier pass ran out of turns there."
@@ -264,6 +271,7 @@ else
   branch="$(g branch --show-current)"
   tree=clean; [ -n "$(g status --porcelain)" ] && tree=dirty
   turns_used="$(sed -n 's/^=== result: .*turns=\([0-9]*\).*/\1/p' "$log" | tail -1)"
+  cost_used="$(sed -n 's/^=== result: .*cost=\$\([0-9.]*\).*/\1/p' "$log" | tail -1)"
 
   # THE AUTHOR IS NOT `claude-agent`. The `git config user.name` above sets
   # that as the COMMITTER, while the PR is authored `hf7y` -- the token's
@@ -321,4 +329,55 @@ EOF
   g log --oneline -5
   echo "=== uncommitted ==="
   g status --porcelain | head
+
+  # THE LEDGER, forced passes only: a queue-picked pass has no single issue to
+  # charge a line to. One line per pass, so attempts-without-closing is a line
+  # count, not a derived guess -- and the file is the "informed by data" Zach
+  # asked for, not just this pass's own brake.
+  if [ -n "$issue" ]; then
+    state_dir="${AGENT_STATE:-/srv/agent/state}"
+    mkdir -p "$state_dir"
+    ledger="${state_dir}/forced.log"
+    # STATE ASKED FRESH. The container already exited; this is the harness's
+    # own read of whether the pass actually closed the issue it was sent to,
+    # not an assumption from rc or tree state (a clean exit can still have
+    # left the issue open, and a crash can still have closed it via an
+    # earlier commit's "Closes #").
+    issue_state="$(GH_TOKEN="$(sudo -n cat "$tokfile")" \
+      gh issue view "$issue" --repo "hf7y-estate/${repo}" --json state --jq .state 2>/dev/null)" || issue_state=""
+    case "$issue_state" in
+      CLOSED) outcome=closed ;;
+      OPEN)   outcome=open ;;
+      *)      outcome=unknown ;;
+    esac
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$stamp" "$repo" "$issue" "${turns_used:-0}" "${cost_used:-0}" "$outcome" >> "$ledger"
+    echo "=== forced-pass ledger (${ledger}): $(tail -1 "$ledger") ==="
+
+    if [ "$outcome" = closed ]; then
+      echo "=== issue #${issue} is closed -- brake not evaluated ==="
+    else
+      attempts="$(awk -F'\t' -v r="$repo" -v n="$issue" '$2==r && $3==n' "$ledger" | wc -l)"
+      echo "=== issue #${issue}: ${attempts} forced pass(es) on record, none closed it (brake at ${max_attempts}) ==="
+      if [ "$attempts" -ge "$max_attempts" ]; then
+        has_label="$(GH_TOKEN="$(sudo -n cat "$tokfile")" \
+          gh issue view "$issue" --repo "hf7y-estate/${repo}" --json labels --jq '[.labels[].name=="needs-human"] | any' 2>/dev/null)"
+        if [ "$has_label" = "true" ]; then
+          echo "=== issue #${issue}: already needs-human ==="
+        else
+          GH_TOKEN="$(sudo -n cat "$tokfile")" gh issue edit "$issue" --repo "hf7y-estate/${repo}" --add-label needs-human 2>&1 \
+            && GH_TOKEN="$(sudo -n cat "$tokfile")" gh issue comment "$issue" --repo "hf7y-estate/${repo}" --body "NO-DECISION: ${attempts} forced passes on this issue (brake at ${max_attempts}), none closed it. Labelled \`needs-human\` -- nothing will be forced onto it again until that label is removed.
+
+<!-- DEFERRED -->
+- none
+<!-- /DEFERRED -->
+
+<!-- DELIVERS -->
+- none
+<!-- /DELIVERS -->" 2>&1 \
+            && echo "=== issue #${issue}: needs-human applied after ${attempts} forced passes ===" \
+            || echo "=== issue #${issue}: needs-human label/comment FAILED -- see output above ==="
+        fi
+      fi
+    fi
+  fi
 fi
