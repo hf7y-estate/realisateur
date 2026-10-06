@@ -373,7 +373,14 @@ pr_failing_checks() { # <slug> <head-sha> -> count of failing checks, or BLIND
 discover_prs_mentioned() {
   local transcript="$1"
   [ -n "$transcript" ] && [ -r "$transcript" ] || return 0
-  grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' "$transcript" 2>/dev/null | sort -u
+  # Only what `gh pr create` printed (#1172): a URL a `gh pr list` showed is read, not opened.
+  jq -rs '[.[] | select(.type=="assistant") | (.message.content // [])[] | select(.type=="tool_use")
+            | select((.input.command // "") | test("gh +pr +create")) | .id] as $ids
+          | .[] | select(.toolUseResult != null)
+          | select(any(.message.content | arrays | .[]; .tool_use_id as $i | $ids | index($i)))
+          | (.toolUseResult | if type=="object" then (.stdout // .content // "") else . end | tostring)' \
+     "$transcript" 2>/dev/null |
+    grep -oE 'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+' | sort -u
 }
 
 trees=("$cwd")
