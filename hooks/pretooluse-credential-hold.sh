@@ -63,11 +63,7 @@ if is_credential_read "$cmd"; then
 fi
 
 if [ "$held" -eq 1 ] && is_external_write "$cmd"; then
-  {
-    echo "BLOCKED: a credential just entered this session -- read first, state the plan, then act."
-    echo
-    echo "Re-run after saying what you intend to change and how to undo it."
-  } >&2
+  echo "BLOCKED: a credential just entered this session -- state the plan and how to undo it, then retry." >&2
   exit 2
 fi
 

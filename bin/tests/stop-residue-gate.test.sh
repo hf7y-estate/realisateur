@@ -136,8 +136,8 @@ has "C6 and says so, rather than passing silently" "$OUT" "AUTO-MERGE ARMED"
 # armed and RED, which merges never and which only the agent can fix.
 OUT="$(STUB_FAILING=1 runpr "$G" "$TR")"; RC="$(STUB_FAILING=1 rcof "$G" "$TR")"
 rc  "C5a armed but FAILING blocks -- it will never land" 2 "$RC"
-has "C5b and says arming is not landing"        "$OUT" "armed is not landing"
-has "C5c and counts the failing checks"         "$OUT" "1 required check(s) FAILING"
+has "C5b and says arming won't land it"         "$OUT" "armed won't land"
+has "C5c and counts the failing checks"         "$OUT" "failing checks (1)"
 OUT="$(STUB_FAILING=BLIND runpr "$G" "$TR")"; RC="$(STUB_FAILING=BLIND rcof "$G" "$TR")"
 rc  "C5d checks it cannot read fail OPEN -- a stop guard must not block on BLIND" 0 "$RC"
 has "C5e and says the checks could not be read" "$OUT" "could not be read"
@@ -186,7 +186,7 @@ nb_run() { payload "$G" "$TR" "no-baseline-sid" | STUB_PR="$T/pr-state" CLAUDE_J
 OUT="$(nb_run 2>&1)"
 nb_run >/dev/null 2>&1; NBRC=$?
 rc  "C10 no baseline still blocks on an open PR" 2 "$NBRC"
-has "C11 and admits it cannot tell whose it is" "$OUT" "cannot tell whether you opened it"
+has "C11 and admits it cannot tell whose it is" "$OUT" "ownership unknown"
 
 # What makes blocking safe rather than a wall.
 OUT2="$(printf '{"cwd":"%s","transcript_path":"%s","session_id":"nb2","stop_hook_active":true}' "$G" "$TR" \
@@ -260,8 +260,8 @@ newrepo "$T/f" >/dev/null 2>&1 || mkdir -p "$T/f"
 { user_turn "finish the three items"; asst_turn "Two are done. Say the word and I'll continue, or I'll pick them up on the next pass."; } > "$T/f1.jsonl"
 F1_OUT="$(run "$T/f" "$T/f1.jsonl")"; F1_RC=$?
 rc  "F1 deferring to a later turn -> BLOCKED (2)"        2 "$F1_RC"
-has "F1 names the deferral"                              "$F1_OUT" "puts its own remaining work off"
-has "F1 offers the two ways out"                         "$F1_OUT" "Do it NOW, or give it a URL"
+has "F1 names the deferral"                              "$F1_OUT" "deferred:"
+has "F1 offers the two ways out"                         "$F1_OUT" "do it now or file #N"
 
 # THE ONE THAT MATTERS: the turn DID things. An act elsewhere used to skip the
 # whole check, which is how four deferrals shipped in turns that merged PRs.
@@ -385,7 +385,7 @@ ISSUE_URL="https://github.com/hf7y/realisateur/issues/1141"
   asst_turn "Filed it."; } > "$T/m1.jsonl"
 
 OUT="$(runms "$T/m" "$T/m1.jsonl" "$(printf 'open\t')")"
-has "M1 an open issue this turn filed with no milestone blocks" "$OUT" "OPEN and in no milestone"
+has "M1 an open issue this turn filed with no milestone blocks" "$OUT" "no milestone:"
 rc  "M2 and exits 2" 2 "$(rcms "$T/m" "$T/m1.jsonl" "$(printf 'open\t')")"
 has "M3 and it names the issue, not just the rule" "$OUT" "$ISSUE_URL"
 
