@@ -53,11 +53,7 @@ path="$(sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;q' <<
 [ -n "$path" ] || exit 0
 
 block() { # block <front door message>
-  {
-    echo "BLOCKED: $path has a known front door -- this is not it."
-    echo
-    echo "$1"
-  } >&2
+  echo "BLOCKED: $path has a known front door, not this one -- $1" >&2
   exit 2
 }
 

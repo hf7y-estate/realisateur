@@ -32,12 +32,7 @@ else
 fi
 
 if [ "$new_size" -gt "$BUDGET" ]; then
-  {
-    echo "BLOCKED: this write would leave $path at $new_size bytes, over its $BUDGET-byte load budget."
-    echo
-    echo "Past budget, the tail is silently dropped -- entries never load, not even the guard that would have caught it (#715)."
-    echo "Compress or delete an entry first (fold a superseded rule into the memory that superseded it, or retire one whose work has closed), then retry the write."
-  } >&2
+  echo "BLOCKED: $path at $new_size bytes, over its $BUDGET-byte load budget -- Compress or delete an entry, then retry." >&2
   exit 2
 fi
 
