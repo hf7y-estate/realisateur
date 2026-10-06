@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# merge-carry.sh <repo> -- merge the PRs the PREVIOUS pass over this repo opened,
-# then forget them. Called by run-agent.sh before it dispatches; safe to run by
-# hand, which is how it was first proven.
+# merge-carry.sh <repo>|<owner>/<repo> -- merge the PRs the PREVIOUS pass over
+# this repo opened, then forget them. Called by run-agent.sh before it
+# dispatches; safe to run by hand, which is how it was first proven.
 #
 # Zach, 2026-09-26, choosing between "next night's pass merges", "an interactive
 # agent may merge" and "only you merge":
@@ -20,8 +20,16 @@
 # those.
 set -uo pipefail
 
-repo="${1:?usage: merge-carry.sh <repo>}"
-carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
+target="${1:?usage: merge-carry.sh <repo>|<owner>/<repo>}"
+# A bare name still means hf7y-estate/<name> (#1602); an owner/repo target
+# runs against that owner instead. Keyed on the owner only when it isn't the
+# default, so the state file for a bare name is unchanged.
+case "$target" in
+  */*) owner="${target%%/*}"; repo="${target#*/}" ;;
+  *)   owner="hf7y-estate"; repo="$target" ;;
+esac
+key="$repo"; [ "$owner" = hf7y-estate ] || key="${owner}.${repo}"
+carry="${AGENT_STATE:-/srv/agent/state}/${key}.prs"
 
 tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 
@@ -31,22 +39,22 @@ tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 # now separates a pass's work from a person's, which it could not when the list
 # was introduced. A listing that fails adopts nothing and the list still runs.
 mkdir -p "$(dirname "$carry")"
-adopt="$(GH_TOKEN="$tok" gh pr list --repo "hf7y-estate/${repo}" --state open \
+adopt="$(GH_TOKEN="$tok" gh pr list --repo "${owner}/${repo}" --state open \
   --author "app/${AGENT_APP:-unattended-monkey}" --json number --jq '.[].number' 2>/dev/null)" || adopt=""
 { cat "$carry" 2>/dev/null; printf '%s\n' "$adopt"; } | awk 'NF && !seen[$0]++' > "$carry.new" && mv "$carry.new" "$carry"
 
 [ -s "$carry" ] || exit 0
 
-echo "=== the previous pass's PRs on ${repo} ==="
+echo "=== the previous pass's PRs on ${target} ==="
 keep=""
 while read -r n; do
   [ -n "$n" ] || continue
-  st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "hf7y-estate/${repo}" \
+  st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
     --json state,isDraft,mergeable,statusCheckRollup,createdAt \
     --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
   case "$st" in
     "OPEN false MERGEABLE")
-      if GH_TOKEN="$tok" gh pr merge "$n" --repo "hf7y-estate/${repo}" \
+      if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
            --merge --delete-branch </dev/null >/dev/null 2>&1; then
         echo "  MERGED   #${n}"
       else

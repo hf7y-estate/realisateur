@@ -1,6 +1,10 @@
 # One repo per line, no inline comments -- the PR-listing loop word-splits this
 # file and a trailing comment would become a repo name.
 #
+# A bare name still means hf7y-estate/<name>. A line may instead name its own
+# owner as owner/repo (#1602) -- that repo runs because it was listed here,
+# not because the automatic org listing (hf7y-estate only) discovered it.
+#
 # The nightly runs them in this order, one container at a time, and skips any
 # whose queue is empty. Order is priority: the first ones get the good hours.
 #
