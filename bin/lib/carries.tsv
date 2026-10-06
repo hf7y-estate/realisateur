@@ -1,4 +1,7 @@
-# carries.tsv -- what the `bashified` branch carries, and from where.
+# carries.tsv -- what the `bashified` branch is TOLD to carry, and from
+# where. What it actually carries is a superset: removing a row un-declares
+# a file, it does not un-ship it (#1120). bin/tests/carry-orphans.test.sh
+# checks the gap for commands/; bin/, man/, hooks/ and libexec/ are unaudited.
 #
 # ONE HOME, the bin/lib/labels.tsv shape: read at the point of use, never
 # retyped. This table used to live inside bin/carry-drift.sh as a CARRIES
