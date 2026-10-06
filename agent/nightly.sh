@@ -133,20 +133,43 @@ if [ -n "$only" ]; then night="${NIGHT_PASSES:-$(( ${#repos[@]} * passes ))}"
 else night="${NIGHT_PASSES:-$(grep -cvE '^\s*(#|$)' "$list")}"; fi
 spent=0
 
-# The queue predicate: open issues in an open milestone, minus needs-host and
-# needs-human. The same one the brief hands the agent below, so a repo that
-# gets picked always has something the agent's own read will find too (#1383
-# -- Zach: "Nightly should read milestones. That's the failure."). `ERR`, not
-# a guess, when either call fails -- an unreadable queue is not an empty one.
+# The queue predicate: open issues in an open milestone, minus needs-host,
+# needs-human, and any issue with an open native blocker. The same one the
+# brief hands the agent below, so a repo that gets picked always has
+# something the agent's own read will find too (#1383 -- Zach: "Nightly
+# should read milestones. That's the failure."). `ERR`, not a guess, when
+# either call fails -- an unreadable queue is not an empty one.
+#
+# THE EDGE IS READ FROM `blockedBy`, NOT FROM A SUMMARY COUNT (#1560). The
+# REST `issue_dependencies_summary.blocked_by` field looked like the same
+# number, but its accounting of closed blockers was never checked and
+# `gh issue list --json blockedBy` gives the actual blocking issues with
+# their own `state`, so OPEN is read off each one directly instead of
+# trusted from a count.
 queue_count() {
   local repo="$1" ms n
   ms="$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]' 2>/dev/null)" \
     || { echo ERR; return; }
   n="$(gh issue list --repo "hf7y-estate/${repo}" --state open --limit 200 \
-        --search '-label:needs-host -label:needs-human' --json milestone 2>/dev/null \
-      | jq --argjson ms "$ms" '[.[] | select(.milestone and (.milestone.number as $m | $ms|index($m)))] | length')" \
+        --search '-label:needs-host -label:needs-human' --json milestone,blockedBy 2>/dev/null \
+      | jq --argjson ms "$ms" '[.[] | select(.milestone and (.milestone.number as $m | $ms|index($m)))
+          | select((.blockedBy.nodes // []) | map(select(.state == "OPEN")) | length == 0)] | length')" \
     || { echo ERR; return; }
   echo "$n"
+}
+
+# A `needs-host` LINK IS NOT SILENT (#1560 piece 3). It never reaches the
+# predicate above -- the search excludes the label before blockers are even
+# read -- so a chain held only by a needs-host issue whose own blockers are
+# all closed sat invisible in every night's log. Checked and named here,
+# every night, whether or not this repo dispatches.
+needs_host_ready() {
+  local repo="$1" ms
+  ms="$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]' 2>/dev/null)" || return 0
+  gh issue list --repo "hf7y-estate/${repo}" --state open --limit 200 \
+      --label needs-host --json number,milestone,blockedBy 2>/dev/null \
+    | jq -r --argjson ms "$ms" '.[] | select(.milestone and (.milestone.number as $m | $ms|index($m)))
+        | select((.blockedBy.nodes // []) | map(select(.state == "OPEN")) | length == 0) | "#\(.number)"'
 }
 
 for target in "${repos[@]}"; do
@@ -160,6 +183,9 @@ for target in "${repos[@]}"; do
   # merged. Called here as well as in run-agent.sh because that one never runs
   # for a skipped repo; both calls are idempotent and the second prints nothing.
   "$here/merge-carry.sh" "$repo" || echo "--- $repo: merge-carry.sh exited $?"
+
+  ready_hosted="$(needs_host_ready "$repo")"
+  [ -z "$ready_hosted" ] || echo "--- $repo: needs-host, blockers closed, waiting on a host pass: $(tr '\n' ' ' <<<"$ready_hosted")"
 
   # Do not spend a container on an empty queue. A named issue was sent, not
   # chosen, so the queue is not asked about it.
