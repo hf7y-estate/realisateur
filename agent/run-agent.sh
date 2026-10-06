@@ -38,7 +38,11 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 # The same instant as an ISO-8601 Z string, because the PR list below is
 # partitioned on it and `gh --jq` compares createdAt as text.
 started_iso="${stamp:0:4}-${stamp:4:2}-${stamp:6:2}T${stamp:9:2}:${stamp:11:2}:${stamp:13:2}Z"
-log="/srv/agent/${repo}.${stamp}.log"
+# AGENT_DIR matches nightly.sh's own override (agent/nightly.sh:38) -- the
+# same knob, so a test of either script can point both at one scratch dir
+# instead of the real host paths under /srv/agent.
+dir="${AGENT_DIR:-/srv/agent}"
+log="${dir}/${repo}.${stamp}.log"
 
 # WHAT THE PREVIOUS PASS OPENED, and nothing else. Zach, 2026-09-26, asked which
 # of three options merges the container's PRs: "Next night's pass merges".
@@ -50,7 +54,7 @@ log="/srv/agent/${repo}.${stamp}.log"
 # accident. What IS reliable is that this harness already knows which PRs it
 # opened: it prints them below, partitioned on this pass's own start time. So it
 # writes those numbers down and the next pass merges exactly them.
-carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
+carry="${AGENT_STATE:-${dir}/state}/${repo}.prs"
 mkdir -p "$(dirname "$carry")"
 
 # ONE level, not two. The previous version mounted /srv/agent/work/<repo> at
@@ -64,7 +68,7 @@ mkdir -p "$(dirname "$carry")"
 # (#1341). A standalone run of this script takes whatever docker already has.
 image="${AGENT_IMAGE:-ghcr.io/hf7y-estate/agent:latest}"
 
-root="/srv/agent/work"
+root="${dir}/work"
 checkout="${root}/${repo}"
 mkdir -p "$root"
 
@@ -164,32 +168,60 @@ minter() {
   return 1
 }
 
-tokfile=""
-minted=""
 # MINTED FRESH, NOT READ FROM THE MINTER'S CACHE (#1417). `--token` returns the
 # cached token until shortly before it expires, so a pass could start on a
 # credential that dies before its push. An empty cache directory makes the
 # minter mint, and a pass gets the token's whole life. The cache stays what it
 # was built for, git's credential helper.
-nocache="$(mktemp -d)"
-if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
+#
+# mint_fresh is called again for every refresh below, and each call gets ITS
+# OWN empty cache dir -- reusing one would make the second call see the first
+# call's own cache entry and hand back the same token un-refreshed.
+mint_fresh() {
+  local m="$1" d t
+  d="$(mktemp -d)" || return 1
+  t="$(sudo -n env XDG_CACHE_HOME="$d" "$m" --token 2>/dev/null)"
+  sudo -n rm -rf "$d"
+  [ -n "$t" ] || return 1
+  printf '%s' "$t"
+}
+
+tokfile=""
+minted=""
+refresh_pid=""
+if m="$(minter)" && tok="$(mint_fresh "$m")"; then
   # Outside /srv/agent/work on purpose: that directory IS the container's mount,
   # so a token written there would be readable by the agent as a plain file
   # instead of only at /run/gh-token.
-  mkdir -p /srv/agent/state
-  minted="$(mktemp /srv/agent/state/.gh-token.XXXXXX)"
+  mkdir -p "${dir}/state"
+  minted="$(mktemp "${dir}/state/.gh-token.XXXXXX")"
   chmod 600 "$minted"
   printf '%s\n' "$tok" > "$minted"
   tok=""
   tokfile="$minted"
-  trap 'rm -f "$minted"' EXIT
-  echo "=== credential: App installation token, minted for this pass ==="
+  # `|| true` on the kill, not just a redirect: `set -e` is still live inside an
+  # EXIT trap, so a plain `kill ""` once refresh_pid is already cleared (below)
+  # would fail the trap's first command and hand the WHOLE PASS that exit
+  # status -- turning a clean rc=0 run into a reported failure for a reason
+  # that has nothing to do with the pass. Caught by this fix's own test.
+  trap 'kill "$refresh_pid" 2>/dev/null || true; rm -f "$minted"' EXIT
+
+  # REFRESHED FOR THE LIFE OF THE CONTAINER, NOT MINTED ONCE (#1504). An App
+  # installation token lives one hour; `BASH_MAX_TIMEOUT_MS` below lets a
+  # single command run that long, so a pass past 60 minutes used to push on a
+  # token already dead. This loop keeps overwriting the SAME file -- same
+  # inode, so the bind mount at /run/gh-token sees every update -- and
+  # in-container.sh now reads that file at call time instead of once.
+  refresh_secs="${AGENT_TOKEN_REFRESH_SECONDS:-2700}"
+  ( while sleep "$refresh_secs"; do
+      newtok="$(mint_fresh "$m")" && [ -n "$newtok" ] && printf '%s\n' "$newtok" > "$minted"
+    done ) &
+  refresh_pid=$!
+  echo "=== credential: App installation token, minted for this pass and refreshed every $((refresh_secs / 60))m while it runs ==="
 else
-  sudo -n rm -rf "$nocache"
   echo "=== REFUSED: the App mint was unavailable, and this pass will not run as hf7y ===" >&2
   exit 3
 fi
-sudo -n rm -rf "$nocache"
 
 rc=0
 sudo -n docker run --rm \
@@ -203,40 +235,10 @@ sudo -n docker run --rm \
   -e STAMP="$stamp" \
   -e ISSUE="$issue" \
   -e SALVAGE="$(cat "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/salvage.sh")" \
+  -e INCONTAINER="$(cat "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/in-container.sh")" \
   -e BASH_DEFAULT_TIMEOUT_MS=900000 \
   -e BASH_MAX_TIMEOUT_MS=3600000 \
-  "$image" bash -lc '
-    set -euo pipefail
-    export CLAUDE_CODE_OAUTH_TOKEN="$(cat /run/claude-token)"
-    export GH_TOKEN="$(cat /run/gh-token)"
-    git config --global user.name  "claude-agent"
-    git config --global user.email "noreply@anthropic.com"
-    git config --global credential.helper "!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f"
-
-    # --depth 1, NOT 50: a depth-50 pack of hf7y/crt reset mid-transfer
-    # ("curl 56 Recv failure") while depth 1 went 3/3 on the same bridge
-    # network, so the network is fine and the packfile size was the problem.
-    rm -rf "/work/$REPO"
-    for a in 1 2 3; do
-      git clone --quiet --depth 1 "https://github.com/hf7y-estate/$REPO" "/work/$REPO" && break
-      echo "clone attempt $a failed" >&2; rm -rf "/work/$REPO"; sleep 5
-    done
-    [ -d "/work/$REPO/.git" ] || { echo "CLONE FAILED after 3 attempts" >&2; exit 1; }
-
-    cd "/work/$REPO"
-    # THE BASH_*_TIMEOUT_MS PAIR IS WHY A LONG TEST RUN STAYS IN THE FOREGROUND.
-    # At the CLI default it moves the command to the background, the agent
-    # ends its turn to wait, and `claude -p` ends the pass with it (#1423).
-    #
-    # AND WHATEVER IS LEFT IS PUSHED, whatever the exit: turn cap, stall, crash.
-    rc=0
-    claude -p "$BRIEF" \
-      --max-turns "$TURNS" \
-      --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
-      --output-format stream-json --verbose || rc=$?
-    bash -c "$SALVAGE" salvage "$STAMP" "$ISSUE" || true
-    exit "$rc"
-  ' | while IFS= read -r line; do
+  "$image" bash -lc 'eval "$INCONTAINER"' | while IFS= read -r line; do
         # One readable line per event. Raw stream-json is unreadable at volume
         # and the interesting parts are the tool calls and the text.
         printf '%s\n' "$line" | jq -r '
@@ -249,6 +251,12 @@ sudo -n docker run --rm \
             "=== result: " + (.subtype//"?") + "  turns=" + ((.num_turns//0)|tostring) + "  cost=$" + ((.total_cost_usd//0)|tostring)
           else empty end' 2>/dev/null || printf '%s\n' "${line:0:200}"
       done || rc=$?
+
+# Stop minting the moment the container that needed it is gone; the EXIT
+# trap would catch it too, but not before the reporting below runs a few more
+# minutes with a refresher that has nothing left to feed.
+kill "$refresh_pid" 2>/dev/null || true
+refresh_pid=""
 
 echo
 echo "=== $(date -u +%FT%TZ) container exited (rc=${rc}) ==="
