@@ -331,6 +331,53 @@ except Exception: print(0)' 2>/dev/null || echo 0)"
   fi
 fi
 
+# `gh issue view` / `gh pr view` is how an agent USUALLY reads one (#1372) --
+# the api-path note above never fires for it, so an answer sitting in a
+# comment goes unseen and the same question reaches Zach again. Fires
+# whether or not comments were asked for (`--json comments` included): asking
+# is not the same as reading, and a later `| head` can still drop them with
+# no trace. Fails open -- a selector this cannot resolve (a URL, `--web`,
+# no selector at all) just passes through unnoted, not refused.
+_rv_kind="${1:-} ${2:-}"
+case "$_rv_kind" in
+  'issue view'|'pr view')
+    if ! human_at_keyboard; then
+      _rv_args=("$@")
+      _rv_sel='' _rv_repo='' _rv_web=0
+      for ((_rv_i = 2; _rv_i < ${#_rv_args[@]}; _rv_i++)); do
+        case "${_rv_args[_rv_i]}" in
+          -R|--repo) _rv_i=$((_rv_i + 1)); _rv_repo="${_rv_args[_rv_i]:-}" ;;
+          --repo=*)  _rv_repo="${_rv_args[_rv_i]#--repo=}" ;;
+          -w|--web)  _rv_web=1 ;;
+          -*)        ;;
+          *)         [ -n "$_rv_sel" ] || _rv_sel="${_rv_args[_rv_i]}" ;;
+        esac
+      done
+      case "$_rv_sel" in ''|*[!0-9]*) _rv_sel='' ;; esac
+      if [ "$_rv_web" -eq 0 ] && [ -n "$_rv_sel" ]; then
+        [ -n "$_rv_repo" ] || _rv_repo="$("$GH" repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
+        _rv_out="$("$GH" "$@")"; _rv_rc=$?
+        printf '%s' "$_rv_out"
+        [ -n "$_rv_out" ] && printf '\n'
+        if [ "$_rv_rc" -eq 0 ] && [ -n "$_rv_repo" ]; then
+          _rv_json="$("$GH" api "repos/$_rv_repo/issues/$_rv_sel" 2>/dev/null)"
+          if [ -n "$_rv_json" ]; then
+            _rv_n="$(printf '%s' "$_rv_json" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin); print(d.get("comments") or 0)
+except Exception: print(0)' 2>/dev/null || echo 0)"
+            if [ "${_rv_n:-0}" -gt 0 ] 2>/dev/null; then
+              printf 'gh-sign: %s#%s has %s comment(s). A body is a claim about the past; the answer is usually in the comments, shown or not:\n  gh api repos/%s/issues/%s/comments --jq %s\n' \
+                "$_rv_repo" "$_rv_sel" "$_rv_n" "$_rv_repo" "$_rv_sel" \
+                "'.[]|\"[\\(.created_at[:16])] \\(.user.login): \\(.body)\"'" >&2
+            fi
+          fi
+        fi
+        exit "$_rv_rc"
+      fi
+    fi
+    ;;
+esac
+
 # A human's write passes through whole, unsigned AND ungraded: the grammar is
 # a contract between agents, not a rule about how its author may talk.
 if [ "$signable" -ne 1 ] || human_at_keyboard; then exec "$GH" "$@"; fi
