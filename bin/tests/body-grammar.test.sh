@@ -301,6 +301,18 @@ out="$(grammar_check "$(_da 'DEFAULT-AFTER 14d:')" 2>&1)"
 case "$out" in *BAD-DEFAULT*) ok "a window with no action is BAD-DEFAULT -- a timer to nowhere" ;;
   *) bad "no action is BAD-DEFAULT" "got: $out" ;; esac
 
+out="$(grammar_check "$(_da 'DEFAULT-AFTER 14d: none -- the gap is structural')" 2>&1)"
+case "$out" in *BAD-DEFAULT*) ok "a window whose action is none is BAD-DEFAULT -- senechal#941 waited 18 days on one" ;;
+  *) bad "action none is BAD-DEFAULT" "got: $out" ;; esac
+
+grammar_check "$(_da 'DEFAULT-AFTER 14d: nonexistent rows are dropped')" >/dev/null 2>&1 \
+  && ok "an action that merely starts with the letters none is accepted" \
+  || bad "an action starting with the letters none is accepted" "it was refused"
+
+grammar_check "$(_da 'DEFAULT-AFTER 0d: block -- irreversible, no default')" >/dev/null 2>&1 \
+  && ok "the declared forever-block is still accepted" \
+  || bad "the declared forever-block is still accepted" "it was refused"
+
 # --- A QUOTED DECLARATION IS TEXT (hf7y/wtul#346, again on #356) -------------
 # Demoting an answered DECISION to NO-DECISION while keeping the original wording
 # quoted beside it was refused: the `DEFAULT-AFTER 14d:` inside the blockquote
