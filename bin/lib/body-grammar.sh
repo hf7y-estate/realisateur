@@ -18,6 +18,8 @@
 #   BAD-DEFAULT         a DEFAULT-AFTER line that is not `<n>d: <action>`
 #   BAD-ANSWERED-BY     an ANSWERED-BY line that is not `<owner>/<repo>#<n>`
 #   NO-DEFAULT          a DECISION: body carrying no DEFAULT-AFTER at all
+#   BAD-POLICY          a POLICY: line that names no class and no "none yet"
+#   NO-POLICY           a DECISION: body carrying no POLICY: line at all
 #   NEGATED-CLOSE       a closing keyword + reference in a sentence DENYING it
 #   PARTIAL-CLOSE       a closing keyword whose reference a qualifier SCOPES
 #
@@ -26,6 +28,16 @@
 # owning account applies it, says so, and leaves the issue open to be
 # reversed; `0d: block` keeps blocking forever legal once DECLARED. Only
 # gh-sign's SIGNING path reaches this, so it binds agents, not Zach.
+#
+# POLICY: -- MANDATORY ON A DECISION SINCE #1621 (realisateur#1573, split from
+# it). Zach, 2026-10-06: "the ruling is there should not be repo-specific
+# requests being routed to me... this only surfaces to me if a policy doesn't
+# yet exist for the general class. I can't touch each repo like this." A
+# `DECISION:` line asks a repo-specific question; `POLICY:` names the general
+# class it stands in for, so a reader (or a future check) can tell a genuinely
+# new policy gap from the same class asked again. `POLICY: none yet` is the
+# honest spelling when no such policy exists -- the same shape as
+# `DEFAULT-AFTER 0d: block` declaring a forever-block instead of omitting it.
 #
 # NO-OWNER: is not a destination -- #327 lost two that way. `defere` files one.
 #
@@ -238,6 +250,23 @@ grammar_default_after() {
   return 1
 }
 
+grammar_policy() {  # <body> -- print the general policy class (#1621), 1 if none; shape of grammar_default_after
+  local line stripped rest class
+  while IFS= read -r line; do
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    case "$stripped" in
+      [Pp][Oo][Ll][Ii][Cc][Yy]:*) ;;
+      *) continue ;;
+    esac
+    rest="${stripped#*:}"
+    class="${rest#"${rest%%[![:space:]]*}"}"
+    [ -n "$class" ] || continue
+    printf '%s\n' "$class"
+    return 0
+  done <<<"$(grammar_header "$1")"
+  return 1
+}
+
 grammar_answered_by() {  # <body> -- print the ref (#568), 1 if none; shape of grammar_default_after
   local line stripped rest ref
   while IFS= read -r line; do
@@ -265,7 +294,14 @@ grammar_template() {
 DECISION: @hf7y -- may a verb build claim /usr/local/bin/gh on monkey?
 NO-DECISION: @hf7y asked for this exact change; tests green, nothing to weigh
 
-...and on a DECISION, say what happens if nobody answers. REQUIRED, because an
+...and on a DECISION, say what general policy class this repo-specific
+question stands in for -- REQUIRED, so an unanswered policy gap surfaces
+once, not as a fresh repo-specific ask each time it recurs. If none exists
+yet, say so: `POLICY: none yet`.
+
+POLICY: which verb builds may claim a host-wide binary path
+
+...and say what happens if nobody answers. REQUIRED, because an
 unanswered question brakes the repo that asked. To block forever, declare it:
 `DEFAULT-AFTER 0d: block -- irreversible, no default`.
 
@@ -308,7 +344,7 @@ grammar_check() {
   local body="$1" line stripped n=0 lineno=0 first_seen=0
   local open=0 in_block=0 entries=0 entry='' fenced=0 details=0
   local sopen=0 in_ship=0 ships=0 ship='' indent=''
-  local has_default=0 head_neg=0 nc=''
+  local has_default=0 has_policy=0 head_neg=0 nc=''
 
   _find() { printf '%s  %s\n' "$1" "$2"; n=$((n + 1)); }
 
@@ -461,6 +497,18 @@ grammar_check() {
         esac
         [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
           'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
+      [Pp][Oo][Ll][Ii][Cc][Yy]:*)
+        # A malformed POLICY is worse than none: it reads as named to a human
+        # and is invisible to grammar_policy, so a repo-specific question
+        # looks like it named its general class when it did not.
+        _po_class="${decl#*:}"
+        _po_class="${_po_class#"${_po_class%%[![:space:]]*}"}"
+        if [ -n "$_po_class" ]; then has_policy=1
+        else _find BAD-POLICY \
+          "line $lineno: POLICY: names no class -- say what general policy this asks about, or \`POLICY: none yet\` if none exists."
+        fi
+        [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
+          'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
       *) [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
            'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
     esac
@@ -472,6 +520,9 @@ grammar_check() {
 
   [ "$has_default" -eq 0 ] && [ "$(grammar_declaration "$body")" = decision ] && _find NO-DEFAULT \
     'a DECISION needs `DEFAULT-AFTER <n>d: <action>`. To block forever, declare it: `DEFAULT-AFTER 0d: block -- irreversible, no default`.'
+
+  [ "$has_policy" -eq 0 ] && [ "$(grammar_declaration "$body")" = decision ] && _find NO-POLICY \
+    'a DECISION needs `POLICY: <the general class this asks about>`. If none exists yet, say so: `POLICY: none yet`.'
 
   [ "$in_block" -eq 1 ] && { _judge_entry; _find UNCLOSED 'the DEFERRED block is never closed.'; }
   [ "$open" -eq 0 ] && _find UNLEDGERED 'no <!-- DEFERRED --> block. Say what was left behind, or "- none".'
