@@ -76,7 +76,17 @@ else
   note=""
 fi
 keep=""
-while read -r n; do
+# A repo's carry file is a stacked chain, oldest first (#1593): a later PR
+# can target an earlier one's branch, so merging #3 while #2 is still HELD
+# can read MERGEABLE and land, but only onto a branch #1's merge is about to
+# delete -- a later line succeeding while an earlier one holds is not "earlier
+# links land" in any order a reader can trust. Stop at the first entry that
+# does not reach MERGED or DONE this run; every line after it, untried, stays
+# on the list for the next pass. Lines already merged earlier in this same
+# run are not undone by a later line holding.
+mapfile -t entries < "$carry"
+for idx in "${!entries[@]}"; do
+  n="${entries[$idx]}"
   [ -n "$n" ] || continue
   out="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
     --json state,isDraft,mergeable,statusCheckRollup,createdAt,files \
@@ -89,7 +99,7 @@ while read -r n; do
   if [ -n "$guarded" ]; then
     echo "  HELD     #${n} -- GUARDED path:${guarded}"
     keep="${keep}${n}"$'\n'
-    continue
+    break
   fi
   case "$st" in
     "OPEN false MERGEABLE")
@@ -98,9 +108,11 @@ while read -r n; do
         echo "  MERGED   #${n}${note}"
       else
         # A merge that fails is not a merge that was not wanted, so it stays on
-        # the list rather than being dropped silently.
+        # the list rather than being dropped silently -- and nothing stacked
+        # on it is attempted this run either.
         echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
         keep="${keep}${n}"$'\n'
+        break
       fi ;;
     # RED is a failed check. MERGEABLE only ever meant "no conflict", and
     # realisateur#1440 landed on a failed suite and turned main red.
@@ -122,14 +134,23 @@ while read -r n; do
           fi ;;
       esac
       echo "  HELD     #${n} -- ${st}${note}"
-      keep="${keep}${n}"$'\n' ;;
+      keep="${keep}${n}"$'\n'
+      break ;;
     "")
       echo "  UNREADABLE #${n} -- could not be read, kept and left alone${note}"
-      keep="${keep}${n}"$'\n' ;;
+      keep="${keep}${n}"$'\n'
+      break ;;
     *)
       echo "  DONE     #${n} -- ${st}${note}" ;;
   esac
-done < "$carry"
+done
+# Everything after the line that stopped the loop was never queried -- not
+# MERGED, not DONE, not even looked at -- so it is kept exactly as recorded.
+if [ -n "${idx:-}" ]; then
+  for ((j = idx + 1; j < ${#entries[@]}; j++)); do
+    [ -n "${entries[$j]}" ] && keep="${keep}${entries[$j]}"$'\n'
+  done
+fi
 printf '%s' "$keep" > "$carry"
 if [ -s "$updated" ]; then
   grep -xFf <(printf '%s' "$keep") "$updated" > "$updated.new" 2>/dev/null
