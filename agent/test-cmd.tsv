@@ -1,0 +1,24 @@
+# One line per repo: <key><TAB><command>. <key> matches merge-carry.sh's
+# own $key -- the bare repo name, or <owner>.<repo> when the owner isn't
+# hf7y-estate (#1602). <command> runs via `bash -c "<command>"` from the
+# repo root, inside the agent image, against the PR's merge result.
+#
+# Read only when a PR has no usable check record (Actions disabled on that
+# repo, #1612). Where a check record exists and is current, this file is
+# never consulted. A repo with no line here is not merged blind: its pull
+# requests are HELD until a line is added, and merge-carry.sh says why.
+#
+# Verified by reading the command itself, not by running it here -- this
+# container cannot clone and execute another repo's suite. Confirm a line
+# actually passes before leaning on it to gate a merge.
+#
+# crt: tests/run_tests.sh is its own "whole offline test suite" entrypoint
+# (its header comment, and agent/repos' own "PROVEN ... tests/" note).
+# `gh api repos/hf7y-estate/crt/contents/tests/run_tests.sh`, 2026-10-07.
+crt	bash tests/run_tests.sh
+
+# senechal has no single whole-repo runner -- CONTRACT.md documents each
+# verb's checks separately (e.g. `./test/contract-test.sh bin/installe`,
+# `./test/installe-test.sh`), not a command that covers test/ and
+# test_senechal.py together. Left undeclared rather than guessed; its PRs
+# are HELD until someone names the real command.
