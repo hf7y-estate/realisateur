@@ -33,6 +33,15 @@ carry="${AGENT_STATE:-/srv/agent/state}/${key}.prs"
 
 tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 
+# A repo with Actions disabled can never clear a FAILURE or a pending check --
+# crt measured 2026-10-06 holding 12 PRs forever on `gitleaks`, which cannot
+# re-run once Actions is off there (#1587, #1583). Read this once per repo,
+# before any PR's statusCheckRollup is trusted, and default to trusting it
+# (as before) when the read fails -- an unreadable permission is not a
+# license to skip checks.
+actions_enabled="$(GH_TOKEN="$tok" gh api "repos/${owner}/${repo}/actions/permissions" \
+  --jq .enabled </dev/null 2>/dev/null)" || actions_enabled=""
+
 # ADOPT WHAT THE APP OPENED. The list alone orphans a PR whose pass died before
 # writing it down: senechal#1094 sat open with nobody to merge it (a 75-minute
 # pass, #1504). Since #1460 every pass's PR is authored by the App, so author
@@ -46,21 +55,31 @@ adopt="$(GH_TOKEN="$tok" gh pr list --repo "${owner}/${repo}" --state open \
 [ -s "$carry" ] || exit 0
 
 echo "=== the previous pass's PRs on ${target} ==="
+# Actions disabled means statusCheckRollup can never change, so it is dropped
+# from the query entirely rather than trusted for RED/PENDING; YOUNG still
+# applies since it is about the PR's age, not its checks.
+if [ "$actions_enabled" = "false" ]; then
+  jqf='[.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  note=" -- Actions disabled on ${owner}/${repo}, check records ignored"
+else
+  jqf='[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  note=""
+fi
 keep=""
 while read -r n; do
   [ -n "$n" ] || continue
   st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
     --json state,isDraft,mergeable,statusCheckRollup,createdAt \
-    --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
+    --jq "$jqf" </dev/null 2>/dev/null)" || st=""
   case "$st" in
     "OPEN false MERGEABLE")
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
            --merge --delete-branch </dev/null >/dev/null 2>&1; then
-        echo "  MERGED   #${n}"
+        echo "  MERGED   #${n}${note}"
       else
         # A merge that fails is not a merge that was not wanted, so it stays on
         # the list rather than being dropped silently.
-        echo "  FAILED   #${n} -- merge refused, kept for the next pass"
+        echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
         keep="${keep}${n}"$'\n'
       fi ;;
     # RED is a failed check. MERGEABLE only ever meant "no conflict", and
@@ -71,13 +90,13 @@ while read -r n; do
     OPEN*)
       # Draft, CONFLICTING, or mergeability not computed yet: all states that can
       # change on their own, so none is a reason to forget the PR.
-      echo "  HELD     #${n} -- ${st}"
+      echo "  HELD     #${n} -- ${st}${note}"
       keep="${keep}${n}"$'\n' ;;
     "")
-      echo "  UNREADABLE #${n} -- could not be read, kept and left alone"
+      echo "  UNREADABLE #${n} -- could not be read, kept and left alone${note}"
       keep="${keep}${n}"$'\n' ;;
     *)
-      echo "  DONE     #${n} -- ${st}" ;;
+      echo "  DONE     #${n} -- ${st}${note}" ;;
   esac
 done < "$carry"
 printf '%s' "$keep" > "$carry"
