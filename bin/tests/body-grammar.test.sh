@@ -31,6 +31,7 @@ findings() { local o; o="$(grammar_check "$1")"; printf '%s' "$?"; : "$o"; }
 codes()    { grammar_check "$1" | while read -r c _; do printf '%s ' "$c"; done; }
 
 GOOD='DECISION: @zach -- link the shim host-wide?
+POLICY: which verb builds may claim a host-wide binary path
 DEFAULT-AFTER 14d: link it and say so; unlinking is one command
 
 Prose about the change.
@@ -287,7 +288,7 @@ hasnt 'I5 the deleted script is really gone' "$(ls "$ROOT")" 'deferral-ledger.sh
 # unanswered question also braked the repo that asked it (#262).
 section "DEFAULT-AFTER"
 
-_da() { printf 'DECISION: @zach -- q\n%s\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n' "$1"; }
+_da() { printf 'DECISION: @zach -- q\nPOLICY: none yet\n%s\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n' "$1"; }
 
 grammar_check "$(_da 'DEFAULT-AFTER 14d: close it as declined')" >/dev/null 2>&1 \
   && ok "a well-formed default is accepted" \
@@ -378,6 +379,49 @@ eq "the reader returns days and action, tab-separated" "$got" "$(printf '14\tclo
 grammar_default_after "$(_da 'nothing here')" >/dev/null 2>&1 \
   && bad "absent default returns 1" "it returned 0" \
   || ok "an absent default returns 1, so the actuator can tell 'blocks forever' from 'not read'"
+
+# --- POLICY: a DECISION names the general class it stands in for (#1621) ---
+# realisateur#1573, Zach 2026-10-06: a repo-specific question should surface
+# to him only once a general class exists with no policy yet -- which needs a
+# way to tell "this is a new class" from "this repo-specific case again".
+section "POLICY"
+
+_po() { printf 'DECISION: @zach -- q\n%s\nDEFAULT-AFTER 14d: block\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n' "$1"; }
+
+_po_class="$(_po 'POLICY: which verb builds may claim a host-wide path')"
+grammar_check "$_po_class" >/dev/null 2>&1 \
+  && ok "a POLICY naming a class is accepted" \
+  || bad "a POLICY naming a class is accepted" "it was refused: $(grammar_check "$_po_class" 2>&1)"
+
+grammar_check "$(_po 'POLICY: none yet')" >/dev/null 2>&1 \
+  && ok "POLICY: none yet is the honest spelling of a genuine gap" \
+  || bad "POLICY: none yet is accepted" "it was refused"
+
+out="$(grammar_check "$(_po 'POLICY:')" 2>&1)"
+case "$out" in *BAD-POLICY*) ok "a POLICY line naming no class is BAD-POLICY" ;;
+  *) bad "an empty POLICY is BAD-POLICY" "got: $out" ;; esac
+
+_nopolicy="$(printf 'DECISION: @zach -- q\nDEFAULT-AFTER 14d: block\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+out="$(grammar_check "$_nopolicy" 2>&1)"
+case "$out" in *NO-POLICY*) ok "#1621: a DECISION with no POLICY: at all is NO-POLICY" ;;
+  *) bad "no POLICY is NO-POLICY" "got: $out" ;; esac
+
+grammar_check "$(printf 'NO-DECISION: agent work\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')" >/dev/null 2>&1 \
+  && ok "#1621: NO-DECISION needs no POLICY -- the rule binds the bodies that ask, not the ones that report" \
+  || bad "NO-DECISION needs no POLICY" "it was refused"
+
+# A quoted POLICY (superseded, demoted to NO-DECISION) does not satisfy a
+# still-live DECISION -- same shape as the DEFAULT-AFTER quoting guard above.
+_po_quoted_only="$(printf 'DECISION: @zach -- q\n\n> POLICY: what the last round said\nDEFAULT-AFTER 14d: block\n<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n<!-- DELIVERS -->\n- none\n<!-- /DELIVERS -->\n')"
+case "$(grammar_check "$_po_quoted_only" 2>&1)" in *NO-POLICY*) ok "a DECISION whose only POLICY is quoted is still NO-POLICY" ;;
+  *) bad "quoted policy does not satisfy #1621" "got: $(grammar_check "$_po_quoted_only" 2>&1)" ;; esac
+
+# The reader the actuator consumes.
+got="$(grammar_policy "$(_po 'POLICY: which verb builds may claim a host-wide path')")"
+eq "the reader returns the class" "$got" "which verb builds may claim a host-wide path"
+grammar_policy "$_nopolicy" >/dev/null 2>&1 \
+  && bad "absent policy returns 1" "it returned 0" \
+  || ok "an absent POLICY returns 1, so the actuator can tell 'none' from 'not read'"
 
 section "ANSWERED-BY"
 

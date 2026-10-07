@@ -21,8 +21,10 @@ CLI_USAGE="  defere.sh '<one line>' --project <name>       file on hf7y/<name>
                                                 tree that does not exist
   options: --body <text> --from <project> --repo owner/name --decider @who --dry-run
            --milestone '<title>'              default: the repo's first open one
-           --default-after '<n>d: <action>'   required by --human/--unroutable"
-CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --milestone --default-after --dry-run --ledger --forget --scan --all'
+           --default-after '<n>d: <action>'   required by --human/--unroutable
+           --policy '<general class>'         required by --human/--unroutable (#1621);
+                                               'none yet' if no such policy exists"
+CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --milestone --default-after --policy --dry-run --ledger --forget --scan --all'
 CLI_POSITIONAL=any
 CLI_EXITS='  0  filed, or printed under --dry-run / --ledger
   1  could not file -- destination did not resolve, or gh refused
@@ -37,7 +39,7 @@ OWNER="${DEFERE_OWNER:-$GH_ESTATE_OWNER}"
 # account: an agent account filing under its own name would be addressing the
 # decision to itself, which is the ownerless case with a handle stuck on it.
 DECIDER="${DEFERE_DECIDER:-hf7y}"
-WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''; MILESTONE=''
+WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''; POLICY=''; MILESTONE=''
 ALL=0
 DRY=0; MODE='file'   # quoted: `file` is a mode name, not file(1) -- SC2209
 
@@ -51,6 +53,7 @@ while [ $# -gt 0 ]; do
     --repo)       REPO="${2:-}"; [ -n "$REPO" ] || cli_die '--repo needs owner/name'; shift 2 ;;
     --decider)    DECIDER="${2:-}"; [ -n "$DECIDER" ] || cli_die '--decider needs a handle'; DECIDER="${DECIDER#@}"; shift 2 ;;
     --default-after) DEFAULT_AFTER="${2:-}"; [ -n "$DEFAULT_AFTER" ] || cli_die "--default-after needs '<n>d: <action>'"; shift 2 ;;
+    --policy)     POLICY="${2:-}"; [ -n "$POLICY" ] || cli_die "--policy needs the general class this asks about, or 'none yet'"; shift 2 ;;
     --milestone)  MILESTONE="${2:-}"; [ -n "$MILESTONE" ] || cli_die '--milestone needs a title'; shift 2 ;;
     --dry-run)    DRY=1; shift ;;
     --ledger)     MODE=ledger; shift ;;
@@ -361,7 +364,10 @@ fi
 #   --project      routed and owned; nothing to weigh -> NO-DECISION
 #   --human/--unroutable  asks a person -> DECISION, so #680 requires a
 #     DEFAULT-AFTER. Not invented here: a fabricated default is the same block
-#     by omission, wearing a timer.
+#     by omission, wearing a timer. #1621 (realisateur#1573) requires POLICY
+#     the same way: a repo-specific DECISION names the general class it
+#     stands in for, or says `none yet` -- not invented here either, since a
+#     fabricated class is the same gap wearing a label.
 case "$LEDGER_KIND" in
   project) DECLARE="NO-DECISION: @$DECIDER -- routed to $DEST and owned there; nothing here needs a call" ;;
   *)       case "$DEFAULT_AFTER" in
@@ -369,7 +375,9 @@ case "$LEDGER_KIND" in
              '') cli_die "a DECISION needs --default-after '<n>d: <action>' (#680). To block forever, say so: --default-after '0d: block -- irreversible, no default'" ;;
              *)  cli_die "--default-after must read '<n>d: <action>', got: $DEFAULT_AFTER" ;;
            esac
+           [ -n "$POLICY" ] || cli_die "a DECISION needs --policy '<the general class this asks about>' (#1621). If none exists yet, say so: --policy 'none yet'"
            DECLARE="DECISION: @$DECIDER -- $WHAT
+POLICY: $POLICY
 DEFAULT-AFTER $DEFAULT_AFTER" ;;
 esac
 

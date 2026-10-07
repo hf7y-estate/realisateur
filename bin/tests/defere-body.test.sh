@@ -49,14 +49,20 @@ check() {
 section "A. every route composes a body the grammar accepts"
 
 check '--project'    "$(composed 'a thing' --project realisateur --body 'why')"
-check '--human'      "$(composed 'a thing' --human 'needs a call' --repo hf7y/realisateur --default-after '14d: do the reversible thing')"
-check '--unroutable' "$(composed 'a thing' --unroutable 'no repo owns it' --repo hf7y/realisateur --default-after '0d: block -- irreversible, no default')"
+check '--human'      "$(composed 'a thing' --human 'needs a call' --repo hf7y/realisateur --default-after '14d: do the reversible thing' --policy 'none yet')"
+check '--unroutable' "$(composed 'a thing' --unroutable 'no repo owns it' --repo hf7y/realisateur --default-after '0d: block -- irreversible, no default' --policy 'none yet')"
 
 # #680: defere is the front door for a DECISION, so it refuses the same
 # omission gh-sign refuses rather than composing a body gh-sign will reject.
-PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --human 'needs a call' --repo hf7y/realisateur --dry-run >/dev/null 2>&1 \
+PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --human 'needs a call' --repo hf7y/realisateur --policy 'none yet' --dry-run >/dev/null 2>&1 \
   && bad "--human with no --default-after is refused" "it composed a body gh-sign would reject" \
   || ok "--human with no --default-after is refused, at the door rather than at the write"
+
+# #1621: the same omission guard for POLICY, so a filing never reaches
+# gh-sign only to be refused there instead of at the door.
+PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --human 'needs a call' --repo hf7y/realisateur --default-after '14d: do the reversible thing' --dry-run >/dev/null 2>&1 \
+  && bad "--human with no --policy is refused" "it composed a body gh-sign would reject" \
+  || ok "--human with no --policy is refused, at the door rather than at the write"
 
 section "B. the block that was missing is actually there"
 

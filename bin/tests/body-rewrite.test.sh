@@ -13,6 +13,7 @@ ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 findings() { grammar_check "$1" >/dev/null; printf '%s' "$?"; }
 
 DECISION='DECISION: @zach -- link the shim host-wide?
+POLICY: which verb builds may claim a host-wide binary path
 DEFAULT-AFTER 14d: link it and say so; unlinking is one command
 
 Prose about the change, over two lines
