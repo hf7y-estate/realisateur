@@ -203,79 +203,25 @@ for t in "${trees[@]}"; do
 done
 [ "$any_repo" -eq 1 ] || exit 0
 
-advice() {
-  echo
-  echo "A dirty tree at exit is a failed run, not a handoff -- an uncommitted change"
-  echo "to a live script is indistinguishable from an abandoned one, and the next"
-  echo "autocommit may adopt it under a human's name. An unpushed commit is the same"
-  echo "failure one step later: the nightly clones the REF, not this working tree."
-  echo
-  echo "For the changes listed as YOURS, do ONE of these:"
-  echo "  1. Commit the work you meant to keep, to a BRANCH (never main):"
-  echo "       git add <specific paths>   # never 'git add -A'"
-  echo "       git commit -F <msgfile>"
-  echo "  2. Push it, so the branch exists on origin and not only on this host:"
-  echo "       git push -u origin <branch>"
-  echo "  3. Revert what you did not mean to keep:  git restore <paths>"
-  echo "  4. If a file is deliberately untracked, add it to .gitignore and commit that."
-  echo
-  echo "NONE of those apply to a path this report did not list as yours. If you do"
-  echo "not recognise something it did list -- a concurrent session can start writing"
-  echo "after this run began -- leave the file alone and say so in your report. If no"
-  echo "permitted commit is open to you, name the paths and stop there: destroying"
-  echo "work to get past this hook is the one outcome it exists to prevent."
-  echo
-  echo "Then report every file you touched, including the ones you reverted."
-}
-
 own_report=""; foreign_report=""; unattr_report=""; own_total=0
 
 emit_verdict() { # emit_verdict <blocked-headline>
   if [ "$own_total" -gt 0 ]; then
     {
       echo "BLOCKED: $1"
-      if [ "${#trees[@]}" -gt 1 ]; then
-        echo "  (${#trees[@]} trees checked -- cwd plus trees this agent's own"
-        echo "  transcript shows it wrote to, per #363)"
-      fi
       echo
-      echo "YOURS -- new since this run started:"
-      printf '%s' "$own_report"
-      if [ -n "$foreign_report" ]; then
-        echo
-        echo "NOT YOURS -- already there when this run started. Context only:"
-        printf '%s' "$foreign_report"
-        echo "  Leave these exactly as they are. They are not part of this gate."
-      fi
-      if [ -n "$unattr_report" ]; then
-        echo
-        echo "UNATTRIBUTED -- no baseline for this tree, so ownership is unknown:"
-        printf '%s' "$unattr_report"
-        echo "  Not attributed to you and not blocking. Do not revert or commit them."
-      fi
-      advice
+      printf '%s\n' "$own_report"
+      [ -n "$foreign_report" ] && printf '%s\n' "$foreign_report"
+      [ -n "$unattr_report" ] && printf '%s\n' "$unattr_report"
+      echo "commit to a branch (or --author= if it's theirs), push -u origin <branch>, or git restore -- never main, never git add -A. Report every file touched, including reverted ones."
     } >&2
     exit 2
   fi
 
   if [ -n "$foreign_report" ] || [ -n "$unattr_report" ]; then
     {
-      echo "subagent-closeout: nothing in these trees is attributable to this run --"
-      echo "not blocking. Reported so it is not mistaken for a clean checkout:"
-      if [ -n "$foreign_report" ]; then
-        echo
-        echo "NOT YOURS -- already there when this run started:"
-        printf '%s' "$foreign_report"
-      fi
-      if [ -n "$unattr_report" ]; then
-        echo
-        echo "UNATTRIBUTED -- no SubagentStart baseline was recorded for this tree, so"
-        echo "this hook cannot tell your changes from a concurrent session's:"
-        printf '%s' "$unattr_report"
-      fi
-      echo
-      echo "Leave all of the above alone: none of it is yours to commit or revert."
-      echo "Mention in your report that you exited with it present."
+      [ -n "$foreign_report" ] && printf '%s\n' "$foreign_report"
+      [ -n "$unattr_report" ] && printf '%s\n' "$unattr_report"
     } >&2
   fi
   exit 0
@@ -302,33 +248,21 @@ if command -v gh >/dev/null 2>&1; then
     # not on conflicts, so a dirty PR sits armed forever. `unknown` is a cold
     # read, not a finding, and passes.
     if [ "$am" = true ] && [ "$mergeable_state" = dirty ]; then
-      pr_report+="  $url has AUTO-MERGE ARMED but mergeable_state=DIRTY -- a merge conflict"$'\n'
-      pr_report+="    armed is not landing: auto-merge waits on checks, never on a conflict"$'\n'
+      pr_report+="BLOCKED: PR mergeable_state=DIRTY, armed won't land: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n'
       continue
     fi
     if [ "$am" = true ]; then
       log "note: $url has AUTO-MERGE ARMED -- it lands when its required checks pass. Valid way to stop."
       continue
     fi
-    pr_report+="  $url is still open and not a draft"$'\n'
     case "$body" in
-      *DELIVERS*) : ;;
-      *) pr_report+="    and carries no DELIVERS block, so nothing can check whether it landed"$'\n' ;;
+      *DELIVERS*) pr_report+="BLOCKED: PR open: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n' ;;
+      *) pr_report+="BLOCKED: PR open, no DELIVERS block: $url -- arm --auto, land now, or convert it to a DRAFT"$'\n' ;;
     esac
   done < <(discover_opened_prs "$agent_transcript")
 fi
 if [ -n "$pr_report" ]; then
-  {
-    echo "BLOCKED: this run opened a pull request that is still open."
-    echo
-    printf '%s' "$pr_report"
-    echo
-    echo "Merging is the middle of the job, not the end of it. Three honest exits:"
-    echo "  gh pr merge <n> --repo <slug> --merge --auto --delete-branch"
-    echo "      arm auto-merge -- it lands when the required checks pass. PREFER THIS."
-    echo "  land it now, if every required check is already green."
-    echo "  convert it to a DRAFT -- a draft claims nothing, for work still in flight."
-  } >&2
+  printf '%s' "$pr_report" >&2
   exit 2
 fi
 
@@ -351,19 +285,19 @@ if [ "$LINT_HAS_REPO" -eq 1 ]; then
     findings="$(printf '%s\n' "$out" | grep -E '^\s*(FLAG|BLIND) \[' || printf '%s\n' "$out")"
     had_base=0; base=""
     baseline_has_tree "$t" && { had_base=1; base="$(baseline_lint "$t")"; }
-    own=""; foreign=""
+    own_f=""; foreign_f=""
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       if [ "$had_base" -eq 1 ] && printf '%s\n' "$base" | grep -qxF "$line"; then
-        foreign+="    $line"$'\n'
+        foreign_f+="${foreign_f:+; }$line"
       elif [ "$had_base" -eq 1 ]; then
-        own+="    $line"$'\n'; own_total=$((own_total + 1))
+        own_f+="${own_f:+; }$line"; own_total=$((own_total + 1))
       else
-        unattr_report+="    $line"$'\n'
+        unattr_report+="UNATTRIBUTED, tree: $t (no baseline, not charged to you): $line"$'\n'
       fi
     done <<<"$findings"
-    [ -n "$own" ]     && own_report+="  tree: $t"$'\n'"$own"
-    [ -n "$foreign" ] && foreign_report+="  tree: $t"$'\n'"$foreign"
+    [ -n "$own_f" ]     && own_report+="YOURS, tree: $t: $own_f"$'\n'
+    [ -n "$foreign_f" ] && foreign_report+="NOT YOURS, tree: $t (Leave these exactly as they are): $foreign_f"$'\n'
   done
   emit_verdict "closeout-lint --strict found work THIS RUN did not make durable."
 fi
@@ -388,22 +322,22 @@ for t in "${trees[@]}"; do
 
   had_base=0; base=""
   baseline_has_tree "$t" && { had_base=1; base="$(baseline_dirty "$t")"; }
-  own=""; foreign=""; unattr=""; own_count=0
+  own_count=0; own_paths=""; foreign_paths=""; unattr_paths=""
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     path="$(printf '%s\n' "$line" | porcelain_paths | head -1)"
     if [ "$had_base" -eq 1 ] && printf '%s\n' "$base" | grep -qxF "$path"; then
-      foreign+="    $line"$'\n'
+      foreign_paths+="${foreign_paths:+, }$path"
     elif [ "$had_base" -eq 1 ] || is_written "$t/$path"; then
-      own+="    $line"$'\n'; own_count=$((own_count + 1)); own_total=$((own_total + 1))
+      own_paths+="${own_paths:+, }$path"; own_count=$((own_count + 1)); own_total=$((own_total + 1))
     else
-      unattr+="    $line"$'\n'
+      unattr_paths+="${unattr_paths:+, }$path"
     fi
   done <<<"$dirty"
 
-  [ -n "$own" ]     && own_report+="  tree: $t ($own_count uncommitted change(s))"$'\n'"$own"
-  [ -n "$foreign" ] && foreign_report+="  tree: $t"$'\n'"$foreign"
-  [ -n "$unattr" ]  && unattr_report+="  tree: $t"$'\n'"$unattr"
+  [ -n "$own_paths" ]     && own_report+="YOURS, tree: $t ($own_count): $own_paths"$'\n'
+  [ -n "$foreign_paths" ] && foreign_report+="NOT YOURS, tree: $t (Leave these exactly as they are): $foreign_paths"$'\n'
+  [ -n "$unattr_paths" ]  && unattr_report+="UNATTRIBUTED, tree: $t (no baseline, not charged to you): $unattr_paths"$'\n'
 done
 
-emit_verdict "you are leaving $own_total uncommitted change(s) of your own."
+emit_verdict "leaving $own_total uncommitted change(s) of your own."

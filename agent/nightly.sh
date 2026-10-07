@@ -15,7 +15,9 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
 passes="${PASSES:-1}"
-# --send <passes> <repo|repo#issue>...  THE ONE WAY TO START A RUN BY HAND (#1379). It
+# --send <passes> <target>...  THE ONE WAY TO START A RUN BY HAND (#1379). A
+# target is <repo>, <repo>#<issue>, <owner>/<repo> or <owner>/<repo>#<issue>
+# (#1602) -- a bare name still means hf7y-estate/<repo>. It
 # re-runs this same file as one supervised, transient systemd unit, so the run
 # is in `systemctl`, in the journal, and killable by name. Zach, 2026-10-01, on
 # the 330-character ssh line this replaces: "That incantation proves the
@@ -95,11 +97,19 @@ declare -A in_list=()
 repos=()
 while IFS= read -r r; do
   [ -n "$r" ] || continue
-  if [ -n "$org_repos" ] && [ -z "${in_org[$r]:-}" ]; then
+  # A line may be owner/repo (#1602): the hf7y-estate org check below is what
+  # that owner is FOR, so a line naming a different one skips the check
+  # entirely -- it runs because it was listed, not because it was discovered.
+  r_base="${r%%#*}"
+  case "$r_base" in
+    */*) r_owner="${r_base%%/*}"; r_repo="${r_base#*/}" ;;
+    *)   r_owner="hf7y-estate"; r_repo="$r_base" ;;
+  esac
+  if [ "$r_owner" = hf7y-estate ] && [ -n "$org_repos" ] && [ -z "${in_org[$r_repo]:-}" ]; then
     echo "--- $r: in $list but not in the hf7y-estate org -- skipping"
     continue
   fi
-  in_list["$r"]=1
+  in_list["$r_owner/$r_repo"]=1
   repos+=("$r")
 done < <(grep -vE '^\s*(#|$)' "$list")
 
@@ -107,7 +117,7 @@ extra=()
 if [ -n "$org_repos" ]; then
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    if [ -z "${in_list[$r]:-}" ]; then
+    if [ -z "${in_list[hf7y-estate/$r]:-}" ]; then
       extra+=("$r")
     fi
   done < <(printf '%s\n' "$org_repos" | sort)
@@ -139,39 +149,60 @@ spent=0
 # -- Zach: "Nightly should read milestones. That's the failure."). `ERR`, not
 # a guess, when either call fails -- an unreadable queue is not an empty one.
 queue_count() {
-  local repo="$1" ms n
-  ms="$(gh api "repos/hf7y-estate/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]' 2>/dev/null)" \
+  local owner="$1" repo="$2" ms n
+  ms="$(gh api "repos/${owner}/${repo}/milestones?state=open&per_page=100" --jq '[.[].number]' 2>/dev/null)" \
     || { echo ERR; return; }
-  n="$(gh issue list --repo "hf7y-estate/${repo}" --state open --limit 200 \
+  n="$(gh issue list --repo "${owner}/${repo}" --state open --limit 200 \
         --search '-label:needs-host -label:needs-human' --json milestone 2>/dev/null \
       | jq --argjson ms "$ms" '[.[] | select(.milestone and (.milestone.number as $m | $ms|index($m)))] | length')" \
     || { echo ERR; return; }
   echo "$n"
 }
 
-for target in "${repos[@]}"; do
+# A LOCKED REPO GETS ONE REQUEUE, NOT A WAIT. `.pass.<repo>.lock` is the
+# per-repo lock named above -- a sent chain on the same repo holds it too --
+# and blocking on it here is how one long sent pass stalled the whole night
+# behind it (#1476). `flock -n` fails fast instead, with `-E 254` so "the
+# lock was held" cannot be confused with run-agent.sh's own exit codes; the
+# repo goes to the back of the queue once and is skipped for the night if it
+# is still held on the second try.
+declare -A relocked=()
+repo_i=0
+while [ "$repo_i" -lt "${#repos[@]}" ]; do
+  target="${repos[$repo_i]}"; repo_i=$((repo_i + 1))
   # `repo#n` IS A LINK OF A CHAIN: that issue, one pass, in the order it was
   # sent. merge-carry lands the previous link first, so the next one builds on it.
-  repo="${target%%#*}"; issue=""
-  [ "$repo" = "$target" ] || issue="${target#*#}"
+  label="${target%%#*}"; issue=""
+  [ "$label" = "$target" ] || issue="${target#*#}"
+  # A bare name still means hf7y-estate/<name> (#1602): the automatic org
+  # listing above stays hf7y-estate only, but a line or a --send target that
+  # names its own owner runs against that owner, undiscovered.
+  case "$label" in
+    */*) owner="${label%%/*}"; repo="${label#*/}" ;;
+    *)   owner="hf7y-estate"; repo="$label" ;;
+  esac
+  # Keyed so two orgs with a same-named repo cannot share a lock or a log;
+  # identical to the bare name for the default owner, so nothing that runs
+  # today changes.
+  key="$repo"; [ "$owner" = hf7y-estate ] || key="${owner}.${repo}"
   # BEFORE the queue check, not after it. A repo is skipped below when its queue
   # is empty -- and a queue is empty precisely when the work is already sitting
   # in the previous pass's unmerged PRs, which is the case that most needs them
   # merged. Called here as well as in run-agent.sh because that one never runs
   # for a skipped repo; both calls are idempotent and the second prints nothing.
-  "$here/merge-carry.sh" "$repo" || echo "--- $repo: merge-carry.sh exited $?"
+  "$here/merge-carry.sh" "$label" || echo "--- $label: merge-carry.sh exited $?"
 
   # Do not spend a container on an empty queue. A named issue was sent, not
   # chosen, so the queue is not asked about it.
   # THE EXECUTOR `DEFAULT-AFTER` NEVER HAD (#1410). The label is what keeps an
   # issue out of the queue below, and nothing on any clock re-derived it.
-  "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "hf7y-estate/$repo" --apply 2>&1 \
+  "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "$owner/$repo" --apply 2>&1 \
     | grep -E '^ +[-+]label|REFUSED|BLIND' || true
   n=1
-  [ -n "$issue" ] || n="$(queue_count "$repo")"
+  [ -n "$issue" ] || n="$(queue_count "$owner" "$repo")"
   case "$n" in
-    0)   echo "--- $repo: queue empty, skipping"; continue ;;
-    ERR) echo "--- $repo: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
+    0)   echo "--- $label: queue empty, skipping"; continue ;;
+    ERR) echo "--- $label: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
   esac
   # THE QUEUE IS THE MILESTONE, and PASSES is how far one run drains it. There
   # was a `first` label layered on top: it ordered a queue it could not put an
@@ -179,26 +210,42 @@ for target in "${repos[@]}"; do
   # 2026-10-03: "the first tag, along with milestones, feels like layered not
   # replaced." Order is `--send repo#n ...`; the default stays 1 pass.
   i=0
+  locked=0
   while :; do
-    [ "$spent" -lt "$night" ] || { echo "=== night budget of $night pass(es) spent -- $repo and everything after it waits ==="; break 2; }
+    [ "$spent" -lt "$night" ] || { echo "=== night budget of $night pass(es) spent -- $label and everything after it waits ==="; break 2; }
     spent=$((spent + 1))
     i=$((i + 1))
-    echo "--- $repo: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
-    flock "${dir}/.pass.${repo}.lock" "$here/run-agent.sh" "$repo" "$turns" $issue >/dev/null 2>&1 && rc=0 || rc=$?
+    echo "--- $label: $n runnable, dispatching $(date -u +%FT%TZ) pass $i/$passes${issue:+ issue #$issue}"   # the timestamp stays third: estate-status-collect.py:181 parses this line
+    flock -n -E 254 "${dir}/.pass.${key}.lock" "$here/run-agent.sh" "$label" "$turns" $issue >/dev/null 2>&1 && rc=0 || rc=$?
     case "$rc" in
-      0) echo "--- $repo: pass finished" ;;
+      0) echo "--- $label: pass finished" ;;
+      # 254 is flock -n refusing the lock, not a run-agent.sh exit: another
+      # chain holds this repo's pass. Give the budget back -- nothing ran --
+      # and try the rest of the night before coming back to it once.
+      254) spent=$((spent - 1)); i=$((i - 1)); locked=1
+           echo "--- $label: locked by another chain, not waiting -- deferring"
+           break ;;
       # 3 is run-agent.sh refusing to run as hf7y. The mint is per host, not per
       # repo, so every later pass would refuse too: stop, and tell a person once.
-      3) echo "=== NO BOT TOKEN: $repo refused, dispatching nothing more ==="
+      3) echo "=== NO BOT TOKEN: $label refused, dispatching nothing more ==="
          ( . "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/lib/zaxon.sh" \
              && zaxon_send "nightly stopped on dexter: no bot token, nothing dispatched" nightly ) || true
          break 2 ;;
-      *) echo "--- $repo: pass exited $rc (its own log has the reason)" ;;
+      *) echo "--- $label: pass exited $rc (its own log has the reason)" ;;
     esac
     [ -z "$issue" ] && [ "$i" -lt "$passes" ] || break
-    n="$(queue_count "$repo")"
+    n="$(queue_count "$owner" "$repo")"
     case "$n" in 0|ERR) break ;; esac
   done
+  if [ "$locked" -eq 1 ]; then
+    if [ -z "${relocked[$target]:-}" ]; then
+      relocked[$target]=1
+      echo "--- $label: back of the queue for one retry this night"
+      repos+=("$target")
+    else
+      echo "--- $label: still locked on retry -- skipping for the rest of the night"
+    fi
+  fi
 done
 
 echo "=== nightly done $(date -u +%FT%TZ) ==="
@@ -208,12 +255,16 @@ echo "=== nightly done $(date -u +%FT%TZ) ==="
 # list on every night that opened PRs. Recency is the pass's own artifact.
 since="$(date -u -d '12 hours ago' +%FT%TZ)"
 echo "=== PRs opened on the estate since ${since} ==="
-for repo in $(printf '%s\n' "${repos[@]%%#*}" | awk '!seen[$0]++'); do
+for pr_label in $(printf '%s\n' "${repos[@]%%#*}" | awk '!seen[$0]++'); do
+  case "$pr_label" in
+    */*) pr_owner="${pr_label%%/*}"; pr_repo="${pr_label#*/}" ;;
+    *)   pr_owner="hf7y-estate"; pr_repo="$pr_label" ;;
+  esac
   # gh's --jq takes no --arg, so both the cutoff and the repo name are
   # stitched in -- the cutoff into the program, the name onto each line.
-  gh pr list --repo "hf7y-estate/$repo" --limit 10 \
+  gh pr list --repo "$pr_owner/$pr_repo" --limit 10 \
     --json number,title,createdAt \
     --jq ".[] | select(.createdAt >= \"$since\") |
        \"#\(.number) \(.createdAt) \(.title)\"" 2>/dev/null \
-    | sed "s|^|  $repo |" || true
+    | sed "s|^|  $pr_label |" || true
 done

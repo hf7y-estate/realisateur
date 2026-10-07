@@ -14,8 +14,7 @@ set -uo pipefail
 stamp="${1:?usage: salvage.sh <stamp> [issue]}"
 issue="${2:-}"
 
-# REPORT.md is untracked on purpose; the brief says so.
-git add -A -- . ':!REPORT.md' 2>/dev/null
+git add -A 2>/dev/null
 dirty=""; git diff --cached --quiet || dirty=1
 # Unpushed means HEAD holds a commit the remote does not. Asked of the remote,
 # freshly fetched, and by reachability: the pass's clone is `--depth 1`, so it

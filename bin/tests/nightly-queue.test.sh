@@ -53,8 +53,14 @@ touch "$T/fail-ms-delta"
 cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 args="$*"
-repo=""
-[[ "$args" =~ hf7y-estate/([a-zA-Z0-9_-]+) ]] && repo="${BASH_REMATCH[1]}"
+owner=""; repo=""
+# Two owners are matched -- #1602 lets a repo line or a --send target name a
+# non-hf7y-estate owner, so the stub can no longer assume one.
+if [[ "$args" =~ repos/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)/milestones ]]; then
+  owner="${BASH_REMATCH[1]}"; repo="${BASH_REMATCH[2]}"
+elif [[ "$args" =~ --repo[[:space:]]([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+) ]]; then
+  owner="${BASH_REMATCH[1]}"; repo="${BASH_REMATCH[2]}"
+fi
 case "$1" in
   repo)
     [ "$2" = list ] && { [ -f "$T/fail-repo-list" ] && exit 1; cat "$T/org.txt"; }
@@ -63,22 +69,24 @@ case "$1" in
     case "$args" in
       *milestones*)
         [ -f "$T/fail-ms-$repo" ] && exit 1
-        case "$repo" in
-          alpha) printf '[1]\n' ;;
-          beta)  printf '[1]\n' ;;
-          gamma) printf '[5]\n' ;;
-          delta) printf '[9]\n' ;;
+        case "$owner/$repo" in
+          hf7y-estate/alpha) printf '[1]\n' ;;
+          hf7y-estate/beta)  printf '[1]\n' ;;
+          hf7y-estate/gamma) printf '[5]\n' ;;
+          hf7y-estate/delta) printf '[9]\n' ;;
+          media-arts-collective/gamma) printf '[3]\n' ;;
         esac
         ;;
     esac
     ;;
   issue)
     [ "$2" = list ] || exit 0
-    case "$repo" in
-      alpha) [ "$(cat "$T/left-alpha" 2>/dev/null)" = 0 ] && printf '[]\n' || printf '[{"milestone":{"number":1}}]\n' ;;
-      beta)  printf '[{"milestone":{"number":99}}]\n' ;;   # 99 is not open
-      gamma) printf '[{"milestone":{"number":5}}]\n' ;;
-      delta) printf '[{"milestone":{"number":9}}]\n' ;;
+    case "$owner/$repo" in
+      hf7y-estate/alpha) [ "$(cat "$T/left-alpha" 2>/dev/null)" = 0 ] && printf '[]\n' || printf '[{"milestone":{"number":1}}]\n' ;;
+      hf7y-estate/beta)  printf '[{"milestone":{"number":99}}]\n' ;;   # 99 is not open
+      hf7y-estate/gamma) printf '[{"milestone":{"number":5}}]\n' ;;
+      hf7y-estate/delta) printf '[{"milestone":{"number":9}}]\n' ;;
+      media-arts-collective/gamma) printf '[{"milestone":{"number":3}}]\n' ;;
     esac
     ;;
   pr) : ;;  # the trailing PR recap; not under test here
@@ -204,5 +212,51 @@ has "...says so in the night's log" "$out" "NO BOT TOKEN: alpha refused, dispatc
 eq "...tried one repo and no more" "$(dispatched | tr '\n' ' ')" "alpha "
 eq "...and sent ONE message" "$(wc -l < "$T/sent" | tr -d ' ')" "1"
 rm -f "$T/refuse"
+
+section "M. a repo locked by another chain is deferred, not waited on (#1476)"
+( exec 9>"$T/srv/.pass.alpha.lock"; flock 9; sleep 30 ) &
+holder=$!; sleep 0.5
+rm -f "$T/dispatched" "$T/srv/nightly."*.log
+out="$(timeout 10 env PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1)"
+rc "...does not hang waiting on the lock -- exits well inside the pass's own 30s hold" 0 "$?"
+has "...says alpha is locked and is not waiting on it" "$out" "alpha: locked by another chain, not waiting -- deferring"
+has "...gamma still ran while alpha's lock was held" "$(dispatched)" "gamma"
+has "...alpha is said to still be locked on its one retry" "$out" "alpha: still locked on retry -- skipping for the rest of the night"
+hasnt "...and alpha itself never ran" "$(dispatched)" "alpha"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+
+section "N. a repo line may name its own owner -- undiscovered, and not filtered by the hf7y-estate org check (#1602)"
+printf 'alpha\nbeta\nmedia-arts-collective/gamma\n' > "$T/repos"
+out="$(run)"; rc "exits 0" 0 "$?"
+has "...dispatches it under its own owner, label and all" "$out" \
+  "--- media-arts-collective/gamma: 1 runnable, dispatching"
+hasnt "...never filtered as 'not in the hf7y-estate org'" "$out" \
+  "media-arts-collective/gamma: in $T/repos but not in the hf7y-estate org"
+has "...the automatic org listing still only appends hf7y-estate's own repos" "$out" \
+  "org repos not in $T/repos, appended last: delta gamma"
+eq "...alpha, the named repo, then hf7y-estate's own gamma last" \
+  "$(dispatched | tr '\n' ' ')" "alpha media-arts-collective/gamma gamma "
+printf 'alpha\nbeta\n' > "$T/repos"
+
+section "O. a same-named repo under a different owner does not share hf7y-estate's lock or log (#1602)"
+printf 'alpha\nbeta\nmedia-arts-collective/gamma\n' > "$T/repos"
+( exec 9>"$T/srv/.pass.gamma.lock"; flock 9; sleep 5 ) &
+holder=$!; sleep 0.5
+out="$(run)"
+eq "...media-arts-collective/gamma ran anyway, on a lock of its own" \
+  "$(dispatched | tr '\n' ' ')" "alpha media-arts-collective/gamma "
+has "...hf7y-estate's own gamma was the one deferred by the shared lock" "$out" \
+  "gamma: locked by another chain, not waiting -- deferring"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+printf 'alpha\nbeta\n' > "$T/repos"
+
+section "P. a sent target may name its own owner together with an issue number (#1602)"
+out="$(ONLY="media-arts-collective/gamma#42" PASSES=1 run)"
+eq "...dispatched with its owner, repo and issue intact" \
+  "$(dispatched | tr '\n' ' ')" "media-arts-collective/gamma#42 "
+has "...and the log names the issue" "$out" "pass 1/1 issue #42"
+has "...and says it was a sent run of just that target" "$out" \
+  "sent run: only media-arts-collective/gamma#42"
 
 summary

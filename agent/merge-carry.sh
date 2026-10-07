@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# merge-carry.sh <repo> -- merge the PRs the PREVIOUS pass over this repo opened,
-# then forget them. Called by run-agent.sh before it dispatches; safe to run by
-# hand, which is how it was first proven.
+# merge-carry.sh <repo>|<owner>/<repo> -- merge the PRs the PREVIOUS pass over
+# this repo opened, then forget them. Called by run-agent.sh before it
+# dispatches; safe to run by hand, which is how it was first proven.
 #
 # Zach, 2026-09-26, choosing between "next night's pass merges", "an interactive
 # agent may merge" and "only you merge":
@@ -20,10 +20,31 @@
 # those.
 set -uo pipefail
 
-repo="${1:?usage: merge-carry.sh <repo>}"
-carry="${AGENT_STATE:-/srv/agent/state}/${repo}.prs"
+target="${1:?usage: merge-carry.sh <repo>|<owner>/<repo>}"
+# A bare name still means hf7y-estate/<name> (#1602); an owner/repo target
+# runs against that owner instead. Keyed on the owner only when it isn't the
+# default, so the state file for a bare name is unchanged.
+case "$target" in
+  */*) owner="${target%%/*}"; repo="${target#*/}" ;;
+  *)   owner="hf7y-estate"; repo="$target" ;;
+esac
+key="$repo"; [ "$owner" = hf7y-estate ] || key="${owner}.${repo}"
+carry="${AGENT_STATE:-/srv/agent/state}/${key}.prs"
+# PRs already given their one update-branch call while RED or CONFLICTING
+# (#1596) -- next to carry, pruned to the PRs still held so it cannot grow
+# past what merge-carry is actually tracking.
+updated="${carry%.prs}.updated"
 
 tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
+
+# A repo with Actions disabled can never clear a FAILURE or a pending check --
+# crt measured 2026-10-06 holding 12 PRs forever on `gitleaks`, which cannot
+# re-run once Actions is off there (#1587, #1583). Read this once per repo,
+# before any PR's statusCheckRollup is trusted, and default to trusting it
+# (as before) when the read fails -- an unreadable permission is not a
+# license to skip checks.
+actions_enabled="$(GH_TOKEN="$tok" gh api "repos/${owner}/${repo}/actions/permissions" \
+  --jq .enabled </dev/null 2>/dev/null)" || actions_enabled=""
 
 # ADOPT WHAT THE APP OPENED. The list alone orphans a PR whose pass died before
 # writing it down: senechal#1094 sat open with nobody to merge it (a 75-minute
@@ -31,28 +52,38 @@ tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 # now separates a pass's work from a person's, which it could not when the list
 # was introduced. A listing that fails adopts nothing and the list still runs.
 mkdir -p "$(dirname "$carry")"
-adopt="$(GH_TOKEN="$tok" gh pr list --repo "hf7y-estate/${repo}" --state open \
+adopt="$(GH_TOKEN="$tok" gh pr list --repo "${owner}/${repo}" --state open \
   --author "app/${AGENT_APP:-unattended-monkey}" --json number --jq '.[].number' 2>/dev/null)" || adopt=""
 { cat "$carry" 2>/dev/null; printf '%s\n' "$adopt"; } | awk 'NF && !seen[$0]++' > "$carry.new" && mv "$carry.new" "$carry"
 
 [ -s "$carry" ] || exit 0
 
-echo "=== the previous pass's PRs on ${repo} ==="
+echo "=== the previous pass's PRs on ${target} ==="
+# Actions disabled means statusCheckRollup can never change, so it is dropped
+# from the query entirely rather than trusted for RED/PENDING; YOUNG still
+# applies since it is about the PR's age, not its checks.
+if [ "$actions_enabled" = "false" ]; then
+  jqf='[.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  note=" -- Actions disabled on ${owner}/${repo}, check records ignored"
+else
+  jqf='[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  note=""
+fi
 keep=""
 while read -r n; do
   [ -n "$n" ] || continue
-  st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "hf7y-estate/${repo}" \
+  st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
     --json state,isDraft,mergeable,statusCheckRollup,createdAt \
-    --jq '[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")' </dev/null 2>/dev/null)" || st=""
+    --jq "$jqf" </dev/null 2>/dev/null)" || st=""
   case "$st" in
     "OPEN false MERGEABLE")
-      if GH_TOKEN="$tok" gh pr merge "$n" --repo "hf7y-estate/${repo}" \
+      if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
            --merge --delete-branch </dev/null >/dev/null 2>&1; then
-        echo "  MERGED   #${n}"
+        echo "  MERGED   #${n}${note}"
       else
         # A merge that fails is not a merge that was not wanted, so it stays on
         # the list rather than being dropped silently.
-        echo "  FAILED   #${n} -- merge refused, kept for the next pass"
+        echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
         keep="${keep}${n}"$'\n'
       fi ;;
     # RED is a failed check. MERGEABLE only ever meant "no conflict", and
@@ -63,13 +94,28 @@ while read -r n; do
     OPEN*)
       # Draft, CONFLICTING, or mergeability not computed yet: all states that can
       # change on their own, so none is a reason to forget the PR.
-      echo "  HELD     #${n} -- ${st}"
+      case "$st" in
+        *CONFLICTING*|*" RED")
+          # One real chance to resolve, not every pass (#1596): update-branch
+          # is async, so this same pass still reports the state unchanged --
+          # the next pass reads whatever resulted and decides fresh.
+          if ! grep -qxF "$n" "$updated" 2>/dev/null; then
+            GH_TOKEN="$tok" gh api --method PUT \
+              "repos/${owner}/${repo}/pulls/${n}/update-branch" </dev/null >/dev/null 2>&1
+            printf '%s\n' "$n" >> "$updated"
+          fi ;;
+      esac
+      echo "  HELD     #${n} -- ${st}${note}"
       keep="${keep}${n}"$'\n' ;;
     "")
-      echo "  UNREADABLE #${n} -- could not be read, kept and left alone"
+      echo "  UNREADABLE #${n} -- could not be read, kept and left alone${note}"
       keep="${keep}${n}"$'\n' ;;
     *)
-      echo "  DONE     #${n} -- ${st}" ;;
+      echo "  DONE     #${n} -- ${st}${note}" ;;
   esac
 done < "$carry"
 printf '%s' "$keep" > "$carry"
+if [ -s "$updated" ]; then
+  grep -xFf <(printf '%s' "$keep") "$updated" > "$updated.new" 2>/dev/null
+  mv "$updated.new" "$updated"
+fi

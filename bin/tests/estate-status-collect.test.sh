@@ -61,7 +61,7 @@ collect() {
 field() { python3 -c 'import json,sys;print(json.dumps(eval("d"+sys.argv[1],{"d":json.load(sys.stdin)})))' "$1"; }
 
 # A nightly that ran to the end, dispatched one repo, and the repo's own pass
-# log carrying a result, an rc, a report and a PR.
+# log carrying a result, an rc and a PR.
 now="$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)"
 stamp="$(date -u -d '-2 hours' +%Y%m%dT%H%M%SZ)"
 printf 'roster\n' > "$T/agent/repos"
@@ -71,7 +71,8 @@ printf 'roster\n' > "$T/agent/repos"
   printf '=== nightly done %s ===\n' "$now"; } > "$T/agent/nightly.$stamp.log"
 { printf '=== result: success  turns=12  cost=$0.5\n'
   printf '=== %s container exited (rc=0) ===\n' "$now"
-  printf '=== REPORT.md (/x/REPORT.md) ===\nPR: https://github.com/hf7y-estate/roster/pull/12\n'
+  printf '=== PRs opened by THIS pass (since %s) ===\n' "$now"
+  printf '  https://github.com/hf7y-estate/roster/pull/12  some-branch  a title\n'
 } > "$T/agent/roster.$stamp.log"
 
 section "A. an unreachable daemon is not an empty host"
@@ -89,11 +90,11 @@ eq "no container for roster/compose.yaml" "$(printf '%s' "$out" | field '["verdi
 has "...and the finding names the file that declares it" "$out" "roster/compose.yaml"
 hasnt "...while .no-autostart exempts groc-browser from the same test" "$out" "groc-browser: declared"
 
-section "C. green: every declared service up, the sweep finished, the pass left a report"
+section "C. green: every declared service up, the sweep finished, the pass left a PR"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
 eq "verdict"                     "$(printf '%s' "$out" | field '["verdict"]')" '"OK"'
 eq "no findings"                 "$(printf '%s' "$out" | field '["findings"]')" "[]"
-eq "the pass's PR is read off the report, not off an author" \
+eq "the pass's PR is read off the log, not off an author" \
    "$(printf '%s' "$out" | field '["nightly"]["passes"][0]["pr"]')" '"https://github.com/hf7y-estate/roster/pull/12"'
 eq "the queue depth comes from the sweep's own line" \
    "$(printf '%s' "$out" | field '["nightly"]["last_run"]["dispatched"]["roster"]["queue"]')" "7"
@@ -121,30 +122,24 @@ eq "...and nothing dispatching tonight is DOWN" "$(printf '%s' "$out" | field '[
 section "F. a pass is graded on what it left, not on exiting 0"
 { printf '=== result: success  turns=12  cost=$0.5\n'
   printf '=== %s container exited (rc=0) ===\n' "$now"
-  printf '=== REPORT.md (/x/REPORT.md) ===\nNOT FOUND at that path.\n'
 } > "$T/agent/roster.$stamp.log"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
-eq "success + rc 0 + no REPORT.md is DEGRADED" "$(printf '%s' "$out" | field '["verdict"]')" '"DEGRADED"'
-has "...and the finding names the report" "$out" "wrote no REPORT.md"
+eq "success + rc 0 + no PR + no comment is DEGRADED" "$(printf '%s' "$out" | field '["verdict"]')" '"DEGRADED"'
+has "...and the finding says it landed nothing" "$out" "landed nothing"
 
-# run-agent.sh's own report, signed. rc 0 and a clean tree is an orderly pass
-# that landed nothing -- legible, and NOT a finding (#1329).
+# A comment on the issue -- "nothing finishable from here, because X" -- is
+# read straight off the tool call the log already shows, not off a file the
+# pass wrote for the collector (#1416). rc 0 and a comment is a successful
+# pass that landed nothing, legible, and NOT a finding (#1329).
 { printf '=== result: success  turns=47  cost=$1.02\n'
   printf '=== %s container exited (rc=0) ===\n' "$now"
-  printf '=== REPORT.md (/x/REPORT.md) -- WRITTEN BY run-agent.sh, the agent wrote none ===\n'
-  printf 'harness-report: rc=0 turns=47 of 150 tree=clean branch=main\n'
+  printf '  > Bash gh issue comment 1416 --body nothing finishable from here\n'
 } > "$T/agent/roster.$stamp.log"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
-eq "a harness-written report is its own state, not \`present\` and not \`missing\`" \
-   "$(printf '%s' "$out" | field '["nightly"]["passes"][0]["report"]')" '"synthesized"'
-eq "...and rc 0 on a clean tree is OK, not DEGRADED" \
+eq "a comment on the issue is read back" \
+   "$(printf '%s' "$out" | field '["nightly"]["passes"][0]["commented"]')" "true"
+eq "...and that is OK, not DEGRADED" \
    "$(printf '%s' "$out" | field '["verdict"]')" '"OK"'
-
-sed -i 's/tree=clean/tree=dirty/' "$T/agent/roster.$stamp.log"
-out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
-eq "...while a dirty tree under the same silence IS a finding" \
-   "$(printf '%s' "$out" | field '["verdict"]')" '"DEGRADED"'
-has "...and it quotes the harness's own line" "$out" "tree=dirty"
 
 rm -f "$T/agent/roster.$stamp.log"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"

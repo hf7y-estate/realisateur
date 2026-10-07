@@ -230,35 +230,34 @@ def nightly_run():
 
 RESULT = re.compile(r"^=== result: (\S+)\s+turns=(\d+)\s+cost=\$(\S+)")
 EXITED = re.compile(r"^=== (\S+) container exited \(rc=(\d+)\) ===")
-NOREPORT = re.compile(r"^NOT FOUND at that path\.|^=== NO CHECKOUT at ")
-# run-agent.sh writes a REPORT.md itself when the agent wrote none, and signs
-# it -- so "the agent said nothing" stays visible instead of being papered over,
-# and the facts it leaves (rc, tree) are what grades the pass. #1329.
-SYNTHREPORT = re.compile(r"^=== REPORT\.md \(.*\) -- WRITTEN BY run-agent\.sh")
-HARNESSFACTS = re.compile(r"^harness-report: .*tree=(\S+)")
+# A tool call is echoed as "  > Bash gh issue comment ...", one line per call
+# (run-agent.sh's own stream-json formatting) -- so a comment the pass left on
+# its issue is read back from the log it was already printed to, the same way
+# the PR it opened is (#1416: the file a pass used to write FOR the collector
+# is retired; what a pass left is read from what it already produced).
+COMMENTED = re.compile(r"gh issue comment\b")
 
 
 def pass_row(repo):
-    """The repo's most recent container pass, graded on WHAT IT LEFT.
+    """The repo's most recent container pass, graded on WHAT IT LEFT: a PR it
+    opened, a comment on its issue, or neither.
 
     `result: success` means claude exited cleanly, which it also does when it
-    read the queue and wrote "nothing finishable from here" -- a successful
-    run of the mechanism. So the PR is reported separately and never inferred
-    from the exit code."""
+    read the queue and wrote "nothing finishable from here" in a comment -- a
+    successful run of the mechanism. So landing nothing is read off the PR and
+    the comment, never inferred from the exit code."""
     path = latest(f"{repo}.*.log")
     if not path:
         return {"repo": repo, "log": None, "result": None, "turns": None,
-                "cost_usd": None, "rc": None, "report": None, "pr": None,
-                "tree": None, "at": None,
-                "note": "never dispatched: no log under the agent dir"}
+                "cost_usd": None, "rc": None, "pr": None, "commented": False,
+                "at": None, "note": "never dispatched: no log under the agent dir"}
     txt = read(path)
     if txt is None:
         return {"repo": repo, "log": os.path.basename(path), "result": None, "turns": None,
-                "cost_usd": None, "rc": None, "report": None, "pr": None,
-                "tree": None, "at": None, "note": "log present but unreadable"}
+                "cost_usd": None, "rc": None, "pr": None, "commented": False,
+                "at": None, "note": "log present but unreadable"}
     row = {"repo": repo, "log": os.path.basename(path), "result": None, "turns": None,
-           "cost_usd": None, "rc": None, "report": None, "pr": None,
-           "tree": None, "note": None}
+           "cost_usd": None, "rc": None, "pr": None, "commented": False, "note": None}
     stamp = os.path.basename(path).rsplit(".", 2)[-2]
     row["at"] = f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:11]}:{stamp[11:13]}:{stamp[13:16]}"
     for line in txt.splitlines():
@@ -272,20 +271,12 @@ def pass_row(repo):
         m = EXITED.match(line)
         if m:
             row["rc"] = int(m.group(2))
-        if NOREPORT.match(line):
-            row["report"] = "missing"
-        if SYNTHREPORT.match(line):
-            row["report"] = "synthesized"
-        m = HARNESSFACTS.match(line)
-        if m:
-            row["tree"] = m.group(1)
-            row["note"] = line.strip()
-    if row["report"] is None and "=== REPORT.md (" in txt:
-        row["report"] = "present"
-    # The PR the pass opened, read off the report it wrote. NOT off the PR
-    # author: the container pushes with the estate's own token, so every PR it
-    # opens is authored `hf7y` -- nightly.sh's own summary greps for
-    # `claude|agent` and has therefore matched nobody on every green night.
+        if COMMENTED.search(line):
+            row["commented"] = True
+    # The PR the pass opened. NOT off the PR author: the container pushes with
+    # the estate's own token, so every PR it opens is authored `hf7y` --
+    # nightly.sh's own summary greps for `claude|agent` and has therefore
+    # matched nobody on every green night.
     hit = PULL_RE.search(txt)
     if hit:
         row["pr"] = hit.group(0)
@@ -434,14 +425,8 @@ def grade(d):
             warn.append(f"{p['repo']}: on the repo list and never dispatched")
         elif p["result"] and p["result"] != "success":
             warn.append(f"{p['repo']}: last pass ended `{p['result']}`")
-        elif p["report"] == "missing":
-            warn.append(f"{p['repo']}: last pass wrote no REPORT.md -- the only real failure of a pass")
-        elif p["report"] == "synthesized" and (p["rc"] not in (0, None) or p["tree"] == "dirty"):
-            # A signed harness report with rc 0 and a clean tree is an orderly
-            # pass that landed nothing, which the brief calls a success. Only
-            # the other shapes are findings.
-            warn.append(f"{p['repo']}: the agent wrote no REPORT.md and the harness's own reads "
-                        f"`{p['note'] or 'rc/tree unknown'}`")
+        elif not p["pr"] and not p["commented"]:
+            warn.append(f"{p['repo']}: last pass landed nothing -- no PR and no comment on its issue")
 
     if bad:
         return "DOWN", bad + warn
