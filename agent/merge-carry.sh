@@ -30,6 +30,10 @@ case "$target" in
 esac
 key="$repo"; [ "$owner" = hf7y-estate ] || key="${owner}.${repo}"
 carry="${AGENT_STATE:-/srv/agent/state}/${key}.prs"
+# PRs already given their one update-branch call while RED or CONFLICTING
+# (#1596) -- next to carry, pruned to the PRs still held so it cannot grow
+# past what merge-carry is actually tracking.
+updated="${carry%.prs}.updated"
 
 tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 
@@ -90,6 +94,17 @@ while read -r n; do
     OPEN*)
       # Draft, CONFLICTING, or mergeability not computed yet: all states that can
       # change on their own, so none is a reason to forget the PR.
+      case "$st" in
+        *CONFLICTING*|*" RED")
+          # One real chance to resolve, not every pass (#1596): update-branch
+          # is async, so this same pass still reports the state unchanged --
+          # the next pass reads whatever resulted and decides fresh.
+          if ! grep -qxF "$n" "$updated" 2>/dev/null; then
+            GH_TOKEN="$tok" gh api --method PUT \
+              "repos/${owner}/${repo}/pulls/${n}/update-branch" </dev/null >/dev/null 2>&1
+            printf '%s\n' "$n" >> "$updated"
+          fi ;;
+      esac
       echo "  HELD     #${n} -- ${st}${note}"
       keep="${keep}${n}"$'\n' ;;
     "")
@@ -100,3 +115,7 @@ while read -r n; do
   esac
 done < "$carry"
 printf '%s' "$keep" > "$carry"
+if [ -s "$updated" ]; then
+  grep -xFf <(printf '%s' "$keep") "$updated" > "$updated.new" 2>/dev/null
+  mv "$updated.new" "$updated"
+fi
