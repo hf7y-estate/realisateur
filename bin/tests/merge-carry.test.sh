@@ -17,11 +17,20 @@ printf 'not-a-real-token\n' > "$T/token"
 # (file contents = exit code), and records every merge it was asked for.
 # `api .../actions/permissions` answers from $T/actions-enabled, defaulting to
 # "true" when absent -- same as every section before G3 expects, unstated.
+# `api --method PUT .../pulls/<n>/update-branch` records <n> to
+# $T/update-branch-calls, one line per call asked for.
 cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 n=""; for a in "$@"; do case "$a" in [0-9]*) n="$a"; break ;; esac; done
 case "$1" in
-  api) [ -f "$T/actions-enabled" ] && cat "$T/actions-enabled" || echo true ;;
+  api)
+    ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a" ;; esac; done
+    case "$ep" in
+      */update-branch)
+        pn="${ep#*pulls/}"; pn="${pn%/update-branch}"
+        printf '%s\n' "$pn" >> "$T/update-branch-calls" ;;
+      *) [ -f "$T/actions-enabled" ] && cat "$T/actions-enabled" || echo true ;;
+    esac ;;
   *) case "$2" in
        list)  [ ! -f "$T/listfail" ] || exit 1; cat "$T/list" 2>/dev/null ;;
        view)
@@ -53,6 +62,7 @@ run() {  # run(repo) -- with the stubs in front of the real gh
 carry() { printf '%s\n' "$@" > "$T/state/${repo}.prs"; }
 left()  { tr '\n' ' ' < "$T/state/${repo}.prs" | sed 's/ $//'; }
 state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; }
+calls() { [ -f "$T/update-branch-calls" ] && grep -c "^$1\$" "$T/update-branch-calls" || echo 0; }
 
 section "A. the argument contract"
 out="$(PATH="$T/bin:$PATH" AGENT_STATE="$T/state" bash "$SUT" 2>&1)"
@@ -153,5 +163,36 @@ has "the same RED state still holds when Actions is on" "$out" "HELD     #33"
 hasnt "...with no claim that Actions is disabled" "$out" "Actions disabled"
 eq  "...and keeps it" "$(left)" "33"
 rm -f "$T/actions-enabled"
+
+section "J. RED or CONFLICTING gets one update-branch call, not every pass"
+rm -f "$T/update-branch-calls"
+repo=redonce; carry 22
+state 22 "OPEN false MERGEABLE RED"
+out="$(run "$repo")"
+has "held for RED" "$out" "HELD     #22"
+eq  "...and update-branch was called once" "$(calls 22)" "1"
+out="$(run "$repo")"
+has "still held, same RED state" "$out" "HELD     #22"
+eq  "...and a second consecutive HELD pass triggers none" "$(calls 22)" "1"
+rm -f "$T/update-branch-calls"
+
+repo=conflictonce; carry 33
+state 33 "OPEN false CONFLICTING"
+out="$(run "$repo")"
+has "held for CONFLICTING" "$out" "HELD     #33"
+eq  "...and update-branch was called once" "$(calls 33)" "1"
+out="$(run "$repo")"
+eq  "...and a second consecutive HELD pass triggers none" "$(calls 33)" "1"
+rm -f "$T/update-branch-calls"
+
+section "K. other HELD reasons never call update-branch"
+for case in "pending:OPEN false MERGEABLE PENDING" "young:OPEN false MERGEABLE YOUNG" "draft:OPEN true MERGEABLE" "uncomputed:OPEN false UNKNOWN"; do
+  repo="up-${case%%:*}"; carry 44
+  state 44 "${case#*:}"
+  out="$(run "$repo")"
+  has "${repo}: held, no update-branch call" "$out" "HELD     #44"
+  eq  "${repo}: and none was made" "$(calls 44)" "0"
+  rm -f "$T/update-branch-calls"
+done
 
 summary
