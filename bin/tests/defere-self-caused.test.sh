@@ -41,7 +41,7 @@ git -C "$REPO" -c commit.gpgsign=false commit -q -m init
 
 run() {
   ( cd "$REPO" && PATH="$T/bin:$PATH" DEFERE_BASE=main \
-      bash "$SCRIPT" "$@" --repo owner/repo --default-after '2d: block' --dry-run ) 2>&1
+      bash "$SCRIPT" "$@" --repo owner/repo --default-after '2d: block' --policy 'none yet' --dry-run ) 2>&1
 }
 
 section "A. uncommitted self-caused change: the agent's own edit is named in the filing"

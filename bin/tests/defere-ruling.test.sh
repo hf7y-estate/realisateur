@@ -33,7 +33,7 @@ EOF
 chmod +x "$T/bin/gh"
 
 run() {
-  PATH="$T/bin:$PATH" bash "$SCRIPT" "$@" --repo hf7y/realisateur --default-after '14d: block' --dry-run
+  PATH="$T/bin:$PATH" bash "$SCRIPT" "$@" --repo hf7y/realisateur --default-after '14d: block' --policy 'none yet' --dry-run
 }
 
 section "A. #132/#139 shape: the question restates an already-quoted ruling"
