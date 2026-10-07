@@ -19,6 +19,9 @@ printf 'not-a-real-token\n' > "$T/token"
 # "true" when absent -- same as every section before G3 expects, unstated.
 # `api --method PUT .../pulls/<n>/update-branch` records <n> to
 # $T/update-branch-calls, one line per call asked for.
+# `$T/view/<n>`'s OPTIONAL second line is the SUT's guarded-path reading (the
+# real `--jq` emits it from `.files[].path`; the fixture supplies the already-
+# decided CSV directly, same shortcut as the first line's state string).
 cat > "$T/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 n=""; for a in "$@"; do case "$a" in [0-9]*) n="$a"; break ;; esac; done
@@ -61,7 +64,7 @@ run() {  # run(repo) -- with the stubs in front of the real gh
 }
 carry() { printf '%s\n' "$@" > "$T/state/${repo}.prs"; }
 left()  { tr '\n' ' ' < "$T/state/${repo}.prs" | sed 's/ $//'; }
-state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; }
+state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; [ -n "${3:-}" ] && printf '%s\n' "$3" >> "$T/view/$1"; true; }
 calls() { [ -f "$T/update-branch-calls" ] && grep -c "^$1\$" "$T/update-branch-calls" || echo 0; }
 
 section "A. the argument contract"
@@ -194,5 +197,31 @@ for case in "pending:OPEN false MERGEABLE PENDING" "young:OPEN false MERGEABLE Y
   eq  "${repo}: and none was made" "$(calls 44)" "0"
   rm -f "$T/update-branch-calls"
 done
+
+section "L. a PR touching a guarded path is held and named, never merged, however green"
+repo=guarded; carry 11
+state 11 "OPEN false MERGEABLE" ".claude/settings.json"
+out="$(run "$repo")"
+has "names the path" "$out" "HELD     #11 -- GUARDED path:.claude/settings.json"
+hasnt "...never claims to merge it" "$out" "MERGED"
+eq  "...and keeps it for the next pass" "$(left)" "11"
+
+repo=guardedhooks; carry 22
+state 22 "OPEN false MERGEABLE" ".claude/hooks/pretooluse.sh"
+out="$(run "$repo")"
+has "a path under .claude/hooks/ is also guarded" "$out" "HELD     #22 -- GUARDED path:.claude/hooks/pretooluse.sh"
+eq  "...and kept" "$(left)" "22"
+
+repo=guardedtop; carry 33
+state 33 "OPEN false MERGEABLE" "CLAUDE.md"
+out="$(run "$repo")"
+has "CLAUDE.md is guarded" "$out" "HELD     #33 -- GUARDED path:CLAUDE.md"
+eq  "...and kept" "$(left)" "33"
+
+repo=guardedclean; carry 44
+state 44 "OPEN false MERGEABLE"
+out="$(run "$repo")"
+has "a PR touching none of those paths still merges" "$out" "MERGED   #44"
+eq  "...and is forgotten" "$(left)" ""
 
 summary

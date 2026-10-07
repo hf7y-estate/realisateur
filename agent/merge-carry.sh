@@ -62,19 +62,35 @@ echo "=== the previous pass's PRs on ${target} ==="
 # Actions disabled means statusCheckRollup can never change, so it is dropped
 # from the query entirely rather than trusted for RED/PENDING; YOUNG still
 # applies since it is about the PR's age, not its checks.
+#
+# A second line rides every query: the PR's own permission/instruction files,
+# named so a GUARDED hold can say which one. Checks say nothing about this --
+# a bot PR that edits `.claude/settings.json` or `CLAUDE.md` can be green and
+# mergeable and still be unread (#1606).
+guardjq='[.files[]?.path]|map(select(. == ".claude/settings.json" or . == ".claude/settings.local.json" or . == "CLAUDE.md" or startswith(".claude/hooks/") or startswith("hooks/")))|join(",")'
 if [ "$actions_enabled" = "false" ]; then
-  jqf='[.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
   note=" -- Actions disabled on ${owner}/${repo}, check records ignored"
 else
-  jqf='[.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
   note=""
 fi
 keep=""
 while read -r n; do
   [ -n "$n" ] || continue
-  st="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
-    --json state,isDraft,mergeable,statusCheckRollup,createdAt \
-    --jq "$jqf" </dev/null 2>/dev/null)" || st=""
+  out="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
+    --json state,isDraft,mergeable,statusCheckRollup,createdAt,files \
+    --jq "$jqf" </dev/null 2>/dev/null)" || out=""
+  st="$(printf '%s\n' "$out" | sed -n 1p)"
+  guarded="$(printf '%s\n' "$out" | sed -n 2p)"
+  # GUARDED wins over every other reading, including a green, mergeable PR:
+  # the hold is about WHAT changed, not whether it passed. Checked ahead of
+  # the main case below so a mergeable-and-guarded PR never reaches the merge.
+  if [ -n "$guarded" ]; then
+    echo "  HELD     #${n} -- GUARDED path:${guarded}"
+    keep="${keep}${n}"$'\n'
+    continue
+  fi
   case "$st" in
     "OPEN false MERGEABLE")
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \

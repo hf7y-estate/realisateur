@@ -98,6 +98,13 @@ not route around the filter by listing issues without it. A body that opens
 \`DECISION:\` and is in this list has outlived its \`DEFAULT-AFTER\` window:
 the action on that line is the ruling. Do it, and say so on the issue.
 
+A pass does not edit \`.claude/settings.json\`, \`.claude/settings.local.json\`,
+\`CLAUDE.md\`, or anything under \`.claude/hooks/\` or \`hooks/\` -- those are
+permission and instruction files, and \`merge-carry.sh\` holds any PR that
+touches one unread (#1606). If the work calls for a change there, leave it as
+a comment on the issue instead, naming the file and the change, and pick
+something else to land this pass.
+
 Then:
 0. TOO LARGE FOR ONE PASS means the pass is the split: file the issue's pieces
    as native sub-issues of it, each finishable in one pass and in the same
