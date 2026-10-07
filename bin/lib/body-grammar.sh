@@ -438,8 +438,13 @@ grammar_check() {
         case "$_da_days" in
           ''|*[!0-9]*) _find BAD-DEFAULT \
             "line $lineno: DEFAULT-AFTER needs a day count -- \`DEFAULT-AFTER 14d: <reversible action>\`." ;;
-          *) if [ -n "$_da_act" ]; then has_default=1; else _find BAD-DEFAULT \
-               "line $lineno: DEFAULT-AFTER names a window but no action. Say what happens when nobody answers."; fi ;;
+          *) case "$_da_days:$_da_act" in
+               [1-9]*:[Nn]one|[1-9]*:[Nn]one[!a-zA-Z]*|[1-9]*:[Nn]o\ default*) _find BAD-DEFAULT \
+                 "line $lineno: DEFAULT-AFTER with a window and the action \`none\` is a question that waits forever (senechal#941). Name what the asker does, or declare \`0d: block\`." ;;
+               *:?*) has_default=1 ;;
+               *) _find BAD-DEFAULT \
+                 "line $lineno: DEFAULT-AFTER names a window but no action. Say what happens when nobody answers." ;;
+             esac ;;
         esac
         [ "$first_seen" -eq 0 ] && [ "$open" -eq 0 ] && [ "$sopen" -eq 0 ] && _find UNDECLARED \
           'line 1 is neither `DECISION:` nor `NO-DECISION:`. Every body declares one.' ;;
