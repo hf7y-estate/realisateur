@@ -177,13 +177,17 @@ echo "=== image: ${image} ==="
 # identity before more unattended runs". A pass that cannot mint does not run.
 minter() {
   local m
-  for m in /usr/local/libexec/selfdev/selfdev-gh-app.sh \
-           "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")/bin/selfdev-gh-app.sh"; do
+  for m in "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")/bin/selfdev-gh-app.sh" \
+           /usr/local/libexec/selfdev/selfdev-gh-app.sh; do
     [ -x "$m" ] && { printf '%s' "$m"; return 0; }
   done
   return 1
 }
 
+# WHAT A PASS MAY DO, as granted to its token. The App holds administration:
+# write (delete a repo, rewrite protection); no pass needs it, so its token
+# does not get it. Read stays: CLAUDE.md's protection query needs it.
+PASS_PERMISSIONS='{"contents":"write","issues":"write","pull_requests":"write","workflows":"write","checks":"write","discussions":"write","metadata":"read","administration":"read"}'
 tokfile=""
 minted=""
 # MINTED FRESH, NOT READ FROM THE MINTER'S CACHE (#1417). `--token` returns the
@@ -192,7 +196,7 @@ minted=""
 # minter mint, and a pass gets the token's whole life. The cache stays what it
 # was built for, git's credential helper.
 nocache="$(mktemp -d)"
-if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" SELFDEV_GH_OWNER="$owner" "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
+if m="$(minter)" && tok="$(sudo -n env XDG_CACHE_HOME="$nocache" SELFDEV_GH_OWNER="$owner" SELFDEV_GH_PERMISSIONS="$PASS_PERMISSIONS" "$m" --token 2>/dev/null)" && [ -n "$tok" ]; then
   # Outside /srv/agent/work on purpose: that directory IS the container's mount,
   # so a token written there would be readable by the agent as a plain file
   # instead of only at /run/gh-token.
