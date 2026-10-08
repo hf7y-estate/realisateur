@@ -57,3 +57,20 @@ unroutable	D93F0B	written:defere	No repo owns this yet. Its own state, never a s
 # predicate (realisateur#602) is still unbuilt, so nothing enforces it today.
 decayable	0E8A16	typed	An idea or build that may already be obviated by the time it is reached. Mutually exclusive with `durable`.
 durable	1D76DB	typed	A bug, broken guard, or missing credential: stays exactly as broken until fixed. Mutually exclusive with `decayable`.
+
+# THE from: FAMILY (#1646): `ideate.md` has required `from:realisateur` on
+# every cross-project filing since 2026-08-16 (#352), but the label itself
+# had no row here, so `etiquette --all --apply` never provisioned it and 18
+# of 26 swept repos had no `from:*` label at all. Measured 2026-10-07: five
+# values exist in the wild (zach, realisateur, senechal, scheduler,
+# bibliothecaire), each in whatever color and wording the repo that first
+# needed it happened to pick. These five rows are the one grammar; `defere
+# --project` writes `from:<FROM>` alongside its route label (`--from`
+# overrides the default, which is the calling project's own name). Every
+# actor here is `hf7y`, so authorship alone cannot say whether a human or an
+# agent asked -- that is what this family is FOR, not decoration.
+from:zach	5319E7	written:defere	Filed on Zach's behalf, not surfaced by the named project's own backlog.
+from:realisateur	5319E7	written:defere	This issue was filed by realisateur -- typically a `defere --project <name>` or an `/ideate` pass -- not asked for directly by the repo it landed in.
+from:senechal	5319E7	written:defere	This issue was filed by senechal, not asked for directly by the repo it landed in.
+from:scheduler	5319E7	written:defere	This issue was filed by scheduler, not asked for directly by the repo it landed in.
+from:bibliothecaire	5319E7	written:defere	This issue was filed by bibliothecaire, not asked for directly by the repo it landed in.
