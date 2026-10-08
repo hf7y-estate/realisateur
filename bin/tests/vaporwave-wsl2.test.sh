@@ -20,9 +20,6 @@ if command -v man >/dev/null 2>&1; then
   has "A8 the SYNOPSIS survives -- a leading dot is a macro, and ate two of its three lines" \
     "$R" './constate.sh --target wsl:vaporwave'
   has "A9 ...including the bare invocation above it" "$R" './constate.sh                              is it a self-dev host yet?'
-else
-  ok "A1-A7 skipped: no man(1) on this runner"
-fi
 
 section "B. the hazards it inherits are STATED, not assumed known"
 has "B1 --shutdown is named as unavailable, by its cost" "$RF" "stops EVERY distro"
@@ -54,6 +51,9 @@ has "B14 ...and the restart that starts systemd is an actual command, not an ins
   "$R" 'wsl.exe --terminate vaporwave'
 has "B15 a degraded systemd is named CORRECT, so the next reader does not go fixing getty@tty1" \
   "$RF" "degraded systemd here is CORRECT"
+else
+  ok "A1-A9 and B1-B15 skipped: no man(1) on this runner"
+fi
 
 section "C. constate.sh -- a witness that cannot see says so"
 rcv=0; out="$(VAPORWAVE_PORT=2225 timeout 90 bash "$D/constate.sh" --target ssh:no-such-host-here 2>&1)" || rcv=$?
