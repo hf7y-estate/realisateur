@@ -16,7 +16,7 @@
 #
 # NOTIFY ONLY, DELIBERATELY. The post-meeting integration sequence has never run
 # end to end, and scheduling a sequence that has never completed only makes it
-# fail unattended. `defere` files one `needs-human` issue: no model is called,
+# fail unattended. `defere` files one `needs-human` issue and Zaxon carries it: no model is called,
 # no mail is sent, no tokens are spent. agent/nightly.sh's queue predicate
 # excludes `needs-human`, so the notification cannot pull a container either.
 # Do not "improve" this into an unattended run.
@@ -92,11 +92,13 @@ sudo -n systemctl enable --now vkv-notes-integration.timer' || exit 1
   exit 0
 fi
 
-# THE NOTIFICATION. `defere` is the estate's typed door for "a person has to do
-# this": it writes the DECISION/DEFAULT-AFTER grammar and the needs-human label
-# itself, so nothing here hand-rolls a body that body-grammar.sh would refuse.
-exec /usr/local/bin/defere \
+# THE NOTIFICATION, on Zaxon (Zach, 2026-10-08, #1362: "10/12 arrives via
+# Zaxon."). `defere` still files the issue: it is the record and carries the
+# default; the Zaxon message is what reaches him, and its failure fails the unit.
+url="$(/usr/local/bin/defere \
   "VKV: fold the 10/11 meeting notes into the armed Oct 17 brunch beat" \
   --human "the Oct 17 'Rapid Rewards Brunch 10/18' beat is armed as a Gmail scheduled send and is frozen -- folding the 10/11 meeting notes into it is cancel-send, edit, reschedule, BY HAND. Notes live at ~/Documents/vkv/ on mandark. Context: media-arts-collective/wavebucks#74." \
   --default-after "3d: the Oct 17 beat sends without the 10/11 notes in it" \
-  --repo hf7y-estate/realisateur
+  --repo hf7y-estate/realisateur 2>&1 | grep -oE 'https://github.com/[^ ]+/issues/[0-9]+' | tail -1)"
+. "${ZAXON_LIB:-/home/zach/realisateur/bin/lib/zaxon.sh}" || exit 1
+zaxon_send "VKV: fold the 10/11 meeting notes into the Oct 17 brunch email before it sends. It is a Gmail scheduled send: cancel, edit, reschedule, by hand. Notes: ~/Documents/vkv/ on mandark. ${url:-(the issue could not be filed)}" vkv-notes
