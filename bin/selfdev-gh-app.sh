@@ -143,7 +143,7 @@ installation_id() {
 # minting per operation would turn one push into three round trips and three
 mint_token() {
   local jwt inst body cache now exp
-  cache="$CACHE_DIR/$(printf '%s|%s|%s' "$APP_ID" "$OWNER" "$REPOS" | openssl dgst -sha256 -hex | awk '{print $NF}').tok"
+  cache="$CACHE_DIR/$(printf '%s|%s|%s|%s' "$APP_ID" "$OWNER" "$REPOS" "${SELFDEV_GH_PERMISSIONS:-}" | openssl dgst -sha256 -hex | awk '{print $NF}').tok"
   if [ -r "$cache" ]; then
     now="$(date +%s)"; exp="$(head -1 "$cache")"
     case "$exp" in
@@ -159,12 +159,20 @@ mint_token() {
   else
     body=""
   fi
+  # SELFDEV_GH_PERMISSIONS narrows what the token GRANTS, at mint time, with no
+  # change to the App: a JSON object GitHub accepts only at or below the App's
+  # own level. Zach, 2026-10-08: "can we step down the administration:write".
+  if [ -n "${SELFDEV_GH_PERMISSIONS:-}" ]; then
+    body="$(jq -cn --argjson b "${body:-{\}}" --argjson p "$SELFDEV_GH_PERMISSIONS" '$b + {permissions: $p}')" \
+      || die "SELFDEV_GH_PERMISSIONS is not a JSON object"
+  fi
   local json tok
   json="$(api POST "/app/installations/$inst/access_tokens" "$jwt" "$body")" || return 1
   tok="$(printf '%s' "$json" | jq -r '.token // empty')"
   [ -n "$tok" ] || die "GitHub returned no token for installation $inst"
   exp="$(printf '%s' "$json" | jq -r '.expires_at // empty')"
   mkdir -p "$CACHE_DIR" && chmod 700 "$CACHE_DIR"
+  printf '%s' "$json" | jq -c '.permissions // {}' > "$CACHE_DIR/granted.json"   # what GitHub says this token grants; not a secret
   # Written 600 BEFORE the secret goes in, not after: a world-readable instant
   # is still a leak, and this file is a bearer credential.
   ( umask 077; printf '%s\n%s' "$(date -d "$exp" +%s 2>/dev/null || echo 0)" "$tok" > "$cache" )
@@ -427,7 +435,7 @@ case "$MODE" in
           if tok="$(mint_token 2>/dev/null)" && [ -n "$tok" ]; then
             n="$(curl -sS -H "Authorization: Bearer $tok" -H "Accept: application/vnd.github+json" \
                  "$API/installation/repositories?per_page=100" | jq -r '.total_count // 0')"
-            ok "WITNESS: installation token minted, $n repo(s) in scope"
+            ok "WITNESS: installation token minted, $n repo(s) in scope, administration: $(jq -r '.administration // "none"' "$CACHE_DIR/granted.json" 2>/dev/null || echo unread)"
             if ident="$(bot_identity 2>/dev/null)"; then
               ok "bot identity: $(printf '%s' "$ident" | sed -n 1p) <$(printf '%s' "$ident" | sed -n 2p)>"
             else
