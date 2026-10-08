@@ -23,8 +23,15 @@ CLI_USAGE="  defere.sh '<one line>' --project <name>       file on hf7y/<name>
            --milestone '<title>'              default: the repo's first open one
            --default-after '<n>d: <action>'   required by --human/--unroutable
            --policy '<general class>'         required by --human/--unroutable (#1621);
-                                               'none yet' if no such policy exists"
-CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --milestone --default-after --policy --dry-run --ledger --forget --scan --all'
+                                               'none yet' if no such policy exists
+           --blocked-on '<what this waits on>'  --project only (#1375): labels the
+                                               filing \`deferred\` and names the
+                                               blocker in the body. Omitted, and the
+                                               body does not otherwise name a
+                                               blocker, the filing goes unlabelled --
+                                               \`deferred\` means blocked, not merely
+                                               left behind."
+CLI_FLAGS='--project --human --unroutable --body --from --repo --decider --milestone --default-after --policy --blocked-on --dry-run --ledger --forget --scan --all'
 CLI_POSITIONAL=any
 CLI_EXITS='  0  filed, or printed under --dry-run / --ledger
   1  could not file -- destination did not resolve, or gh refused
@@ -39,7 +46,7 @@ OWNER="${DEFERE_OWNER:-$GH_ESTATE_OWNER}"
 # account: an agent account filing under its own name would be addressing the
 # decision to itself, which is the ownerless case with a handle stuck on it.
 DECIDER="${DEFERE_DECIDER:-hf7y}"
-WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''; POLICY=''; MILESTONE=''
+WHAT=''; PROJECT=''; HUMAN=''; UNROUTABLE=''; BODY=''; FROM=''; REPO=''; DEFAULT_AFTER=''; POLICY=''; MILESTONE=''; BLOCKED_ON=''
 ALL=0
 DRY=0; MODE='file'   # quoted: `file` is a mode name, not file(1) -- SC2209
 
@@ -55,6 +62,7 @@ while [ $# -gt 0 ]; do
     --default-after) DEFAULT_AFTER="${2:-}"; [ -n "$DEFAULT_AFTER" ] || cli_die "--default-after needs '<n>d: <action>'"; shift 2 ;;
     --policy)     POLICY="${2:-}"; [ -n "$POLICY" ] || cli_die "--policy needs the general class this asks about, or 'none yet'"; shift 2 ;;
     --milestone)  MILESTONE="${2:-}"; [ -n "$MILESTONE" ] || cli_die '--milestone needs a title'; shift 2 ;;
+    --blocked-on) BLOCKED_ON="${2:-}"; [ -n "$BLOCKED_ON" ] || cli_die '--blocked-on needs what this waits on'; shift 2 ;;
     --dry-run)    DRY=1; shift ;;
     --ledger)     MODE=ledger; shift ;;
     --forget)     MODE=forget; shift ;;
@@ -67,6 +75,19 @@ while [ $# -gt 0 ]; do
 done
 
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# defere_names_blocker <text> -- true when <text> already names what it waits
+# on (#1375): `deferred` is defined elsewhere (scheduler's dispatcher) as
+# "blocked on another delivery", not "left behind for later", so applying it
+# to every --project filing hid unblocked work from the target project's own
+# dispatch query. --blocked-on is the explicit route; this covers a --body
+# that already states the blocker in prose without repeating it.
+defere_names_blocker() {
+  case "${1,,}" in
+    *'blocked on'*|*'blocked by'*|*'blocks on'*|*'waits on'*|*'waiting on'*) return 0 ;;
+  esac
+  return 1
+}
 
 # #1407 (#132/#139 shape): a ruling gets quoted once, in a closed issue, and
 # then the same question is filed again as a fresh `needs-human` DECISION.
@@ -267,6 +288,7 @@ if [ "$nroute" -eq 0 ]; then
   cli_die "no route chosen. There is no default owner, on purpose -- an unroutable item silently assigned to a person is indistinguishable from one that genuinely needs them. Pick: --project <name> | --human '<why a person>' | --unroutable '<why nothing can own it>'"
 fi
 [ "$nroute" -eq 1 ] || cli_die 'choose exactly one of --project / --human / --unroutable'
+[ -z "$BLOCKED_ON" ] || [ -n "$PROJECT" ] || cli_die '--blocked-on only applies to --project (#1375; --human/--unroutable are already a DECISION, not a deferral)'
 
 if ! have gh; then
   echo "defere: BLIND -- gh is not on PATH. Nothing was filed, and nothing has been established about where this work went." >&2
@@ -292,9 +314,23 @@ fi
 TITLE=''; DEST=''; LABEL=''; LEDGER_KIND=''
 if [ -n "$PROJECT" ]; then
   DEST="$OWNER/$PROJECT"
-  LABEL='deferred'
   TITLE="$WHAT"
   LEDGER_KIND=project
+  # DEFERRED MEANS BLOCKED, NOT MERELY LEFT BEHIND (#1375): the target
+  # project's own dispatcher treats `deferred` as "waits on another
+  # delivery" and excludes it from its run, so stamping every --project
+  # filing with the label made unblocked work invisible there until someone
+  # removed it by hand. Apply it only when told what the block is.
+  if [ -n "$BLOCKED_ON" ]; then
+    LABEL='deferred'
+    BODY="${BODY:+$BODY
+
+}Blocked on: $BLOCKED_ON"
+  elif defere_names_blocker "$BODY"; then
+    LABEL='deferred'
+  else
+    LABEL=''
+  fi
   # PROBED, NOT ASSUMED.
   if ! gh repo view "$DEST" --json name -q .name >/dev/null 2>&1; then
     cat >&2 <<EOF
@@ -416,7 +452,7 @@ See realisateur \`bin/lib/body-grammar.sh\` for why this exists."
 
 if [ "$DRY" -eq 1 ]; then
   printf 'defere: DRY RUN -- nothing filed.\n\n'
-  printf '  repo:   %s\n  label:  %s\n  milestone: %s\n  title:  %s\n\n  body:\n' "$DEST" "$LABEL" "${MILESTONE:-none}" "$TITLE"
+  printf '  repo:   %s\n  label:  %s\n  milestone: %s\n  title:  %s\n\n  body:\n' "$DEST" "${LABEL:-(unlabelled)}" "${MILESTONE:-none}" "$TITLE"
   printf '%s\n' "$FULLBODY" | sed 's/^/    /'
   exit 0
 fi
@@ -424,11 +460,12 @@ fi
 # A missing label must not lose the issue. `gh issue create` fails outright on
 # an unknown label, so create it first and ignore an already-exists error --
 # the alternative is an issue that silently never gets filed, which is the
-# original failure wearing a different hat.
-gh label create "$LABEL" --repo "$DEST" --color ededed \
-   --description 'work deferred from another run; see body' >/dev/null 2>&1 || true
+# original failure wearing a different hat. Unlabelled (--project with no
+# blocker, #1375) skips this -- there is no label to create.
+[ -n "$LABEL" ] && gh label create "$LABEL" --repo "$DEST" --color ededed \
+   --description 'work deferred from another run; see body' >/dev/null 2>&1
 
-URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" --label "$LABEL" ${MILESTONE:+--milestone "$MILESTONE"} 2>&1)" || {
+URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" ${LABEL:+--label "$LABEL"} ${MILESTONE:+--milestone "$MILESTONE"} 2>&1)" || {
   printf 'defere: gh refused to file on %s:\n%s\n' "$DEST" "$URL" >&2
   printf '        NOTHING was filed. There is no ownerless line to fall back on --\n' >&2
   printf '        lib/body-grammar.sh refuses one. Fix the destination and re-run.\n' >&2
@@ -447,7 +484,7 @@ if lp="$(ledger_path)"; then
   printf '%s\n' "$LINE" >> "$lp"
 fi
 
-printf 'defere: filed %s  [%s]\n' "$URL" "$LABEL"
+printf 'defere: filed %s  [%s]\n' "$URL" "${LABEL:-unlabelled}"
 printf '        ledger line (already accumulated; `defere --ledger` prints the block):\n'
 printf '%s\n' "$LINE"
 exit 0
