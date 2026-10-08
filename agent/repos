@@ -40,6 +40,13 @@
 #                moving chezz's nightly off its own Actions workflow: "Do all 3."
 #                Last, so it takes the hours left over. An 80-turn pass ran out
 #                before committing; 150 finished (hf7y-estate/chezz#156).
+#   baudin       scripts/ selftests run with no house. Added 2026-10-07: 20 runnable,
+#                no pass between 2026-10-05 and a hand-sent one, because the budget
+#                is this file's line count and an appended repo waits behind all
+#                of it (#1476). Zach, 2026-10-07, asked "Should baudin get a
+#                slot?": "1. yes it should." A pass cannot reach Home Assistant
+#                (hf7y-estate/senechal#1159), so issues that need it want
+#                `needs-host`.
 crt
 dog
 musc-2300
@@ -52,3 +59,4 @@ bibliothecaire
 secretaire
 space-canon
 chezz
+baudin
