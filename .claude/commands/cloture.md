@@ -95,6 +95,7 @@ Only this session's own. **A body opening `DECISION:` is a question asked, not o
 - **Residue this session CAUSED is never one of these.** Repair it or file it; handing it back is the failure.
 - **"Blocked on Zach: nothing" under an unmet goal is an alarm**, not a pass -- the only thing that stopped is the agent. While an unblocked next command exists, run it.
 - **An offer is not a landing.** "Want me to file that?", "say the word and I'll build it" -- nine in one session, one declined (#1239). An offer nobody declines was never a question.
+- **A question he did not answer is still yours.** On the next turn, default it to his last instruction or re-ask it by name; at close, every question this session asked is done, defaulted, or an issue naming who acts and on what trigger (#1156).
 
 The test is structural: **a paragraph about a defect ending in a question mark did not file it.** Ask of the close you are about to write: **does any sentence propose work rather than link it?** If blocked, it is a `DECISION:` issue with a URL. If not blocked, it is not an offer -- do it, and link that.
 
