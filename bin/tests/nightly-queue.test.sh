@@ -259,4 +259,56 @@ has "...and the log names the issue" "$out" "pass 1/1 issue #42"
 has "...and says it was a sent run of just that target" "$out" \
   "sent run: only media-arts-collective/gamma#42"
 
+section "Q. a merge-carry.sh failure stays exactly as handled -- no new false alarm (#1649)"
+cat > "$T/agent/merge-carry.sh" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+chmod +x "$T/agent/merge-carry.sh"
+out="$(run)"; rc "...exits 0, same as always" 0 "$?"
+has "...says merge-carry.sh's own exit, the way it always has" "$out" "alpha: merge-carry.sh exited 1"
+hasnt "...does not ALSO raise the new alarm on a failure already named" "$out" "failed before dispatch"
+cat > "$T/agent/merge-carry.sh" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+chmod +x "$T/agent/merge-carry.sh"
+
+section "R. an unguarded failure between merge-carry and dispatch now names itself, not an 11-second silent death (#1649)"
+# The shape measured 2026-10-07: a sent run got through merge-carry.sh and
+# died before any "--- <repo>: ... dispatching" line, with NOTHING saying
+# why -- a `var=$(cmd)` failing with no `||` exits under `set -e` with zero
+# output. queue_count's own two `|| { echo ERR; return; }` guards are why
+# that call can't do it as THIS file reads today -- so this proves the net
+# catches the SHAPE of the bug, not today's one instance of it: strip the
+# first guard, the way a future edit might by accident, and confirm a named
+# failure, not silence, is what comes out.
+cp "$REPO/agent/nightly.sh" "$T/agent/nightly-unguarded.sh"
+perl -0pi -e 's/(ms="\$\(gh api "repos\/\$\{owner\}\/\$\{repo\}\/milestones\?state=open&per_page=100" --jq \x27\[\.\[\]\.number\]\x27 2>\/dev\/null\)")\s*\\\n\s*\|\|\s*\{\s*echo ERR;\s*return;\s*\}/$1/' \
+  "$T/agent/nightly-unguarded.sh"
+diff -q "$REPO/agent/nightly.sh" "$T/agent/nightly-unguarded.sh" >/dev/null \
+  && bad "setup: the guard-stripping edit did not change the file" "nothing to test against" \
+  || ok "setup: queue_count's first guard is stripped in this copy"
+eq "setup: the second guard is untouched -- only one was removed" \
+  "$(grep -c 'echo ERR; return; }' "$T/agent/nightly-unguarded.sh")" "1"
+
+printf 'alpha\n' > "$T/repos"
+cat > "$T/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  repo) [ "$2" = list ] && printf 'alpha\n' ;;
+  api)  case "$*" in *milestones*) exit 1 ;; esac ;;   # the now-unguarded call
+  issue) [ "$2" = list ] && printf '[]\n' ;;
+esac
+STUB
+chmod +x "$T/bin/gh"
+out="$(PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  AGENT_IMAGE="x" bash "$T/agent/nightly-unguarded.sh" 2>&1)"
+has "...names the repo and the exit code, instead of nothing" "$out" \
+  "alpha: failed before dispatch (exit 1"
+has "...and names where, so a reader does not have to guess" "$out" "line"
+has "...and the run still reaches its own end -- one repo's gap, not the whole night's" \
+  "$out" "nightly done"
+printf 'alpha\nbeta\n' > "$T/repos"
+
 summary
