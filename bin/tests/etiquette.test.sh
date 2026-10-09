@@ -222,38 +222,6 @@ has "K3 ...including one nothing ever dispatches to, which is the whole point" \
 rc "K4 one unreadable tracker is BLIND (6) for the whole sweep, never clean" 6 \
    "$(GH_FAIL_REPO="$SWEEP_OWNER/${SWEEP[0]}" run_all >/dev/null 2>&1; echo $?)"
 
-JQF="$(cd "$(dirname "$0")/.." && pwd)/lib/answered.jq"
-[ -r "$JQF" ] || { echo "FAIL: $JQF not readable"; exit 1; }
-
-ab() { jq -r --arg owner zach --arg era 2026-08-14 \
-         "$(cat "$JQF")"'. | answered_by // "null"'; }
-
-section "ANSWERED-BY is read from the body AND the comments"
-
-got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y-estate/wtul#34","comments":[]}' | ab)"
-[ "$got" = "hf7y-estate/wtul#34" ] \
-  && ok "A: a pointer in the body is found" \
-  || bad "A: a pointer in the body is found" "got: $got"
-
-got="$(printf '%s' '{"body":"DECISION: @zach","comments":[
-  {"createdAt":"2026-08-29T10:00:00Z","body":"ANSWERED-BY hf7y-estate/senechal#439"}]}' | ab)"
-[ "$got" = "hf7y-estate/senechal#439" ] \
-  && ok "B: a pointer in a COMMENT is found (senechal#527's case)" \
-  || bad "B: a pointer in a COMMENT is found" "got: $got -- body-only again"
-
-got="$(printf '%s' '{"body":"DECISION: @zach\nANSWERED-BY hf7y-estate/wtul#34","comments":[
-  {"createdAt":"2026-08-30T10:00:00Z","body":"ANSWERED-BY hf7y-estate/senechal#439"},
-  {"createdAt":"2026-08-29T10:00:00Z","body":"noise"}]}' | ab)"
-[ "$got" = "hf7y-estate/senechal#439" ] \
-  && ok "C: the newest pointer wins over the body's" \
-  || bad "C: the newest pointer wins over the body's" "got: $got"
-
-got="$(printf '%s' '{"body":"DECISION: @zach","comments":[{"createdAt":"2026-08-29T10:00:00Z","body":"no pointer"}]}' | ab)"
-[ "$got" = "null" ] \
-  && ok "D: no pointer anywhere is null, not empty" \
-  || bad "D: no pointer anywhere is null" "got: $got"
-
-echo
 section "L. a write the credential REFUSES is BLIND, never a clean sweep"
 cat > "$T/f.json" <<'EOF'
 [

@@ -15,11 +15,13 @@ GH_ESTATE_SITE_REPO="${GH_ESTATE_SITE_REPO:-hf7y.github.io}"
 # #673 gave these names one home to prevent, caught BY that home.
 GH_ESTATE_SITE_OWNER="${GH_ESTATE_SITE_OWNER:-hf7y}"
 # THE HUMAN IS NOT THE NAMESPACE. Before the cutover both were `hf7y`, so one
-# name served two jobs and nothing noticed. `answered.jq:38` matches
-# `.author.login == $owner` -- Zach's GitHub login -- and flipping the namespace
-# to the org made it match nobody, so every DECISION he had already answered
-# would have kept its `needs-human` label and gone on braking dispatch. Caught
-# by bin/tests/etiquette.test.sh, which went 63/0 to 57/6 on the flip alone.
+# name served two jobs and nothing noticed. The retired `bin/lib/answered.jq`
+# matched `.author.login == $owner` -- Zach's GitHub login -- and flipping the
+# namespace to the org would have matched nobody, so every DECISION he had
+# already answered would have kept its `needs-human` label and gone on
+# braking dispatch. Caught by bin/tests/etiquette.test.sh, which went 63/0 to
+# 57/6 on the flip alone. Unread by anything in this tree since answered.jq's
+# retirement (#1436); kept a login, not an org, for whatever reads it next.
 GH_ESTATE_HUMAN="${GH_ESTATE_HUMAN:-hf7y}"
 # WHERE THE ARMING AUTHORITY ANSWERS (hf7y/scheduler#429). 100.107.253.56 is
 # dexter's tailnet address, and every WSL2 distro on dexter shares that

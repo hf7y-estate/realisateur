@@ -80,8 +80,8 @@ command -v jq >/dev/null || { echo "decision-drift.sh: jq not on PATH" >&2; exit
 # issue in prose -- so this reads both spellings the estate's history left
 # behind: `hf7y/x#n` from before the org cutover and `hf7y-estate/x#n` since
 # (estate-set.sh's GH_ESTATE_HUMAN comment records that cutover). A fenced
-# code block is a quotation, not a live citation, same trap answered.jq's
-# stale_dates already names -- stripped first.
+# code block is a quotation, not a live citation, same trap the retired
+# bin/lib/answered.jq's stale_dates once guarded against -- stripped first.
 EXTRACT_JQ='
 def refs_in(body; repo):
   ((body // "") | gsub("```(?s:.*?)```"; " ")) as $b
