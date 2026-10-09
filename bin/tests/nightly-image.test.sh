@@ -12,7 +12,6 @@ echo "nightly-image.test.sh"
 
 mkdir -p "$T/bin" "$T/agent" "$T/srv"
 cp "$REPO/agent/nightly.sh" "$T/agent/nightly.sh"
-printf 'dog\n' > "$T/repos"
 
 # `sudo -n <cmd>` runs the stub of <cmd>; the token read is the one real thing
 # it has to answer, and it answers with a string no remote would accept.
@@ -31,7 +30,7 @@ case "$1" in
 esac
 STUB
 # Answers the three calls nightly.sh makes before it dispatches: the org
-# listing (just "dog", so the candidate set matches $T/repos), the open
+# listing (just "dog"), the open
 # milestones for "dog" (one, #1), and the queue read itself (one issue on
 # that milestone) -- so the loop reaches dispatch, which is the only thing
 # this suite is checking. nightly-queue.test.sh covers the predicate itself.
@@ -57,7 +56,7 @@ chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
 run() {  # run([AGENT_IMAGE]) -- one nightly pass against the stubs
   rm -f "$T/dispatched" "$T/srv/nightly."*.log
   # shellcheck disable=SC2097,SC2098  # T="$T" passes the harness dir the stubs read; same value, child env
-  PATH="$T/bin:$PATH" T="$T" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  PATH="$T/bin:$PATH" T="$T" AGENT_DIR="$T/srv" \
     AGENT_IMAGE="${1:-}" bash "$T/agent/nightly.sh" 2>&1
 }
 dispatched() { cat "$T/dispatched" 2>/dev/null; }

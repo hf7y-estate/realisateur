@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# SUBJECT: agent/nightly.sh, the repo-set and queue-predicate half (#1383).
-# `agent/repos` used to BE the candidate set; now it only orders the repos it
-# names, and the org (`gh repo list hf7y-estate --no-archived`) is the set --
-# a repo the org has and the file doesn't still runs, last. The queue count
-# that gates a dispatch is also narrowed: open issues in an open milestone,
-# not just open issues. Hermetic -- `sudo`, `docker` and `gh` are stubs on
-# PATH, beside a COPY of the script.
+# SUBJECT: agent/nightly.sh, the repo-set, order and queue-predicate half
+# (#1383, #1476). The org (`gh repo list hf7y-estate --no-archived`) is the
+# set and the pass logs are the order: oldest pass first, never-passed before
+# all. The queue count that gates a dispatch is open issues in an open
+# milestone, not just open issues. Hermetic -- `sudo`, `docker` and `gh` are
+# stubs on PATH, beside a COPY of the script.
 set -uo pipefail
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/harness.sh"
 harness_tmp; export T
@@ -15,10 +14,6 @@ echo "nightly-queue.test.sh"
 
 mkdir -p "$T/bin" "$T/agent" "$T/srv"
 cp "$REPO/agent/nightly.sh" "$T/agent/nightly.sh"
-# alpha and beta are the hand list; gamma and delta are in the org but not
-# here, and must still run -- last.
-printf 'alpha\nbeta\n' > "$T/repos"
-
 cat > "$T/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
 shift                                   # drop -n
@@ -33,8 +28,7 @@ case "\$1" in
 esac
 STUB
 
-# The org is alpha, beta, gamma, delta -- gamma and delta are not in
-# $T/repos. gh repo list prints this. gh api .../milestones answers each
+# The org is alpha, beta, gamma, delta. gh repo list prints this. gh api .../milestones answers each
 # repo's OPEN milestones; a repo with a "fail-ms-<repo>" marker fails
 # instead, the way an unreadable repo does for real. gh issue list answers
 # each repo's open, non-needs-host/needs-human issues with their milestone.
@@ -44,10 +38,8 @@ STUB
 #        closed milestone in practice) -- this is the predicate under test:
 #        an issue is not "queued" just because it exists and has *a*
 #        milestone, only an OPEN one. Queue count must be 0, not 1.
-# gamma: absent from $T/repos; one issue on its open milestone -- dispatches,
-#        and LAST, proving the org is the candidate set, not the file.
-# delta: absent from $T/repos; its milestones call fails -- unreadable, not
-#        guessed at as empty.
+# gamma: one issue on its open milestone -- dispatches.
+# delta: its milestones call fails -- unreadable, not guessed at as empty.
 printf 'alpha\nbeta\ngamma\ndelta\n' > "$T/org.txt"
 touch "$T/fail-ms-delta"
 cat > "$T/bin/gh" <<'STUB'
@@ -108,19 +100,25 @@ chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
 
 run() {
   rm -f "$T/dispatched" "$T/srv/nightly."*.log
-  PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+  PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" \
     AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1
 }
 dispatched() { cat "$T/dispatched" 2>/dev/null; }
 
-section "A. the org, not the file, is the candidate set"
+section "A. the org is the candidate set, in name order when nothing has ever run"
 rm -f "$T/fail-repo-list"
 out="$(run)"; rc "exits 0" 0 "$?"
-has "...says a repo absent from the file is appended, and names it" "$out" \
-  "org repos not in $T/repos, appended last: delta gamma"
-eq "...alpha dispatched" "$(dispatched | sed -n 1p)" "alpha"
-eq "...gamma dispatched too, absent from the file or not" "$(dispatched | sed -n 2p)" "gamma"
-eq "...only those two ran (beta and delta did not)" "$(dispatched | wc -l | tr -d ' ')" "2"
+has "...says the order it chose" "$out" "oldest pass first: alpha beta delta gamma"
+eq "...alpha and gamma ran, in that order (beta and delta did not)" "$(dispatched | tr '\n' ' ')" "alpha gamma "
+
+section "A2. the repo passed longest ago goes first, so no tail starves (#1476)"
+: > "$T/srv/alpha.20261009T000000Z.log"; : > "$T/srv/gamma.20261005T000000Z.log"
+out="$(NIGHT_PASSES=1 run)"
+eq "...the one pass goes to gamma, not back to the top of the alphabet" "$(dispatched | tr '\n' ' ')" "gamma "
+: > "$T/srv/gamma.20261009T000001Z.log"
+out="$(NIGHT_PASSES=1 run)"
+eq "...and once gamma has a newer log, alpha's turn comes round" "$(dispatched | tr '\n' ' ')" "alpha "
+rm -f "$T/srv/alpha."*.log "$T/srv/gamma."*.log
 
 section "B. the queue is issues on an OPEN milestone, not just issues"
 has "...beta's issue sits on a milestone that isn't open, so its queue reads empty" \
@@ -132,21 +130,14 @@ has "...delta's milestones call failed, and that is named, not swallowed" "$out"
   "--- delta: COULD NOT READ THE QUEUE -- skipping, not guessing"
 hasnt "...delta was never dispatched into" "$(dispatched)" "delta"
 
-section "D. a repo listed by hand but gone from the org is skipped and named"
-printf 'alpha\nbeta\nzzz-retired\n' > "$T/repos"
-out="$(run)"
-has "...says which, and why" "$out" "zzz-retired: in $T/repos but not in the hf7y-estate org -- skipping"
-hasnt "...never tried to queue-check it" "$out" "zzz-retired: queue empty"
-printf 'alpha\nbeta\n' > "$T/repos"
-
-section "E. the org listing itself failing falls back to the file, not to nothing"
+section "E. an unreadable org dispatches nothing, and fails so cron says so"
 touch "$T/fail-repo-list"
-out="$(run)"; rc "exits 0" 0 "$?"
-has "...says the org couldn't be read" "$out" "COULD NOT LIST hf7y-estate -- running $T/repos's order only, nothing appended"
-eq "...and still ran the file's own repos" "$(dispatched | sed -n 1p)" "alpha"
-hasnt "...but appended nothing it couldn't see" "$(dispatched)" "gamma"
+out="$(run)"; rc "exits 1" 1 "$?"
+has "...says the org couldn't be read" "$out" "COULD NOT LIST hf7y-estate -- dispatching nothing"
+eq "...and ran nothing" "$(dispatched | wc -l | tr -d ' ')" "0"
+out="$(ONLY="gamma" run)"; rc "...a sent run never asks the org, so it still runs" 0 "$?"
+eq "...gamma dispatched" "$(dispatched | tr '\n' ' ')" "gamma "
 rm -f "$T/fail-repo-list"
-
 
 section "F. PASSES drains a repo's queue, and stops when it is empty"
 printf '2\n' > "$T/left-alpha"                      # alpha's queue holds two issues
@@ -163,7 +154,7 @@ out="$(NIGHT_PASSES=1 run)"
 eq "...one pass spent, on the first repo with a queue" "$(dispatched | tr '\n' ' ')" "alpha "
 has "...and the rest are said to wait" "$out" "night budget of 1 pass(es) spent -- gamma and everything after it waits"
 out="$(run)"
-eq "...unset, the budget is the hand list's length (2): both runnable repos ran" \
+eq "...unset, the budget (13) covers both runnable repos" \
   "$(dispatched | wc -l | tr -d ' ')" "2"
 
 section "H. --send starts ONE supervised unit and nothing else (#1379)"
@@ -217,7 +208,7 @@ section "M. a repo locked by another chain is deferred, not waited on (#1476)"
 ( exec 9>"$T/srv/.pass.alpha.lock"; flock 9; sleep 30 ) &
 holder=$!; sleep 0.5
 rm -f "$T/dispatched" "$T/srv/nightly."*.log
-out="$(timeout 10 env PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" REPO_LIST="$T/repos" \
+out="$(timeout 10 env PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" \
   AGENT_IMAGE="ghcr.io/hf7y-estate/agent:latest" bash "$T/agent/nightly.sh" 2>&1)"
 rc "...does not hang waiting on the lock -- exits well inside the pass's own 30s hold" 0 "$?"
 has "...says alpha is locked and is not waiting on it" "$out" "alpha: locked by another chain, not waiting -- deferring"
@@ -226,30 +217,15 @@ has "...alpha is said to still be locked on its one retry" "$out" "alpha: still 
 hasnt "...and alpha itself never ran" "$(dispatched)" "alpha"
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 
-section "N. a repo line may name its own owner -- undiscovered, and not filtered by the hf7y-estate org check (#1602)"
-printf 'alpha\nbeta\nmedia-arts-collective/gamma\n' > "$T/repos"
-out="$(run)"; rc "exits 0" 0 "$?"
-has "...dispatches it under its own owner, label and all" "$out" \
-  "--- media-arts-collective/gamma: 1 runnable, dispatching"
-hasnt "...never filtered as 'not in the hf7y-estate org'" "$out" \
-  "media-arts-collective/gamma: in $T/repos but not in the hf7y-estate org"
-has "...the automatic org listing still only appends hf7y-estate's own repos" "$out" \
-  "org repos not in $T/repos, appended last: delta gamma"
-eq "...alpha, the named repo, then hf7y-estate's own gamma last" \
-  "$(dispatched | tr '\n' ' ')" "alpha media-arts-collective/gamma gamma "
-printf 'alpha\nbeta\n' > "$T/repos"
-
 section "O. a same-named repo under a different owner does not share hf7y-estate's lock or log (#1602)"
-printf 'alpha\nbeta\nmedia-arts-collective/gamma\n' > "$T/repos"
 ( exec 9>"$T/srv/.pass.gamma.lock"; flock 9; sleep 5 ) &
 holder=$!; sleep 0.5
-out="$(run)"
+out="$(ONLY="media-arts-collective/gamma gamma" run)"
 eq "...media-arts-collective/gamma ran anyway, on a lock of its own" \
-  "$(dispatched | tr '\n' ' ')" "alpha media-arts-collective/gamma "
+  "$(dispatched | tr '\n' ' ')" "media-arts-collective/gamma "
 has "...hf7y-estate's own gamma was the one deferred by the shared lock" "$out" \
   "gamma: locked by another chain, not waiting -- deferring"
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
-printf 'alpha\nbeta\n' > "$T/repos"
 
 section "P. a sent target may name its own owner together with an issue number (#1602)"
 out="$(ONLY="media-arts-collective/gamma#42" PASSES=1 run)"

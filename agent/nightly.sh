@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # nightly.sh -- spawn one agent container per repo, in order, one at a time.
 # This is the whole overnight scheduler. There is no pacer, no rotation index,
-# no usage gate, no ledger and no ROSTER; the file next to this one is the list
-# and `flock` is the concurrency control.
+# no usage gate, no ledger, no ROSTER and no hand list; the org is the list,
+# the pass logs are the order, and `flock` is the concurrency control.
 #
 # What replaced what:
 #   usage-paced-runner.sh  ->  this loop
@@ -34,7 +34,6 @@ if [ "${1:-}" = --send ]; then
     "$here/nightly.sh"
 fi
 only="${ONLY:-}"
-list="${REPO_LIST:-$here/repos}"
 # The log and the lock live where the dispatch layer does. Named once, and
 # overridable, so the suite can run this loop somewhere that is not the host.
 dir="${AGENT_DIR:-/srv/agent}"
@@ -56,7 +55,7 @@ fi
 exec > >(tee -a "$log") 2>&1
 export GH_TOKEN="${GH_TOKEN:-$(sudo -n cat /etc/selfdev/gh-token)}"
 
-echo "=== nightly $(date -u +%FT%TZ)  turns=$turns  list=$list ==="
+echo "=== nightly $(date -u +%FT%TZ)  turns=$turns ==="
 
 # THE IMAGE COMES FROM THE REGISTRY, which is what makes a merged
 # `agent/Dockerfile` edit the thing tonight runs. `.github/workflows/agent-image.yml`
@@ -75,72 +74,42 @@ sudo -n docker pull "$AGENT_IMAGE" \
 digest="$(sudo -n docker image inspect "$AGENT_IMAGE" --format '{{index .RepoDigests 0}}')" \
   && echo "=== image: $digest ===" \
   || echo "=== image: $AGENT_IMAGE -- pulled, digest unreadable ==="
-# THE ORG IS THE CANDIDATE SET, not this file (#1383). `agent/repos` keeps
-# only order: a repo named there runs where it's placed; a repo the org has
-# and that file doesn't still runs, last. Before this, a repo absent from the
-# hand list never ran no matter what its queue held -- space-canon sat
-# unlisted while #4 and #11 were answered and milestoned, and nobody added
-# the repo until it was fixed by hand (#1380).
-org_repos="$(gh repo list hf7y-estate --no-archived --limit 1000 --json name --jq '.[].name' 2>&1)" \
-  && echo "=== org: $(printf '%s\n' "$org_repos" | grep -c .) non-archived repos ===" \
-  || { echo "=== COULD NOT LIST hf7y-estate -- running $list's order only, nothing appended ==="; org_repos=""; }
-
-declare -A in_org=()
-if [ -n "$org_repos" ]; then
-  while IFS= read -r r; do
-    [ -n "$r" ] || continue
-    in_org["$r"]=1
-  done <<<"$org_repos"
-fi
-
-declare -A in_list=()
-repos=()
-while IFS= read -r r; do
-  [ -n "$r" ] || continue
-  # A line may be owner/repo (#1602): the hf7y-estate org check below is what
-  # that owner is FOR, so a line naming a different one skips the check
-  # entirely -- it runs because it was listed, not because it was discovered.
-  r_base="${r%%#*}"
-  case "$r_base" in
-    */*) r_owner="${r_base%%/*}"; r_repo="${r_base#*/}" ;;
-    *)   r_owner="hf7y-estate"; r_repo="$r_base" ;;
-  esac
-  if [ "$r_owner" = hf7y-estate ] && [ -n "$org_repos" ] && [ -z "${in_org[$r_repo]:-}" ]; then
-    echo "--- $r: in $list but not in the hf7y-estate org -- skipping"
-    continue
-  fi
-  in_list["$r_owner/$r_repo"]=1
-  repos+=("$r")
-done < <(grep -vE '^\s*(#|$)' "$list")
-
-extra=()
-if [ -n "$org_repos" ]; then
-  while IFS= read -r r; do
-    [ -n "$r" ] || continue
-    if [ -z "${in_list[hf7y-estate/$r]:-}" ]; then
-      extra+=("$r")
-    fi
-  done < <(printf '%s\n' "$org_repos" | sort)
-fi
-if [ "${#extra[@]}" -gt 0 ]; then
-  echo "=== org repos not in $list, appended last: ${extra[*]} ==="
-  repos+=("${extra[@]}")
-fi
-
-# A SENT RUN NAMES ITS REPOS. The org is still what was listed above; ONLY
-# narrows it to what the sender asked for, in the sender's order.
+# THE ORG IS THE CANDIDATE SET (#1383) AND THE PASS LOGS ARE THE ORDER (#1476).
+# There was a hand list, `agent/repos`, layered on top: it ordered the repos it
+# named, the rest went last in name order, and the budget was its line count --
+# so every night restarted at the top and the tail never ran. apms-2173 held 14
+# runnable issues and got no pass from 2026-10-05 to 2026-10-09. Zach,
+# 2026-10-09: "the old agents/repos folder thing makes no sense seems like a
+# layered not replaced failure". Now: whoever was passed longest ago goes
+# first, a repo never passed goes before all of them, and a foreign-owner repo
+# runs by `--send owner/repo` (#1602).
+#
+# AN UNREADABLE ORG DISPATCHES NOTHING, and exits 1 so cron says so: with no
+# hand list there is no order to fall back to.
+# A SENT RUN NAMES ITS REPOS, in the sender's order, and asks the org nothing.
 if [ -n "$only" ]; then
   read -ra repos <<<"$only"
   echo "=== sent run: only ${repos[*]} ==="
+else
+  org_repos="$(gh repo list hf7y-estate --no-archived --limit 1000 --json name --jq '.[].name')" \
+    && [ -n "$org_repos" ] \
+    || { echo "=== COULD NOT LIST hf7y-estate -- dispatching nothing ==="; exit 1; }
+  repos=()
+  while read -r _ r; do repos+=("$r"); done < <(
+    while IFS= read -r r; do
+      last="$(ls "${dir}/${r}".[0-9]*Z.log 2>/dev/null | tail -1 || true)"; last="${last%.log}"
+      printf '%s %s\n' "${last:+${last##*.}}" "$r"
+    done <<<"$org_repos" | sed 's/^ /0 /' | sort)
+  echo "=== org: ${#repos[@]} non-archived repos, oldest pass first: ${repos[*]} ==="
 fi
 
 # THE NIGHT HAS ONE BUDGET, NOT ONE PER REPO (Zach, 2026-10-01: "It shouldn't be
-# per-repo at all. It should be ecosystem-wide"). Until something measured sets
-# NIGHT_PASSES, the default is the number of repos the hand list names: what a
-# night cost before the org became the set, and no more. A sent run is bounded
-# by what it was sent with.
+# per-repo at all. It should be ecosystem-wide"). 13 is what a night cost when
+# the hand list set it, kept so removing the list changes the order and not the
+# spend; #1476 replaces the number with the gate. A sent run is bounded by what
+# it was sent with.
 if [ -n "$only" ]; then night="${NIGHT_PASSES:-$(( ${#repos[@]} * passes ))}"
-else night="${NIGHT_PASSES:-$(grep -cvE '^\s*(#|$)' "$list")}"; fi
+else night="${NIGHT_PASSES:-13}"; fi
 spent=0
 
 # The queue predicate: open issues in an open milestone, minus needs-host and

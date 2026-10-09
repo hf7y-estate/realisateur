@@ -82,13 +82,13 @@ has "...while a file it DID replace still says where the bytes went" "$out" "was
 
 section "F. bytes that were NEVER this path's content are refused, never adopted"
 fresh_copies
-printf 'a-hand-edit-nobody-recorded\n' > "$T/srv/repos"
+printf 'a-hand-edit-nobody-recorded\n' > "$T/srv/Dockerfile"
 out="$(wire --apply)"; rc "drift exits 5" 5 "$?"
 has "...and says the host was edited" "$out" "NEVER this path's content"
 eq  "...and --state calls it drifted" \
-    "$(AGENT_DIR="$T/srv" bash "$WIRE" --state | awk -F'\t' '$1=="repos"{print $2}')" "drifted"
-has "...and hands over the diff command" "$out" "diff '$T/srv/repos'"
-eq "...and left the drifted file exactly as it was" "$(cat "$T/srv/repos")" "a-hand-edit-nobody-recorded"
+    "$(AGENT_DIR="$T/srv" bash "$WIRE" --state | awk -F'\t' '$1=="Dockerfile"{print $2}')" "drifted"
+has "...and hands over the diff command" "$out" "diff '$T/srv/Dockerfile'"
+eq "...and left the drifted file exactly as it was" "$(cat "$T/srv/Dockerfile")" "a-hand-edit-nobody-recorded"
 eq "...while still wiring the others that agreed" "$(find "$T/srv" -maxdepth 1 -type l | wc -l)" "$((NFILES - 1))"
 
 section "G. a nightly holding the lock stops it -- run-agent.sh is in use"
