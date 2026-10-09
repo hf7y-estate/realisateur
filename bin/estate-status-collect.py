@@ -39,7 +39,7 @@ PULL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
 # The files the dispatcher IS. They are not a checkout (#1332): unless
 # each is a symlink into a clone that something pulls, a merged fix reaches the
 # 01:00 pass on no path -- and reads exactly like a fix.
-DISPATCH_FILES = ("nightly.sh", "run-agent.sh", "merge-carry.sh", "repos", "Dockerfile")
+DISPATCH_FILES = ("nightly.sh", "run-agent.sh", "merge-carry.sh", "Dockerfile")
 AGENT_SRC = os.environ.get(
     "ESTATE_AGENT_SRC",
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agent"))
@@ -169,13 +169,16 @@ def read(path):
 
 
 def repo_list():
-    txt = read(os.path.join(AGENT, "repos"))
-    if txt is None:
+    """Every repo a pass has ever run in: `<repo>.<stamp>.log` under the agent
+    dir. The hand list this used to read is gone -- the org is the set and the
+    logs are the order (#1476)."""
+    if not os.path.isdir(AGENT):
         return None
-    return [l.strip() for l in txt.splitlines()
-            if l.strip() and not l.lstrip().startswith("#")]
+    return sorted({m.group(1) for f in os.listdir(AGENT)
+                   if (m := PASS_LOG.match(f)) and m.group(1) != "nightly"})
 
 
+PASS_LOG = re.compile(r"^(.+)\.\d{8}T\d{6}Z\.log$")
 NIGHT_HEAD = re.compile(r"^=== nightly (\S+)\s+turns=(\d+)")
 NIGHT_DONE = re.compile(r"^=== nightly done (\S+) ===")
 DISPATCH = re.compile(r"^--- (\S+): (\d+) runnable, dispatching (\S+)")

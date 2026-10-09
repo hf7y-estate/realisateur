@@ -64,7 +64,6 @@ field() { python3 -c 'import json,sys;print(json.dumps(eval("d"+sys.argv[1],{"d"
 # log carrying a result, an rc and a PR.
 now="$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)"
 stamp="$(date -u -d '-2 hours' +%Y%m%dT%H%M%SZ)"
-printf 'roster\n' > "$T/agent/repos"
 { printf '=== nightly %s  turns=150  list=x ===\n' "$now"
   printf -- '--- roster: 7 runnable, dispatching %s\n' "$now"
   printf -- '--- roster: pass finished\n'
@@ -143,9 +142,8 @@ eq "...and that is OK, not DEGRADED" \
 
 rm -f "$T/agent/roster.$stamp.log"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
-eq "a repo on the list with no log at all reads as never dispatched" \
-   "$(printf '%s' "$out" | field '["nightly"]["passes"][0]["log"]')" "null"
-has "...and says so" "$out" "never dispatched"
+eq "no pass log, no pass row: the logs are the list" \
+   "$(printf '%s' "$out" | field '["nightly"]["passes"]')" "[]"
 
 section "H. the dispatcher's own source: only a link survives the next merge"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
@@ -153,18 +151,18 @@ eq "four symlinks into the clone read as linked" \
    "$(printf '%s' "$out" | field '["nightly"]["dispatch_source"]["run-agent.sh"]')" '"linked"'
 hasnt "...and that is not a finding" "$out" "wire-agent-dispatch"
 
-rm -f "$T/agent/repos"; printf 'roster\n' > "$T/agent/repos"; printf 'roster\n' > "$T/clone/repos"
+rm -f "$T/agent/Dockerfile"; printf 'roster\n' > "$T/agent/Dockerfile"; printf 'roster\n' > "$T/clone/Dockerfile"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
 eq "a plain copy that AGREES is still not linked" \
-   "$(printf '%s' "$out" | field '["nightly"]["dispatch_source"]["repos"]')" '"copy"'
+   "$(printf '%s' "$out" | field '["nightly"]["dispatch_source"]["Dockerfile"]')" '"copy"'
 eq "...and an unrefreshed copy is DEGRADED, not OK" \
    "$(printf '%s' "$out" | field '["verdict"]')" '"DEGRADED"'
 has "...and the finding hands over the command that fixes it" "$out" "wire-agent-dispatch.sh --apply"
 
-printf 'something-else\n' > "$T/clone/repos"
+printf 'something-else\n' > "$T/clone/Dockerfile"
 out="$(DOCKER_IDS="a" DOCKER_JSON="$UP" CRONTAB_OUT="$ARMED" collect)"
 eq "a copy that DIFFERS is drifted, which is the loud one" \
-   "$(printf '%s' "$out" | field '["nightly"]["dispatch_source"]["repos"]')" '"drifted"'
+   "$(printf '%s' "$out" | field '["nightly"]["dispatch_source"]["Dockerfile"]')" '"drifted"'
 has "...and the finding says somebody edited the host" "$out" "never on \`main\`"
 
 # The morning-after state: the host holds a real earlier version of the path.
