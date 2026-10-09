@@ -32,7 +32,7 @@ printf '%s\n' "${CRONTAB_OUT:-}"; exit "${CRONTAB_RC:-0}"
 STUB
 chmod +x "$T/stub/docker" "$T/stub/crontab"
 
-ARMED='0 1 * * * /srv/agent/nightly.sh # realisateur:agent-nightly:RUNNER'
+ARMED='7 * * * * /srv/agent/burn-tick.sh # realisateur:agent-burn:RUNNER'
 # Read the set out of the collector, so adding a dispatch file does not leave
 # this fixture one file short and every verdict DEGRADED.
 DFILES="$(python3 -c 'import re,sys; print(" ".join(re.findall(r"\"([^\"]+)\"", re.search(r"DISPATCH_FILES = \((.*?)\)", open(sys.argv[1]).read(), re.S).group(1))))' "$COLLECTOR")"

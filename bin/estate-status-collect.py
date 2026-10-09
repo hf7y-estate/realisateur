@@ -32,8 +32,10 @@ DOCKER = os.environ.get("ESTATE_DOCKER", "docker")
 CRONTAB = os.environ.get("ESTATE_CRONTAB", "crontab")
 CADENCE_MIN = int(os.environ.get("ESTATE_CADENCE_MIN", "20"))
 GRACE_MIN = int(os.environ.get("ESTATE_GRACE_MIN", "40"))
-NIGHTLY_TAG = "realisateur:agent-nightly:RUNNER"
-NIGHTLY_MAX_H = 26          # the cron is 0 1 * * *; one missed night is a finding
+# The hourly gated tick is the only starter. Zach, 2026-10-09, asked whether
+# the ungated 01:00 row goes: "1 remove it." (#1677)
+NIGHTLY_TAG = "realisateur:agent-burn:RUNNER"
+NIGHTLY_MAX_H = 26          # the tick is hourly; a day with no run is a finding
 NO_AUTOSTART = ".no-autostart"   # provision/dexter/autostart/dexter-srv-autostart's own opt-out marker
 PULL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
 # The files the dispatcher IS. They are not a checkout (#1332): unless
