@@ -32,7 +32,11 @@ case "$1" in
       */update-branch)
         pn="${ep#*pulls/}"; pn="${pn%/update-branch}"
         printf '%s\n' "$pn" >> "$T/update-branch-calls" ;;
-      *) [ -f "$T/actions-enabled" ] && cat "$T/actions-enabled" || echo true ;;
+      */actions/permissions)
+        [ -f "$T/actions-enabled" ] && cat "$T/actions-enabled" || echo true ;;
+      *)
+        [ -f "$T/default-branch-fail" ] && exit 1
+        [ -f "$T/default-branch" ] && cat "$T/default-branch" || echo main ;;
     esac ;;
   *) case "$2" in
        list)  [ ! -f "$T/listfail" ] || exit 1; cat "$T/list" 2>/dev/null ;;
@@ -64,7 +68,20 @@ run() {  # run(repo) -- with the stubs in front of the real gh
 }
 carry() { printf '%s\n' "$@" > "$T/state/${repo}.prs"; }
 left()  { tr '\n' ' ' < "$T/state/${repo}.prs" | sed 's/ $//'; }
-state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; [ -n "${3:-}" ] && printf '%s\n' "$3" >> "$T/view/$1"; true; }
+# state(n, status[, guarded[, baseref]]) -- a 4th arg (baseref, the SUT's
+# third output line) forces a real 2nd line (even empty) so sed -n 3p lands
+# on the right one.
+state() {
+  mkdir -p "$T/view" "$T/merge"
+  printf '%s\n' "$2" > "$T/view/$1"
+  if [ -n "${4:-}" ]; then
+    printf '%s\n' "${3:-}" >> "$T/view/$1"
+    printf '%s\n' "$4" >> "$T/view/$1"
+  elif [ -n "${3:-}" ]; then
+    printf '%s\n' "$3" >> "$T/view/$1"
+  fi
+  true
+}
 calls() { [ -f "$T/update-branch-calls" ] && grep -c "^$1\$" "$T/update-branch-calls" || echo 0; }
 
 section "A. the argument contract"
@@ -237,5 +254,51 @@ state 44 "OPEN false MERGEABLE"
 out="$(run "$repo")"
 has "a PR touching none of those paths still merges" "$out" "MERGED   #44"
 eq  "...and is forgotten" "$(left)" ""
+
+section "N. a non-stacked hold does not stop independent PRs behind it (#1689)"
+repo=independent; carry 11 22 33
+echo main > "$T/default-branch"
+state 11 "OPEN false CONFLICTING" "" "main"
+state 22 "OPEN false MERGEABLE" "" "main"
+state 33 "OPEN false MERGEABLE" "" "main"
+out="$(run "$repo")"
+has "the first, conflicting entry is held" "$out" "HELD     #11"
+has "...but the second, independent one still merges" "$out" "MERGED   #22"
+has "...and so does the third" "$out" "MERGED   #33"
+eq  "...and only the held one remains" "$(left)" "11"
+rm -f "$T/default-branch"
+
+section "O. a hold whose base is another open PR's branch still stops the chain"
+repo=basestacked; carry 11 22
+echo main > "$T/default-branch"
+state 11 "OPEN false CONFLICTING" "" "some-other-branch"
+state 22 "OPEN false MERGEABLE" "" "main"
+out="$(run "$repo")"
+has "the stacked hold is recorded" "$out" "HELD     #11"
+hasnt "...and the PR behind it in the chain is never attempted" "$out" "#22"
+eq  "...and both remain queued, in order" "$(left)" "11 22"
+rm -f "$T/default-branch"
+
+section "P. an unreadable default branch is treated as stacked, the conservative default"
+repo=blinddefault; carry 11 22
+touch "$T/default-branch-fail"
+state 11 "OPEN false CONFLICTING" "" "main"
+state 22 "OPEN false MERGEABLE" "" "main"
+out="$(run "$repo")"
+has "the hold is recorded" "$out" "HELD     #11"
+hasnt "...and the PR behind it is not attempted either, base unreadable" "$out" "#22"
+eq  "...and both remain queued" "$(left)" "11 22"
+rm -f "$T/default-branch-fail"
+
+section "Q. a GUARDED hold whose base is the default branch does not stop the chain either"
+repo=guardedindependent; carry 11 22
+echo main > "$T/default-branch"
+state 11 "OPEN false MERGEABLE" ".claude/settings.json" "main"
+state 22 "OPEN false MERGEABLE" "" "main"
+out="$(run "$repo")"
+has "the guarded one is held and named" "$out" "HELD     #11 -- GUARDED path:.claude/settings.json"
+has "...but the independent one behind it still merges" "$out" "MERGED   #22"
+eq  "...and only the guarded one remains" "$(left)" "11"
+rm -f "$T/default-branch"
 
 summary
