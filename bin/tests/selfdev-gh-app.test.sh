@@ -346,6 +346,21 @@ outM3="$(mwire)"
 no  "M3 no --repos means no scope is invented" "$(mhelper)" "--repos"
 has "M3 ...and the unscoped posture is stated, not silent" "$outM3" "UNSCOPED"
 
+has "M5 the helper names the conf --wire ran against (#1225)" "$(mhelper)" "!env SELFDEV_APP_CONF='$T/none.conf' '"
+: > "$MGC"
+env -u SELFDEV_APP_CONF HOME="$MHOME" XDG_CACHE_HOME="$T/cache" GIT_CONFIG_GLOBAL="$MGC" \
+    SELFDEV_APP_DIR="$T/etc" SELFDEV_GH_API="http://127.0.0.1:1" "$SCRIPT" --wire >/dev/null 2>&1
+no  "M5 ...and with no conf named, the helper names none" "$(mhelper)" "SELFDEV_APP_CONF"
+has "M5 ...and is still wired" "$(mhelper)" "--credential"
+# git runs the line through sh: the conf must reach the helper's own parser.
+printf 'SELFDEV_APP_ID=\n' > "$T/second-org.conf"
+: > "$MGC"
+env HOME="$MHOME" XDG_CACHE_HOME="$T/cache" GIT_CONFIG_GLOBAL="$MGC" SELFDEV_APP_CONF="$T/second-org.conf" \
+    SELFDEV_GH_API="http://127.0.0.1:1" "$SCRIPT" --wire >/dev/null 2>&1
+h="$(mhelper)"
+outM6="$(env -u SELFDEV_APP_CONF -u SELFDEV_APP_ID HOME="$MHOME" sh -c "${h#!} get" </dev/null 2>&1)"
+has "M6 run as git runs it, the helper reads the conf it was wired with" "$outM6" "$T/second-org.conf"
+
 echo
 echo "-- M: the caller that must supply the list --------------------------------"
 BINDIR="$(cd "$(dirname "$0")/.." && pwd)"

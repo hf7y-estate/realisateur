@@ -291,11 +291,10 @@ case "$MODE" in
     self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
     # This --repos is the scope of every token the account mints; omitted, that
     # is the whole installation -- 53 repos, 2026-08-27. Never defaulted (#671).
-    if [ -n "$REPOS" ]; then
-      want_helper="!'$self' --repos '$REPOS' --credential"
-    else
-      want_helper="!'$self' --credential"
-    fi
+    # The conf --wire was run against rides in the helper line, as --repos does:
+    # at git time the helper otherwise reads the host-wide default, which names
+    # the wrong installation for an account in a second org (#1225).
+    want_helper="!${SELFDEV_APP_CONF:+env SELFDEV_APP_CONF='$SELFDEV_APP_CONF' }'$self'${REPOS:+ --repos '$REPOS'} --credential"
     git config --global --unset-all credential."https://github.com".helper 2>/dev/null
     git config --global --add credential."https://github.com".helper "$want_helper"
     git config --global credential."https://github.com".useHttpPath false
