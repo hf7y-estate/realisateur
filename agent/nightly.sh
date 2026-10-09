@@ -128,6 +128,72 @@ queue_count() {
   echo "$n"
 }
 
+# SUCCESSION (#1608, #1627): an open milestone with zero RUNNABLE open issues
+# is drained even when GitHub's own open_issues count is not -- secretaire's
+# last issue is needs-host and will never drain by passes alone (#1608) -- so
+# this reuses queue_count's own needs-host/needs-human filter, not raw counts.
+# What opens next is read off the one that just closed: a `NEXT: <number>`
+# line in its description, written by a hand today (secretaire's four
+# milestones carry one each, #1608) because `vision.sh record` cannot write
+# one yet. Absent that line, it is the lowest-numbered CLOSED milestone that
+# still holds a runnable issue -- "lowest number" alone, with no runnable
+# filter, is wrong: secretaire's own order (2 -> 4 -> 3 -> 1) is not numeric,
+# and its lowest closed milestone's issues are mostly needs-host (#1608).
+milestone_runnable_count() {
+  local owner="$1" repo="$2" n="$3"
+  gh issue list --repo "${owner}/${repo}" --state open --milestone "$n" \
+      --search '-label:needs-host -label:needs-human' --json number --jq 'length' 2>/dev/null \
+    || { echo ERR; return 0; }
+}
+
+lowest_runnable_closed_milestone() {
+  local owner="$1" repo="$2" nums n r
+  nums="$(gh api "repos/${owner}/${repo}/milestones?state=closed&per_page=100" --jq '[.[].number] | sort[]' 2>/dev/null)" || true
+  for n in ${nums:-}; do
+    r="$(milestone_runnable_count "$owner" "$repo" "$n")"
+    case "$r" in ''|*[!0-9]*) continue ;; esac
+    if [ "$r" -gt 0 ]; then echo "$n"; return 0; fi
+  done
+  return 0
+}
+
+succeed_milestones() {
+  local owner="$1" repo="$2" label="$3" open_json numbers n title desc runnable next_n note new_desc
+  open_json="$(gh api "repos/${owner}/${repo}/milestones?state=open&per_page=100" 2>/dev/null)" \
+    || { echo "--- $label: could not read open milestones for succession"; return 0; }
+  numbers="$(jq -r '.[].number' <<<"$open_json" 2>/dev/null)" \
+    || { echo "--- $label: could not parse open milestones for succession"; return 0; }
+  for n in ${numbers:-}; do
+    title="$(jq -r --argjson n "$n" '.[] | select(.number==$n) | .title' <<<"$open_json")" || title=""
+    desc="$(jq -r --argjson n "$n" '.[] | select(.number==$n) | (.description // "")' <<<"$open_json")" || desc=""
+    runnable="$(milestone_runnable_count "$owner" "$repo" "$n")"
+    case "$runnable" in ''|*[!0-9]*) echo "--- $label: could not read milestone #$n's issues for succession"; continue ;; esac
+    [ "$runnable" -eq 0 ] || continue
+
+    next_n="$(grep -oE '^NEXT: [0-9]+' <<<"$desc" | head -1 | grep -oE '[0-9]+')" || true
+    [ -n "$next_n" ] || next_n="$(lowest_runnable_closed_milestone "$owner" "$repo")"
+
+    if [ -n "$next_n" ]; then
+      note="SUCCESSION: closed $(date -u +%F), succeeded by #$next_n."
+    else
+      note="SUCCESSION: closed $(date -u +%F), nothing closed holds a runnable issue -- no successor opened."
+    fi
+    new_desc="$(printf '%s\n\n%s\n' "$note" "$desc")"
+    gh api -X PATCH "repos/${owner}/${repo}/milestones/$n" -f state=closed -f description="$new_desc" >/dev/null 2>&1 \
+      && echo "--- $label: milestone #$n ($title) drained of runnable issues, closed" \
+      || { echo "--- $label: could not close milestone #$n"; continue; }
+
+    if [ -n "$next_n" ]; then
+      gh api -X PATCH "repos/${owner}/${repo}/milestones/$next_n" -f state=open >/dev/null 2>&1 \
+        && echo "--- $label: milestone #$next_n opened, succeeding #$n" \
+        || echo "--- $label: could not open milestone #$next_n"
+    else
+      echo "--- $label: no closed milestone holds a runnable issue -- no successor opened"
+    fi
+  done
+  return 0
+}
+
 # A LOCKED REPO GETS ONE REQUEUE, NOT A WAIT. `.pass.<repo>.lock` is the
 # per-repo lock named above -- a sent chain on the same repo holds it too --
 # and blocking on it here is how one long sent pass stalled the whole night
@@ -176,6 +242,9 @@ while [ "$repo_i" -lt "${#repos[@]}" ]; do
   # issue out of the queue below, and nothing on any clock re-derived it.
   "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "$owner/$repo" --apply 2>&1 \
     | grep -E '^ +[-+]label|REFUSED|BLIND' || true
+  # BEFORE the queue check too: a milestone that closes here is what makes the
+  # next one's issues visible to queue_count in this same pass, not next night.
+  succeed_milestones "$owner" "$repo" "$label"
   n=1
   [ -n "$issue" ] || n="$(queue_count "$owner" "$repo")"
   trap - ERR
