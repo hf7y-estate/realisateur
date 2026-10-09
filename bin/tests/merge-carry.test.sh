@@ -64,7 +64,19 @@ run() {  # run(repo) -- with the stubs in front of the real gh
 }
 carry() { printf '%s\n' "$@" > "$T/state/${repo}.prs"; }
 left()  { tr '\n' ' ' < "$T/state/${repo}.prs" | sed 's/ $//'; }
-state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; [ -n "${3:-}" ] && printf '%s\n' "$3" >> "$T/view/$1"; true; }
+# state(n, stateline, [guarded-csv], [closing-ref-count], [body]) -- lines 3
+# and 4 are the SUT's UNCLOSED reading (#1457): how many issues the PR closes,
+# and its body (this helper base64's it, the same shape the real `--jq`
+# emits so a multi-line body survives the sed -n Np split intact).
+state() {
+  mkdir -p "$T/view" "$T/merge"
+  printf '%s\n' "$2" > "$T/view/$1"
+  printf '%s\n' "${3:-}" >> "$T/view/$1"
+  printf '%s\n' "${4:-}" >> "$T/view/$1"
+  printf '%s' "${5:-}" | base64 -w0 >> "$T/view/$1"
+  printf '\n' >> "$T/view/$1"
+  true
+}
 calls() { [ -f "$T/update-branch-calls" ] && grep -c "^$1\$" "$T/update-branch-calls" || echo 0; }
 
 section "A. the argument contract"
@@ -237,5 +249,48 @@ state 44 "OPEN false MERGEABLE"
 out="$(run "$repo")"
 has "a PR touching none of those paths still merges" "$out" "MERGED   #44"
 eq  "...and is forgotten" "$(left)" ""
+
+section "N. a PR closing no issue, whose own DEFERRED says none, is held (#1457)"
+repo=unclosed; carry 11
+state 11 "OPEN false MERGEABLE" "" 0 "NO-DECISION: x
+
+<!-- DEFERRED -->
+- none
+<!-- /DEFERRED -->"
+out="$(run "$repo")"
+has "names the reading" "$out" "HELD     #11 -- UNCLOSED"
+hasnt "...never claims to merge it" "$out" "MERGED"
+eq  "...and keeps it for the next pass" "$(left)" "11"
+
+repo=unclosedbutdeferred; carry 22
+state 22 "OPEN false MERGEABLE" "" 0 "NO-DECISION: x
+
+<!-- DEFERRED -->
+- the second half rides hf7y/other#9
+<!-- /DEFERRED -->"
+out="$(run "$repo")"
+has "a real DEFERRED entry is a deliberate partial, and still merges" "$out" "MERGED   #22"
+eq  "...and is forgotten" "$(left)" ""
+
+repo=closedref; carry 33
+state 33 "OPEN false MERGEABLE" "" 1 "NO-DECISION: x
+
+<!-- DEFERRED -->
+- none
+<!-- /DEFERRED -->"
+out="$(run "$repo")"
+has "a PR that DOES close an issue merges even with DEFERRED: none" "$out" "MERGED   #33"
+eq  "...and is forgotten" "$(left)" ""
+
+repo=alreadymerged; carry 44
+state 44 "MERGED false UNKNOWN" "" 0 "NO-DECISION: x
+
+<!-- DEFERRED -->
+- none
+<!-- /DEFERRED -->"
+out="$(run "$repo")"
+has "a PR ALREADY MERGED with no closing ref and DEFERRED: none is DONE, not held forever" "$out" "DONE     #44"
+hasnt "...never read as UNCLOSED" "$out" "UNCLOSED"
+eq  "...and drops it" "$(left)" ""
 
 summary
