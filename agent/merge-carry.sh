@@ -46,6 +46,14 @@ tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 actions_enabled="$(GH_TOKEN="$tok" gh api "repos/${owner}/${repo}/actions/permissions" \
   --jq .enabled </dev/null 2>/dev/null)" || actions_enabled=""
 
+# Whether a held PR stops the ones behind it depends on what it's based on
+# (#1689): the stop exists for a stacked chain, where a later PR's base is an
+# earlier PR's branch, not for independent PRs that all happen to share a
+# repo. Read once per repo; an unreadable default branch means stacking can't
+# be ruled out, so it's treated as stacked (the old, safe behaviour).
+default_branch="$(GH_TOKEN="$tok" gh api "repos/${owner}/${repo}" \
+  --jq .default_branch </dev/null 2>/dev/null)" || default_branch=""
+
 # ADOPT WHAT THE APP OPENED. The list alone orphans a PR whose pass died before
 # writing it down: senechal#1094 sat open with nobody to merge it (a 75-minute
 # pass, #1504). Since #1460 every pass's PR is authored by the App, so author
@@ -69,37 +77,50 @@ echo "=== the previous pass's PRs on ${target} ==="
 # mergeable and still be unread (#1606).
 guardjq='[.files[]?.path]|map(select(. == ".claude/settings.json" or . == ".claude/settings.local.json" or . == "CLAUDE.md" or startswith(".claude/hooks/") or startswith("hooks/")))|join(",")'
 if [ "$actions_enabled" = "false" ]; then
-  jqf='([.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"'), .baseRefName'
   note=" -- Actions disabled on ${owner}/${repo}, check records ignored"
 else
-  jqf='([.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"'), .baseRefName'
   note=""
 fi
 keep=""
-# A repo's carry file is a stacked chain, oldest first (#1593): a later PR
-# can target an earlier one's branch, so merging #3 while #2 is still HELD
-# can read MERGEABLE and land, but only onto a branch #1's merge is about to
-# delete -- a later line succeeding while an earlier one holds is not "earlier
-# links land" in any order a reader can trust. Stop at the first entry that
-# does not reach MERGED or DONE this run; every line after it, untried, stays
-# on the list for the next pass. Lines already merged earlier in this same
-# run are not undone by a later line holding.
+# A repo's carry file is oldest first and MAY be a stacked chain (#1593): a
+# later PR can target an earlier one's branch, so merging #3 while #2 is
+# still HELD can read MERGEABLE and land, but only onto a branch #1's merge
+# is about to delete. That risk is real only for the PR actually based on
+# another open PR's branch, not for one based on the default branch that
+# merely happens to share a carry file (#1689) -- measured 2026-10-09, no PR
+# across the org was actually stacked this way. So an entry that does not
+# reach MERGED or DONE stops the run only when it is itself stacked; every
+# line after a non-stacked hold is still tried this pass. Lines already
+# merged earlier in this same run are not undone by a later line holding.
 mapfile -t entries < "$carry"
 for idx in "${!entries[@]}"; do
   n="${entries[$idx]}"
   [ -n "$n" ] || continue
   out="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
-    --json state,isDraft,mergeable,statusCheckRollup,createdAt,files \
+    --json state,isDraft,mergeable,statusCheckRollup,createdAt,files,baseRefName \
     --jq "$jqf" </dev/null 2>/dev/null)" || out=""
   st="$(printf '%s\n' "$out" | sed -n 1p)"
   guarded="$(printf '%s\n' "$out" | sed -n 2p)"
+  baseref="$(printf '%s\n' "$out" | sed -n 3p)"
+  # A hold stops the chain only when this PR is actually stacked on another
+  # open PR's branch (#1689) -- base is unreadable or isn't the default
+  # branch. A hold whose base IS the default branch is independent of
+  # whatever came before it, so it is recorded and the loop moves on.
+  if [ -z "$default_branch" ] || [ -z "$baseref" ] || [ "$baseref" != "$default_branch" ]; then
+    stacked=1
+  else
+    stacked=0
+  fi
   # GUARDED wins over every other reading, including a green, mergeable PR:
   # the hold is about WHAT changed, not whether it passed. Checked ahead of
   # the main case below so a mergeable-and-guarded PR never reaches the merge.
   if [ -n "$guarded" ]; then
     echo "  HELD     #${n} -- GUARDED path:${guarded}"
     keep="${keep}${n}"$'\n'
-    break
+    [ "$stacked" = 1 ] && break
+    continue
   fi
   case "$st" in
     "OPEN false MERGEABLE")
@@ -112,7 +133,7 @@ for idx in "${!entries[@]}"; do
         # on it is attempted this run either.
         echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
         keep="${keep}${n}"$'\n'
-        break
+        [ "$stacked" = 1 ] && break
       fi ;;
     # RED is a failed check. MERGEABLE only ever meant "no conflict", and
     # realisateur#1440 landed on a failed suite and turned main red.
@@ -135,11 +156,11 @@ for idx in "${!entries[@]}"; do
       esac
       echo "  HELD     #${n} -- ${st}${note}"
       keep="${keep}${n}"$'\n'
-      break ;;
+      [ "$stacked" = 1 ] && break ;;
     "")
       echo "  UNREADABLE #${n} -- could not be read, kept and left alone${note}"
       keep="${keep}${n}"$'\n'
-      break ;;
+      [ "$stacked" = 1 ] && break ;;
     *)
       echo "  DONE     #${n} -- ${st}${note}" ;;
   esac
