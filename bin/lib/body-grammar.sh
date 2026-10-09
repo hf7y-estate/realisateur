@@ -202,6 +202,50 @@ grammar_delivers() {
   [ "$n" -gt 0 ]
 }
 
+# grammar_deferred <body> -- one DEFERRED entry per line, marker stripped and
+# continuations joined; 1 when there are none. THE SAME WALK AS grammar_delivers
+# and _judge_entry: a second parser here cannot drift from the first either.
+grammar_deferred() {
+  local body="$1" line stripped indent in_block=0 entry='' n=0 fenced=0
+  _gdf_emit() { [ -n "$entry" ] || return 0; printf '%s\n' "$entry"; n=$((n + 1)); entry=''; }
+  while IFS= read -r line; do
+    case "$line" in '```'*) fenced=$((1 - fenced)); continue ;; esac
+    [ "$fenced" -eq 1 ] && continue
+    stripped="${line#"${line%%[![:space:]]*}"}"
+    indent="${line%%[![:space:]]*}"
+    if [ "${#indent}" -ge 4 ]; then      # indented four, a marker is an EXAMPLE
+      case "$stripped" in *'<!--'*'DEFERRED'*'-->'*) continue ;; esac
+    fi
+    case "$stripped" in
+      '<!-- DEFERRED -->'|'<!--DEFERRED-->')   in_block=1; continue ;;
+      '<!-- /DEFERRED -->'|'<!--/DEFERRED-->') _gdf_emit; in_block=0; continue ;;
+    esac
+    [ "$in_block" -eq 1 ] || continue
+    case "$stripped" in
+      '- '*|'* '*|[0-9]*'. '*) _gdf_emit; entry="${stripped#* }" ;;
+      '')                      _gdf_emit ;;
+      *) [ -n "$entry" ] && entry="$entry $stripped" ;;
+    esac
+  done <<<"$body"
+  _gdf_emit
+  [ "$n" -gt 0 ]
+}
+
+# grammar_deferred_none <body> -- 0 when the DEFERRED block's only entry is a
+# "none" marker (nothing was left behind), 1 when there is a real entry, more
+# than one entry, or no block at all. merge-carry.sh reads this alongside
+# closingIssuesReferences (#1457): a PR that closes nothing and claims
+# nothing was deferred either has forgotten to name the issue it fixes.
+grammar_deferred_none() {
+  local body="$1" line n=0 only=''
+  while IFS= read -r line; do
+    n=$((n + 1)); only="$line"
+  done < <(grammar_deferred "$body")
+  [ "$n" -eq 1 ] || return 1
+  case "$only" in [Nn]one|[Nn]one.) return 0 ;; esac
+  return 1
+}
+
 # grammar_header <body> -- print the body with fenced blocks, `>` quotes and
 # <details> blocks removed: the lines a declaration can live in. #1324: a
 # <details> block is how a body keeps an answered DECISION's original text

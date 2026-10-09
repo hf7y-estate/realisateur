@@ -19,6 +19,7 @@
 # numbers it opened, partitioned on its own start time, and this merges exactly
 # those.
 set -uo pipefail
+. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../bin/lib/body-grammar.sh"
 
 target="${1:?usage: merge-carry.sh <repo>|<owner>/<repo>}"
 # A bare name still means hf7y-estate/<name> (#1602); an owner/repo target
@@ -68,11 +69,17 @@ echo "=== the previous pass's PRs on ${target} ==="
 # a bot PR that edits `.claude/settings.json` or `CLAUDE.md` can be green and
 # mergeable and still be unread (#1606).
 guardjq='[.files[]?.path]|map(select(. == ".claude/settings.json" or . == ".claude/settings.local.json" or . == "CLAUDE.md" or startswith(".claude/hooks/") or startswith("hooks/")))|join(",")'
+# A third and fourth line, read only when the second is empty: the closing-
+# issue count and the body, base64'd so a multi-line body survives the
+# sed -n Np split below intact. #1457 -- a PR that closes no issue AND
+# claims nothing was deferred has forgotten to name the issue it fixes.
+closingjq='(.closingIssuesReferences|length)'
+bodyjq='(.body|@base64)'
 if [ "$actions_enabled" = "false" ]; then
-  jqf='([.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"'), '"$closingjq"', '"$bodyjq"
   note=" -- Actions disabled on ${owner}/${repo}, check records ignored"
 else
-  jqf='([.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"')'
+  jqf='([.state,(.isDraft|tostring),.mergeable]+(if any(.statusCheckRollup[]?; .conclusion=="FAILURE") then ["RED"] elif any(.statusCheckRollup[]?; (.status // "COMPLETED") != "COMPLETED") then ["PENDING"] elif (.createdAt|fromdateiso8601) > (now - 300) then ["YOUNG"] else [] end)|join(" ")), ('"$guardjq"'), '"$closingjq"', '"$bodyjq"
   note=""
 fi
 keep=""
@@ -89,10 +96,11 @@ for idx in "${!entries[@]}"; do
   n="${entries[$idx]}"
   [ -n "$n" ] || continue
   out="$(GH_TOKEN="$tok" gh pr view "$n" --repo "${owner}/${repo}" \
-    --json state,isDraft,mergeable,statusCheckRollup,createdAt,files \
+    --json state,isDraft,mergeable,statusCheckRollup,createdAt,files,closingIssuesReferences,body \
     --jq "$jqf" </dev/null 2>/dev/null)" || out=""
   st="$(printf '%s\n' "$out" | sed -n 1p)"
   guarded="$(printf '%s\n' "$out" | sed -n 2p)"
+  closing_n="$(printf '%s\n' "$out" | sed -n 3p)"
   # GUARDED wins over every other reading, including a green, mergeable PR:
   # the hold is about WHAT changed, not whether it passed. Checked ahead of
   # the main case below so a mergeable-and-guarded PR never reaches the merge.
@@ -103,6 +111,20 @@ for idx in "${!entries[@]}"; do
   fi
   case "$st" in
     "OPEN false MERGEABLE")
+      # UNCLOSED (#1457): checked only here, on the path that is about to
+      # merge -- an already-MERGED or CLOSED PR reaching this loop is common
+      # (most carried PRs predate #1457) and must still fall through to DONE
+      # below, not be held forever on a reading that can never change for it.
+      # No issue named to close, and the DEFERRED block itself claims nothing
+      # was left behind -- so where is the issue this PR fixes? A deliberate
+      # partial (a real DEFERRED entry) stays legal and merges.
+      body=""
+      [ "${closing_n:-0}" = 0 ] && body="$(printf '%s\n' "$out" | sed -n 4p | base64 -d 2>/dev/null)"
+      if [ "${closing_n:-0}" = 0 ] && grammar_deferred_none "$body"; then
+        echo "  HELD     #${n} -- UNCLOSED no closing reference and DEFERRED says \"none\""
+        keep="${keep}${n}"$'\n'
+        break
+      fi
       if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
            --merge --delete-branch </dev/null >/dev/null 2>&1; then
         echo "  MERGED   #${n}${note}"

@@ -546,4 +546,24 @@ eq 'L9 a statement below line 1 is still read' \
   "$(_lr "$(printf 'Closing.\n\nThe work landed in #118.\n')")"             '#118'
 eq 'L10 an empty close names nothing' "$(_lr '')"                            'NONE'
 
+section 'M. grammar_deferred / grammar_deferred_none -- #1457, read by merge-carry.sh'
+
+_gdnone() { grammar_deferred_none "$1" && echo YES || echo NO; }
+
+eq 'M1 grammar_deferred strips the marker, one entry per bullet' \
+  "$(grammar_deferred "$(printf '<!-- DEFERRED -->\n- a\n- b\n<!-- /DEFERRED -->\n')")" \
+  "$(printf 'a\nb')"
+grammar_deferred 'NO-DECISION: nothing here' >/dev/null \
+  && bad 'M2 a body with no DEFERRED block must return nonzero' \
+  || ok 'M2 a body with no DEFERRED block returns nonzero'
+
+eq 'M3 "- none" is read as nothing deferred' \
+  "$(_gdnone "$(printf '<!-- DEFERRED -->\n- none\n<!-- /DEFERRED -->\n')")" 'YES'
+eq 'M4 a real entry is NOT nothing-deferred' \
+  "$(_gdnone "$(printf '<!-- DEFERRED -->\n- hf7y/other#9 -- the rest\n<!-- /DEFERRED -->\n')")" 'NO'
+eq 'M5 two entries, one of them "none", is still a real ledger' \
+  "$(_gdnone "$(printf '<!-- DEFERRED -->\n- none\n- hf7y/other#9\n<!-- /DEFERRED -->\n')")" 'NO'
+eq 'M6 no DEFERRED block at all is not "nothing deferred" -- it is UNLEDGERED' \
+  "$(_gdnone 'NO-DECISION: nothing here')" 'NO'
+
 summary
