@@ -29,11 +29,6 @@ bin/unarmed	bin/unarmed.sh
 # carried, so every fix since -- including the spool door, #742 -- reaches no
 # account (realisateur#857 gap 1). This row makes carry.sh --apply the path.
 bin/consigne	bin/consigne
-bin/lib/answered.sh	bin/lib/answered.sh
-# answered.sh is a FEEDER; the predicate it feeds is answered.jq. Carried
-# without it, issue_answered() finds no predicate and returns BLIND for every
-# issue -- which would take `etiquette` to exit 6 estate-wide (#568).
-bin/lib/answered.jq	bin/lib/answered.jq
 bin/lib/cli-guard.sh	bin/lib/cli-guard.sh
 bin/lib/body-grammar.sh	bin/lib/body-grammar.sh
 bin/lib/carries.tsv	bin/lib/carries.tsv

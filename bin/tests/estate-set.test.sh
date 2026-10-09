@@ -19,6 +19,9 @@ eq "A4 site repo defaults"    "$(val GH_ESTATE_SITE_REPO)" "hf7y.github.io"
 eq "A5 owner overrides"       "$(val GH_ESTATE_OWNER GH_ESTATE_OWNER=neworg)" "neworg"
 eq "A6 site overrides"        "$(val GH_ESTATE_SITE  GH_ESTATE_SITE=new.example)" "new.example"
 eq "A7 sourcing twice is a no-op" "$(bash -c ". '$LIB'; . '$LIB'; printf '%s' \"\$GH_ESTATE_SITE\"")" "hf7y.com"
+# A LOGIN, not a namespace -- unread by anything since answered.jq's
+# retirement (#1436), but still a name this file alone should own.
+eq "A8 human defaults to a login, not the org" "$(val GH_ESTATE_HUMAN)" "hf7y"
 
 section "B. no script re-spells a name the estate owns"
 # The quote class is ['"], not "?: `GUARD_REF='hf7y/etalon/...'` in
@@ -43,11 +46,6 @@ fi
 
 section "C. the callers resolve through it"
 src() { bash -c "${2:+export $2; }. '$HERE/bin/lib/$3' >/dev/null 2>&1; printf '%s' \"\$$1\""; }
-# A LOGIN, so it must NOT track the namespace. If this ever reads the org,
-# answered.jq matches no comment author and every answered DECISION keeps its
-# needs-human label -- silently, because a label that stays looks like a label
-# nobody needed to touch.
-eq "C1 answered.sh reads the HUMAN, not the org" "$(src ANSWERED_OWNER '' answered.sh)" "hf7y"
 eq "C2 roster-set.sh"      "$(src SWEEP_OWNER        '' roster-set.sh)"       "hf7y-estate"
 eq "C3 arming.sh"          "$(src ARMING_ROSTER_URL  '' arming.sh)"          "http://100.107.253.56:8646/roster"
 eq "C4 propagation-set.sh" "$(src PROP_RELEASE_REPO  '' propagation-set.sh)" "hf7y-estate/verbs"
