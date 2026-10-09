@@ -478,8 +478,47 @@ milestone_open_milestones() {
   "$GH" api "repos/$1/milestones?state=open&per_page=100" --jq -r '.[].title' 2>/dev/null \
     | while IFS= read -r _t; do printf '  - %s\n' "$_t" >&2; done
 }
+# An issue filed with needs-host/needs-human, or into a repo nightly never
+# reaches at all (archived, or outside hf7y-estate's org listing), is a
+# legitimate thing to file -- it just will not be in agent/nightly.sh's
+# queue_count predicate (open issues list --search '-label:needs-host
+# -label:needs-human', intersected with the repo's open milestones). Zach,
+# 2026-10-05, answering #1534: "milestone? no. but issues should warn when
+# filed that they can't be worked." WARN, never refuse (#1537).
+#
+# FAILS OPEN like the rest of this file: no jq, or an unreadable `repo view`,
+# prints nothing rather than guessing.
+queue_warn() {
+  local repo="$1"; shift
+  local raw one info archived owner
+  for raw in "$@"; do
+    [ -n "$raw" ] || continue
+    IFS=',' read -ra _ls <<< "$raw"
+    for one in "${_ls[@]}"; do
+      case "$one" in
+        needs-host|needs-human)
+          printf "gh-sign: WARN -- labelled %s: agent/nightly.sh's queue excludes this label, so no pass dispatches to it automatically.\n" \
+            "$one" >&2 ;;
+      esac
+    done
+  done
+
+  [ -n "$repo" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  info="$("$GH" repo view "$repo" --json isArchived,nameWithOwner 2>/dev/null)" || return 0
+  [ -n "$info" ] || return 0
+  archived="$(printf '%s' "$info" | jq -r '.isArchived' 2>/dev/null)"
+  owner="$(printf '%s' "$info" | jq -r '.nameWithOwner' 2>/dev/null | cut -d/ -f1)"
+  if [ "$archived" = true ]; then
+    printf 'gh-sign: WARN -- %s is archived: agent/nightly.sh lists repos with --no-archived, so no pass reaches it.\n' "$repo" >&2
+  elif [ -n "$owner" ] && [ "$owner" != hf7y-estate ]; then
+    printf 'gh-sign: WARN -- %s is outside hf7y-estate: agent/nightly.sh only sweeps that org'"'"'s repo listing, so no pass reaches it.\n' "$repo" >&2
+  fi
+}
+
 milestone_gate() {
   local repo='' ms='' no_ms=0 i
+  local -a labels=()
 
   for ((i = 2; i < ${#args[@]}; i++)); do
     case "${args[$i]}" in
@@ -488,6 +527,8 @@ milestone_gate() {
       -m|--milestone) ms="${args[$((i + 1))]:-}" ;;
       --milestone=*)  ms="${args[$i]#--milestone=}" ;;
       --no-milestone) no_ms=1 ;;
+      -l|--label)     labels+=("${args[$((i + 1))]:-}") ;;
+      --label=*)      labels+=("${args[$i]#--label=}") ;;
     esac
   done
   [ -n "$repo" ] || repo="$("$GH" repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)"
@@ -496,6 +537,13 @@ milestone_gate() {
   [ "$arming_ok" -eq 1 ] || return 0
   arming_load || return 0
   [ "$(arming_state "${repo#*/}")" = live ] || return 0
+
+  # Same scope as the milestone check below -- a LIVE repo only, and FAILS
+  # OPEN the same way: nothing above this line has made a network call yet
+  # when the roster can't be read, and queue_warn's archived/owner check must
+  # not be the first one to break that (it would, on every REFUSED-for-other-
+  # reasons `issue create` otherwise -- #627's "a refusal creates nothing").
+  queue_warn "$repo" "${labels[@]}"
 
   if [ "$no_ms" -eq 1 ]; then
     # `--no-milestone` is not a real `gh` flag: drop it, and record the state
