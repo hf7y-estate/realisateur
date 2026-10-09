@@ -32,6 +32,7 @@ for a in "$@"; do
     # last "line" with no newline at all is the classic read-loses-it case.
     # Real `gh --jq -r` always newline-terminates, so this fixture must too.
     */milestones*) [ -n "${GH_MILESTONES_JSON:-}" ] && { printf '%s\n' "$GH_MILESTONES_JSON"; exit 0; } ;;
+    isArchived*) [ -n "${GH_REPO_VIEW_JSON:-}" ] && { printf '%s' "$GH_REPO_VIEW_JSON"; exit 0; } ;;
   esac
 done
 [ -n "${GH_ISSUE_JSON:-}" ] && { printf '%s' "$GH_ISSUE_JSON"; exit 0; }
@@ -551,6 +552,54 @@ out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
        run issue create --repo hf7y/widget --title t --body "$GOOD" --milestone "Nope" 2>&1)"; rc=$?
 check "a --milestone naming no open milestone is REFUSED (7)" "$rc" "7"
 contains "...and the refusal still lists what IS open" "$out" "Ship it"
+
+# --- 15. queue_warn: a filed issue is warned, not refused, when it will not
+# be in agent/nightly.sh's queue_count predicate (#1537) --------------------
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       run issue create --repo hf7y/widget --title t --body "$GOOD" \
+       --milestone "Ship it" --label needs-host 2>&1)"; rc=$?
+check "needs-host still files (0), warned not refused" "$rc" "0"
+contains "...and the warning names the label" "$out" "needs-host"
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       run issue create --repo hf7y/widget --title t --body "$GOOD" \
+       --milestone "Ship it" --label bug --label needs-human 2>&1)"; rc=$?
+check "needs-human is caught alongside an unrelated label (0)" "$rc" "0"
+contains "...and warned by name" "$out" "needs-human"
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       GH_REPO_VIEW_JSON='{"isArchived":true,"nameWithOwner":"hf7y/widget"}' \
+       run issue create --repo hf7y/widget --title t --body "$GOOD" \
+       --milestone "Ship it" 2>&1)"; rc=$?
+check "an archived repo still files (0), warned not refused" "$rc" "0"
+contains "...and the warning says archived" "$out" "archived"
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       GH_REPO_VIEW_JSON='{"isArchived":false,"nameWithOwner":"other-org/widget"}' \
+       run issue create --repo other-org/widget --title t --body "$GOOD" \
+       --milestone "Ship it" 2>&1)"; rc=$?
+check "a repo outside hf7y-estate still files (0), warned not refused" "$rc" "0"
+contains "...and the warning names the org nightly actually sweeps" "$out" "hf7y-estate"
+
+reset
+out="$(GH_SIGN_ARMING_LIB="$TMP/arminglib" TEST_ARMING_STATE=live \
+       GH_MILESTONES_JSON='[{"title":"Ship it"}]' \
+       GH_REPO_VIEW_JSON='{"isArchived":false,"nameWithOwner":"hf7y-estate/widget"}' \
+       run issue create --repo hf7y-estate/widget --title t --body "$GOOD" \
+       --milestone "Ship it" 2>&1)"; rc=$?
+check "an ordinary live, in-org, unarchived, unlabelled filing is silent (0)" "$rc" "0"
+case "$out" in
+  *WARN*) bad "no WARN line when the issue CAN be worked" "got: $out" ;;
+  *)      ok "...no WARN line at all" ;;
+esac
 
 echo
 summary
