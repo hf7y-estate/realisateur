@@ -165,8 +165,17 @@ while [ "$repo_i" -lt "${#repos[@]}" ]; do
   # chosen, so the queue is not asked about it.
   # THE EXECUTOR `DEFAULT-AFTER` NEVER HAD (#1410). The label is what keeps an
   # issue out of the queue below, and nothing on any clock re-derived it.
-  "$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "$owner/$repo" --apply 2>&1 \
-    | grep -E '^ +[-+]label|REFUSED|BLIND' || true
+  # Captured, not piped straight to grep: a pipe's `|| true` swallows BOTH
+  # etiquette.sh's exit status and any output that does not match the three
+  # patterns below, so a real crash here (not a label change) said nothing
+  # (#1649 -- a sent run died in exactly this span with no line saying why).
+  etq_rc=0
+  etq_out="$("$(dirname "$(readlink -f "$here/run-agent.sh")")/../bin/etiquette.sh" "$owner/$repo" --apply 2>&1)" || etq_rc=$?
+  if [ "$etq_rc" -eq 0 ]; then
+    printf '%s\n' "$etq_out" | grep -E '^ +[-+]label|REFUSED|BLIND' || true
+  else
+    echo "--- $label: etiquette.sh exited $etq_rc -- ${etq_out:-no output}"
+  fi
   n=1
   [ -n "$issue" ] || n="$(queue_count "$owner" "$repo")"
   case "$n" in

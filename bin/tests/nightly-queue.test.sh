@@ -88,6 +88,17 @@ cat > "$T/agent/merge-carry.sh" <<'STUB'
 #!/usr/bin/env bash
 exit 0
 STUB
+# Default: silent and clean, like a real --apply with nothing to change.
+# fail-etiquette-<repo> makes it crash instead, for section Q below.
+cat > "$T/bin/etiquette.sh" <<'STUB'
+#!/usr/bin/env bash
+repo="${1#*/}"
+if [ -f "$T/fail-etiquette-$repo" ]; then
+  echo "etiquette.sh: unreadable label config" >&2
+  exit 1
+fi
+exit 0
+STUB
 cat > "$T/agent/run-agent.sh" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' "$1${3:+#$3}" >> "$T/dispatched"
@@ -96,7 +107,7 @@ printf '%s\n' "$1${3:+#$3}" >> "$T/dispatched"
 [ -f "$T/left-$1" ] && printf '%s\n' "$(( $(cat "$T/left-$1") - 1 ))" > "$T/left-$1"
 exit 0
 STUB
-chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/agent"/*.sh
+chmod +x "$T/bin/sudo" "$T/bin/docker" "$T/bin/gh" "$T/bin/etiquette.sh" "$T/agent"/*.sh
 
 run() {
   rm -f "$T/dispatched" "$T/srv/nightly."*.log
@@ -234,5 +245,15 @@ eq "...dispatched with its owner, repo and issue intact" \
 has "...and the log names the issue" "$out" "pass 1/1 issue #42"
 has "...and says it was a sent run of just that target" "$out" \
   "sent run: only media-arts-collective/gamma#42"
+
+section "Q. etiquette.sh crashing between merge-carry and dispatch says so, not nothing (#1649)"
+touch "$T/fail-etiquette-alpha"
+out="$(ONLY="alpha" PASSES=1 run)"; rc "...exits 0 -- a labelling failure does not stop the night" 0 "$?"
+has "...names the exit code and etiquette.sh's own stderr" "$out" \
+  "--- alpha: etiquette.sh exited 1 -- etiquette.sh: unreadable label config"
+has "...and the repo is still dispatched -- a crash here is reported, not fatal" "$out" \
+  "--- alpha: 1 runnable, dispatching"
+eq "...alpha ran anyway" "$(dispatched | tr '\n' ' ')" "alpha "
+rm -f "$T/fail-etiquette-alpha"
 
 summary
