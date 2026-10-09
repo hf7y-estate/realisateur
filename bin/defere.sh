@@ -354,6 +354,15 @@ records being closed or named."
   LEDGER_KIND=unroutable
 fi
 
+# ideate.md has required `from:<project>` on a cross-project filing since
+# 2026-08-16 (#352) -- the label existed only by habit, in whatever color and
+# wording the repo that first needed it picked, until #1646 gave it rows in
+# labels.tsv. Scoped to --project: --human/--unroutable file on
+# $DEST=${REPO:-$OWNER/$FROM}, so "who asked" there is the repo itself, not a
+# different project asking it.
+LABELS=("$LABEL")
+[ "$LEDGER_KIND" = project ] && LABELS+=("from:$FROM")
+
 # The issue this files must satisfy the same grammar bin/gh-sign.sh enforces
 # on `issue create` -- otherwise the front door emits bodies the front door
 # refuses. This comment once claimed that while the body carried no DELIVERS
@@ -416,7 +425,7 @@ See realisateur \`bin/lib/body-grammar.sh\` for why this exists."
 
 if [ "$DRY" -eq 1 ]; then
   printf 'defere: DRY RUN -- nothing filed.\n\n'
-  printf '  repo:   %s\n  label:  %s\n  milestone: %s\n  title:  %s\n\n  body:\n' "$DEST" "$LABEL" "${MILESTONE:-none}" "$TITLE"
+  printf '  repo:   %s\n  label:  %s\n  milestone: %s\n  title:  %s\n\n  body:\n' "$DEST" "${LABELS[*]}" "${MILESTONE:-none}" "$TITLE"
   printf '%s\n' "$FULLBODY" | sed 's/^/    /'
   exit 0
 fi
@@ -425,10 +434,14 @@ fi
 # an unknown label, so create it first and ignore an already-exists error --
 # the alternative is an issue that silently never gets filed, which is the
 # original failure wearing a different hat.
-gh label create "$LABEL" --repo "$DEST" --color ededed \
-   --description 'work deferred from another run; see body' >/dev/null 2>&1 || true
+label_args=()
+for l in "${LABELS[@]}"; do
+  gh label create "$l" --repo "$DEST" --color ededed \
+     --description 'work deferred from another run; see body' >/dev/null 2>&1 || true
+  label_args+=(--label "$l")
+done
 
-URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" --label "$LABEL" ${MILESTONE:+--milestone "$MILESTONE"} 2>&1)" || {
+URL="$(gh issue create --repo "$DEST" --title "$TITLE" --body "$FULLBODY" "${label_args[@]}" ${MILESTONE:+--milestone "$MILESTONE"} 2>&1)" || {
   printf 'defere: gh refused to file on %s:\n%s\n' "$DEST" "$URL" >&2
   printf '        NOTHING was filed. There is no ownerless line to fall back on --\n' >&2
   printf '        lib/body-grammar.sh refuses one. Fix the destination and re-run.\n' >&2
@@ -447,7 +460,7 @@ if lp="$(ledger_path)"; then
   printf '%s\n' "$LINE" >> "$lp"
 fi
 
-printf 'defere: filed %s  [%s]\n' "$URL" "$LABEL"
+printf 'defere: filed %s  [%s]\n' "$URL" "${LABELS[*]}"
 printf '        ledger line (already accumulated; `defere --ledger` prints the block):\n'
 printf '%s\n' "$LINE"
 exit 0

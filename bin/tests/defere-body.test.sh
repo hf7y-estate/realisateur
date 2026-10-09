@@ -82,4 +82,15 @@ case "$out" in *'was chosen by'*) bad '...with no guess note' "$out" ;; *) ok '.
 out="$(PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --dry-run 2>&1)"
 has 'none open: said out loud, not silent' "$out" 'has no open milestone'
 
+section "D. --project labels the filing from:<caller>, ideate.md's grammar (#1646)"
+
+out="$(PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --dry-run 2>&1)"
+has 'D1 defaults to the calling repo, not hardcoded to from:zach' "$out" 'label:  deferred from:realisateur'
+
+out="$(PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --project realisateur --from groc-mangr --dry-run 2>&1)"
+has 'D2 --from overrides the guessed caller' "$out" 'label:  deferred from:groc-mangr'
+
+out="$(PATH="$T/bin:$PATH" bash "$SCRIPT" 'a thing' --human 'needs a call' --repo hf7y/realisateur --default-after '14d: do the reversible thing' --policy 'none yet' --dry-run 2>&1)"
+hasnt 'D3 --human files on the asking repo itself -- no from: label to add' "$out" 'from:'
+
 summary
