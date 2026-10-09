@@ -54,18 +54,31 @@ cat > "$T/bin/sudo" <<'STUB'
 #!/usr/bin/env bash
 shift; exec "$@"          # drop -n, run the cat
 STUB
-chmod +x "$T/bin/gh" "$T/bin/sudo"
+# Stands in for the whole docker binary: `run` is recorded in $T/docker-ran
+# (so a test can assert it was never called) and exits with $T/test-rc's
+# contents (0 when absent, same default-pass convention as the other
+# stubs); it never actually touches a clone, a fetch or $TEST_CMD's text --
+# the gate under test is the exit code it reacts to, not what docker ran.
+cat > "$T/bin/docker" <<'STUB'
+#!/usr/bin/env bash
+[ "$1" = run ] || exit 0
+echo run >> "$T/docker-ran"
+exit "$(cat "$T/test-rc" 2>/dev/null || echo 0)"
+STUB
+chmod +x "$T/bin/gh" "$T/bin/sudo" "$T/bin/docker"
 
 run() {  # run(repo) -- with the stubs in front of the real gh
-  rm -f "$T/merged"
+  rm -f "$T/merged" "$T/docker-ran"
   # shellcheck disable=SC2097,SC2098  # T="$T" passes the harness dir the stubs read; same value, child env
   PATH="$T/bin:$PATH" T="$T" AGENT_STATE="$T/state" GH_TOKEN_FILE="$T/token" \
+    AGENT_TESTCMD_FILE="$T/testcmd.tsv" AGENT_IMAGE="test-image" \
     bash "$SUT" "$1" 2>&1
 }
 carry() { printf '%s\n' "$@" > "$T/state/${repo}.prs"; }
 left()  { tr '\n' ' ' < "$T/state/${repo}.prs" | sed 's/ $//'; }
 state() { mkdir -p "$T/view" "$T/merge"; printf '%s\n' "$2" > "$T/view/$1"; [ -n "${3:-}" ] && printf '%s\n' "$3" >> "$T/view/$1"; true; }
 calls() { [ -f "$T/update-branch-calls" ] && grep -c "^$1\$" "$T/update-branch-calls" || echo 0; }
+testcmd() { printf '%s\t%s\n' "$1" "$2" >> "$T/testcmd.tsv"; }  # testcmd(key, cmd)
 
 section "A. the argument contract"
 out="$(PATH="$T/bin:$PATH" AGENT_STATE="$T/state" bash "$SUT" 2>&1)"
@@ -161,6 +174,7 @@ eq "...and the carry file holds the held link and the untried one after it" "$(l
 section "I. Actions disabled: statusCheckRollup is ignored, not trusted"
 repo=noactions; carry 11; echo false > "$T/actions-enabled"
 state 11 "OPEN false MERGEABLE RED"   # would hold RED if Actions were on
+testcmd "$repo" "true"   # declared and passing, so this section is purely about RED
 out="$(run "$repo")"
 has "a PR that would read RED is merged instead" "$out" "MERGED   #11"
 has "...and says why" "$out" "Actions disabled"
@@ -237,5 +251,38 @@ state 44 "OPEN false MERGEABLE"
 out="$(run "$repo")"
 has "a PR touching none of those paths still merges" "$out" "MERGED   #44"
 eq  "...and is forgotten" "$(left)" ""
+
+section "N. no usable check record: the declared test command gates the merge (#1612)"
+repo=nocmd; carry 11; echo false > "$T/actions-enabled"
+state 11 "OPEN false MERGEABLE"
+out="$(run "$repo")"
+has "no declared command holds it" "$out" "HELD     #11"
+has "...and says why" "$out" "declares no test command"
+eq  "...and keeps it" "$(left)" "11"
+eq  "...never asked docker to run anything" "$(cat "$T/docker-ran" 2>/dev/null)" ""
+
+repo=cmdpass; carry 22; echo false > "$T/actions-enabled"
+state 22 "OPEN false MERGEABLE"
+testcmd "$repo" "true"; echo 0 > "$T/test-rc"
+out="$(run "$repo")"
+has "a passing test command merges it" "$out" "MERGED   #22"
+eq  "...and forgets it" "$(left)" ""
+
+repo=cmdfail; carry 33; echo false > "$T/actions-enabled"
+state 33 "OPEN false MERGEABLE"
+testcmd "$repo" "false"; echo 1 > "$T/test-rc"
+out="$(run "$repo")"
+has "a failing test command holds the pull request" "$out" "HELD     #33"
+has "...and says why" "$out" "test command failed"
+eq  "...and keeps it, not merged" "$(left)" "33"
+eq  "...and never asked gh to merge it" "$(cat "$T/merged" 2>/dev/null)" ""
+rm -f "$T/test-rc" "$T/actions-enabled"
+
+section "O. a usable check record is unaffected -- no test command needed"
+repo=hascheck; carry 44; echo true > "$T/actions-enabled"
+state 44 "OPEN false MERGEABLE"   # no line in testcmd.tsv for this key either
+out="$(run "$repo")"
+has "merges with no declared command, same as before #1612" "$out" "MERGED   #44"
+rm -f "$T/actions-enabled"
 
 summary

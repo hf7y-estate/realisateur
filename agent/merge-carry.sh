@@ -35,7 +35,8 @@ carry="${AGENT_STATE:-/srv/agent/state}/${key}.prs"
 # past what merge-carry is actually tracking.
 updated="${carry%.prs}.updated"
 
-tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
+tokfile="${GH_TOKEN_FILE:-/etc/selfdev/gh-token}"
+tok="$(sudo -n cat "$tokfile")"
 
 # A repo with Actions disabled can never clear a FAILURE or a pending check --
 # crt measured 2026-10-06 holding 12 PRs forever on `gitleaks`, which cannot
@@ -45,6 +46,60 @@ tok="$(sudo -n cat "${GH_TOKEN_FILE:-/etc/selfdev/gh-token}")"
 # license to skip checks.
 actions_enabled="$(GH_TOKEN="$tok" gh api "repos/${owner}/${repo}/actions/permissions" \
   --jq .enabled </dev/null 2>/dev/null)" || actions_enabled=""
+
+# WHAT RUNS INSTEAD OF A CHECK RECORD THAT WILL NEVER EXIST (#1612). Declared
+# once per repo in test-cmd.tsv, keyed the same as $key, so a repo nobody has
+# declared a command for is held rather than merged on Actions' absence alone.
+# Read even when Actions is on: cheap, and it keeps this block the only place
+# that knows the file's format.
+testcmd_file="${AGENT_TESTCMD_FILE:-$(dirname "$(readlink -f "$0")")/test-cmd.tsv}"
+test_cmd=""
+if [ -f "$testcmd_file" ]; then
+  while IFS=$'\t' read -r tc_key tc_cmd; do
+    [ "$tc_key" = "$key" ] || continue
+    test_cmd="$tc_cmd"
+    break
+  done < "$testcmd_file"
+fi
+
+# THE PR's OWN CODE RUNS WHERE AN AGENT PASS WOULD, never bare on dexter: the
+# same --rm image, the token a read-only mount rather than a flag or an env
+# value on the command line (CLAUDE.md's subagent rules -- credentials stay
+# off `docker inspect` and `ps`). `pull/<n>/merge` is the ref GitHub computes
+# for a mergeable PR, which is the only case this is ever called for, so
+# fetching it is expected to work; a clone, fetch or checkout failure is
+# scored the same as a failing suite -- never a silent pass.
+run_test() {  # run_test <n> -- 0 if $test_cmd passes against the PR's merge result
+  local n="$1"
+  sudo -n docker run --rm --cpus 1.5 --memory 3g \
+    -v "${tokfile}":/run/gh-token:ro \
+    -e OWNER="$owner" -e REPO="$repo" -e PRN="$n" -e TEST_CMD="$test_cmd" \
+    "${AGENT_IMAGE:-ghcr.io/hf7y-estate/agent:latest}" bash -lc '
+      set -euo pipefail
+      GH_TOKEN="$(cat /run/gh-token)"
+      git config --global credential.helper "!f() { echo username=x-access-token; echo password=$GH_TOKEN; }; f"
+      git clone --quiet --depth 1 "https://github.com/$OWNER/$REPO" /work/r
+      cd /work/r
+      git fetch --quiet origin "pull/$PRN/merge"
+      git checkout --quiet FETCH_HEAD
+      eval "$TEST_CMD"
+    ' </dev/null >/dev/null 2>&1
+}
+
+try_merge() {  # try_merge <n> -- the merge call every passing PR used to go
+  # straight to; pulled out so the test-command gate below can share it
+  # instead of duplicating the FAILED/kept bookkeeping.
+  local n="$1"
+  if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
+       --merge --delete-branch </dev/null >/dev/null 2>&1; then
+    echo "  MERGED   #${n}${note}"
+  else
+    # A merge that fails is not a merge that was not wanted, so it stays on
+    # the list rather than being dropped silently.
+    echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
+    keep="${keep}${n}"$'\n'
+  fi
+}
 
 # ADOPT WHAT THE APP OPENED. The list alone orphans a PR whose pass died before
 # writing it down: senechal#1094 sat open with nobody to merge it (a 75-minute
@@ -103,14 +158,19 @@ for idx in "${!entries[@]}"; do
   fi
   case "$st" in
     "OPEN false MERGEABLE")
-      if GH_TOKEN="$tok" gh pr merge "$n" --repo "${owner}/${repo}" \
-           --merge --delete-branch </dev/null >/dev/null 2>&1; then
-        echo "  MERGED   #${n}${note}"
+      if [ "$actions_enabled" != "false" ]; then
+        try_merge "$n"
+      elif [ -z "$test_cmd" ]; then
+        # No usable check record AND nothing declared to run instead: held,
+        # not merged blind on Actions' absence alone (#1612).
+        echo "  HELD     #${n} -- ${key} declares no test command in ${testcmd_file##*/}, not merged blind${note}"
+        keep="${keep}${n}"$'\n'
+      elif run_test "$n"; then
+        try_merge "$n"
       else
-        # A merge that fails is not a merge that was not wanted, so it stays on
-        # the list rather than being dropped silently -- and nothing stacked
-        # on it is attempted this run either.
-        echo "  FAILED   #${n} -- merge refused, kept for the next pass${note}"
+        # Scored exactly like a RED check would be: held for the next pass,
+        # which #1597 is what sends an agent back at it.
+        echo "  HELD     #${n} -- test command failed on the merge result${note}"
         keep="${keep}${n}"$'\n'
         break
       fi ;;
