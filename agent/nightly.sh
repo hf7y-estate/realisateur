@@ -10,7 +10,7 @@
 #   usage-gate.sh          ->  nothing. A 429 fails a repo's pass and the loop
 #                              moves on. A coordinator traded for a retry,
 #                              deliberately.
-set -euo pipefail
+set -Eeuo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 turns="${TURNS:-150}"
@@ -154,6 +154,15 @@ while [ "$repo_i" -lt "${#repos[@]}" ]; do
   # identical to the bare name for the default owner, so nothing that runs
   # today changes.
   key="$repo"; [ "$owner" = hf7y-estate ] || key="${owner}.${repo}"
+  # A SILENT KILL HERE NAMES ITSELF (#1649): a `var=$(cmd)` whose cmd fails
+  # exits under `set -e` with NO output at all -- not even the dispatch line
+  # -- because the failure is in the assignment, not in anything already
+  # wrapped with `||`. Measured 2026-10-07 on a sent run: eleven seconds,
+  # through merge-carry.sh, dead before `--- <repo>: ... dispatching`, nothing
+  # said why. This trap is the net for that and anything shaped like it
+  # between here and the dispatch line below; it does not fire on the two
+  # failures already handled with their own `||` (merge-carry.sh, etiquette.sh).
+  trap 'echo "--- $label: failed before dispatch (exit $?, line $LINENO) -- the last line above this one is what ran" >&2' ERR
   # BEFORE the queue check, not after it. A repo is skipped below when its queue
   # is empty -- and a queue is empty precisely when the work is already sitting
   # in the previous pass's unmerged PRs, which is the case that most needs them
@@ -169,6 +178,7 @@ while [ "$repo_i" -lt "${#repos[@]}" ]; do
     | grep -E '^ +[-+]label|REFUSED|BLIND' || true
   n=1
   [ -n "$issue" ] || n="$(queue_count "$owner" "$repo")"
+  trap - ERR
   case "$n" in
     0)   echo "--- $label: queue empty, skipping"; continue ;;
     ERR) echo "--- $label: COULD NOT READ THE QUEUE -- skipping, not guessing"; continue ;;
