@@ -14,14 +14,15 @@ BRANCH="${BRANCH_PROTECTION_BRANCH:-main}"
 # THE CONTRACT, and the only place this repo's expected protection is written.
 # REQUIRED gates a merge; ADVISORY runs, reports, and does not.
 #
-# `suites` IS REQUIRED (Zach, 2026-10-05: "yes require suites"). It was empty,
-# and three PRs merged onto a main that had been red since 11:04Z that day
-# (#1516). So `--auto` now merges on green, not on arming. The other jobs stay
-# advisory: red there reports and does not block.
+# NOTHING IS REQUIRED. `suites` was, from 2026-10-05 (#1525), and it is an
+# Actions check. Zach, 2026-10-09: "nothing should be held on actions. actions
+# are done. we don't do actions." and, asked whether to wait for the dexter
+# test gate (#1612) first: "Drop it now". So a merge here is gated by nothing
+# until #1612 lands, and `--auto` merges on arming.
 #
 # enforce_admins is asserted separately, in section B: it answers a different
 # question, and it is the half with an incident behind it.
-REQUIRED=("suites")
+REQUIRED=()
 ADVISORY=("prose / prose" "shellcheck" "comment-claims" "deploy-drift")
 
 section "A. the required check set on $REPO@$BRANCH"
