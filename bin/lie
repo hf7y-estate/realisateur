@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# lie -- draws or removes ONE native blocked-by edge, named by `repo#n` on
+# both sides, and is the single allowlisted spelling of the DELETE that
+# removal needs.
+#
+# KIND: verb
+#
+# hf7y-estate/realisateur#1561: an agent could draw an edge
+# (`gh api -X POST .../dependencies/blocked_by`) but never take one back.
+# Removal needs `-X DELETE`, which the deny list refuses by PREFIX
+# (`Bash(gh api -X DELETE:*)`) -- correctly, because that prefix cannot tell
+# this one edge-shaped path from `DELETE /repos/<o>/<r>`. This file is the
+# narrow door: everything it can delete is one blocked_by edge this same
+# file just resolved from `repo#n`, never a path the caller composes.
+#
+# CYCLE REFUSAL. GitHub itself refuses a direct two-issue cycle but accepted
+# a three-issue one (measured on #1561's own history) -- a prefix-shaped
+# guard on GitHub's side is not depth-general. So --blocked-by walks the
+# candidate blocker's own blocked_by graph, of any depth and across repos,
+# looking for the issue it would block; if found, it refuses and prints the
+# path. --not-blocked-by skips the walk -- removing an edge cannot close one.
+#
+# exit: 0 done   1 the gh api write itself failed, nothing landed
+#       2 usage  5 refused -- would close a cycle (printed)
+#       6 BLIND -- a read needed to decide failed; nothing was risked
+
+set -uo pipefail
+
+CLI_NAME='lie'
+CLI_SUMMARY='draw or remove one native blocked-by edge, by repo#n on both sides'
+CLI_USAGE='  lie <repo#n> --blocked-by <repo#m>       draw: <repo#n> is blocked by <repo#m>
+  lie <repo#n> --not-blocked-by <repo#m>   remove that same edge
+  repo may be bare (crt#336) or owner/repo#336; bare defaults to
+  $GH_ESTATE_OWNER, else hf7y-estate'
+CLI_FLAGS='--blocked-by --not-blocked-by'
+CLI_POSITIONAL=any   # the issue ref and the flag's VALUE both land here to cli-guard
+CLI_EXITS='  0  edge drawn or removed; the read-back is printed
+  1  the gh api write itself failed -- nothing landed
+  2  usage error
+  5  refused -- drawing this edge would close a cycle (printed)
+  6  BLIND -- a read needed before deciding failed; nothing was risked'
+. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/cli-guard.sh"
+cli_guard "$@"
+
+SELF_NAME='lie'
+GH="${LIE_GH:-gh}"
+OWNER_DEFAULT="${GH_ESTATE_OWNER:-hf7y-estate}"
+
+die()    { printf '%s: %s\n' "$SELF_NAME" "$*" >&2; exit 2; }
+blind()  { printf '%s: BLIND: %s\n' "$SELF_NAME" "$*" >&2; exit 6; }
+refuse() { printf '%s: REFUSED: %s\n' "$SELF_NAME" "$*" >&2; exit 5; }
+failed() { printf '%s: FAILED: %s\n' "$SELF_NAME" "$*" >&2; exit 1; }
+
+# parse_ref <repo#n> -> sets REF_OWNER REF_REPO REF_NUM
+parse_ref() {
+  local in="$1" owner repo num rest
+  case "$in" in
+    */*#*) rest="${in%#*}"; num="${in##*#}"; owner="${rest%%/*}"; repo="${rest#*/}" ;;
+    *#*)   num="${in##*#}"; owner="$OWNER_DEFAULT"; repo="${in%#*}" ;;
+    *) die "not a repo#n reference: $in" ;;
+  esac
+  case "$num" in '' | *[!0-9]*) die "not a repo#n reference: $in" ;; esac
+  [ -n "$repo" ] || die "not a repo#n reference: $in"
+  REF_OWNER="$owner"; REF_REPO="$repo"; REF_NUM="$num"
+}
+
+# <owner> <repo> <n> -> prints the issue's own database id (the thing
+# dependencies/blocked_by calls "issue_id"), or prints nothing and returns
+# gh's own nonzero exit.
+read_issue_id() {
+  "$GH" api "repos/$1/$2/issues/$3" --jq '.id'
+}
+
+# <owner> <repo> <n> -> one "owner/repo#n" per line, its DIRECT blockers;
+# prints nothing and returns gh's own nonzero exit on a read failure.
+read_blocked_by() {
+  "$GH" api "repos/$1/$2/issues/$3/dependencies/blocked_by" \
+    --jq '.[] | "\(.repository.full_name)#\(.number)"'
+}
+
+# walk_find <start-ref> <target-ref>
+# Breadth-first over read_blocked_by, starting at <start-ref>. Sets
+# WALK_PATH. Returns 0 (found -- WALK_PATH is start|...|target) / 1 (not
+# found anywhere reachable) / 2 (a read failed -- WALK_PATH names where).
+walk_find() {
+  local start="$1" target="$2" cur o r n out rc nxt
+  local -A seen=() pathof=()
+  local queue=("$start")
+  pathof["$start"]="$start"
+  while [ "${#queue[@]}" -gt 0 ]; do
+    cur="${queue[0]}"; queue=("${queue[@]:1}")
+    [ -n "${seen[$cur]:-}" ] && continue
+    seen["$cur"]=1
+    if [ "$cur" = "$target" ]; then
+      WALK_PATH="${pathof[$cur]}"
+      return 0
+    fi
+    o="${cur%%/*}"; r="${cur#*/}"; r="${r%%#*}"; n="${cur##*#}"
+    out="$(read_blocked_by "$o" "$r" "$n" 2>&1)"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      WALK_PATH="could not read $cur's blockers: $out"
+      return 2
+    fi
+    [ -n "$out" ] || continue
+    while IFS= read -r nxt; do
+      [ -n "$nxt" ] || continue
+      [ -n "${pathof[$nxt]:-}" ] || pathof["$nxt"]="${pathof[$cur]}|$nxt"
+      queue+=("$nxt")
+    done <<< "$out"
+  done
+  return 1
+}
+
+MODE='' OTHER_ARG='' TARGET_ARG=''
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --blocked-by)     [ -n "${2:-}" ] || die "--blocked-by needs a repo#n"
+                       MODE=add; OTHER_ARG="$2"; shift 2 ;;
+    --not-blocked-by) [ -n "${2:-}" ] || die "--not-blocked-by needs a repo#n"
+                       MODE=del; OTHER_ARG="$2"; shift 2 ;;
+    -*) die "unknown flag: $1" ;;
+    *)  [ -z "$TARGET_ARG" ] || die "one target issue at a time: $1"
+        TARGET_ARG="$1"; shift ;;
+  esac
+done
+[ -n "$TARGET_ARG" ] || die "need a target issue: lie <repo#n> --blocked-by|--not-blocked-by <repo#m>"
+[ -n "$MODE" ] || die "need --blocked-by or --not-blocked-by"
+
+parse_ref "$TARGET_ARG"; T_OWNER="$REF_OWNER"; T_REPO="$REF_REPO"; T_NUM="$REF_NUM"
+parse_ref "$OTHER_ARG";  O_OWNER="$REF_OWNER"; O_REPO="$REF_REPO"; O_NUM="$REF_NUM"
+TARGET_REF="$T_OWNER/$T_REPO#$T_NUM"
+OTHER_REF="$O_OWNER/$O_REPO#$O_NUM"
+
+OTHER_ID="$(read_issue_id "$O_OWNER" "$O_REPO" "$O_NUM" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] || blind "could not read $OTHER_REF: $OTHER_ID"
+case "$OTHER_ID" in '' | *[!0-9]*) blind "could not read $OTHER_REF: unexpected id '$OTHER_ID'" ;; esac
+
+print_readback() {
+  local out
+  out="$(read_blocked_by "$T_OWNER" "$T_REPO" "$T_NUM" 2>&1)"
+  if [ $? -ne 0 ]; then
+    printf '%s: wrote OK but the read-back failed: %s\n' "$SELF_NAME" "$out" >&2
+    return 0
+  fi
+  if [ -n "$out" ]; then
+    printf '%s: %s blocked_by: %s\n' "$SELF_NAME" "$TARGET_REF" "$(printf '%s' "$out" | paste -sd, -)"
+  else
+    printf '%s: %s blocked_by: (none)\n' "$SELF_NAME" "$TARGET_REF"
+  fi
+}
+
+if [ "$MODE" = add ]; then
+  walk_find "$OTHER_REF" "$TARGET_REF"; wrc=$?
+  case "$wrc" in
+    0) refuse "$TARGET_REF blocked_by $OTHER_REF would close a cycle: $TARGET_REF <- ${WALK_PATH//|/ <- }" ;;
+    2) blind "$WALK_PATH" ;;
+  esac
+  out="$("$GH" api -X POST "repos/$T_OWNER/$T_REPO/issues/$T_NUM/dependencies/blocked_by" \
+          -F "issue_id=$OTHER_ID" --silent 2>&1)"
+  [ $? -eq 0 ] || failed "could not draw $TARGET_REF blocked_by $OTHER_REF: $out"
+  printf '%s: drew %s blocked_by %s\n' "$SELF_NAME" "$TARGET_REF" "$OTHER_REF"
+else
+  out="$("$GH" api -X DELETE "repos/$T_OWNER/$T_REPO/issues/$T_NUM/dependencies/blocked_by/$OTHER_ID" \
+          --silent 2>&1)"
+  [ $? -eq 0 ] || failed "could not remove $TARGET_REF blocked_by $OTHER_REF: $out"
+  printf '%s: removed %s blocked_by %s\n' "$SELF_NAME" "$TARGET_REF" "$OTHER_REF"
+fi
+print_readback
