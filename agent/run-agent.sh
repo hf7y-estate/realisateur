@@ -215,11 +215,21 @@ else
 fi
 sudo -n rm -rf "$nocache"
 
+# THE THIRD CREDENTIAL, IF THIS REPO HAS ONE (#1656). Resolved by
+# repo-credential-mount.sh against bin/lib/repo-credentials.tsv -- the one
+# place a repo is tied to a key -- never typed here per repo. No row, or a
+# row whose file is not yet on this host, prints nothing: this stays
+# advisory, unlike the GH mint above, which refuses.
+extra_cred_mount=()
+cred_spec="$("$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/repo-credential-mount.sh" "${owner}/${repo}" 2>/dev/null || true)"
+[ -z "$cred_spec" ] || extra_cred_mount=(-v "$cred_spec")
+
 rc=0
 sudo -n docker run --rm \
   --cpus 1.5 --memory 3g \
   -v /etc/selfdev/claude-token:/run/claude-token:ro \
   -v "${tokfile}":/run/gh-token:ro \
+  "${extra_cred_mount[@]}" \
   -v "${root}":/work \
   -e OWNER="$owner" \
   -e REPO="$repo" \
