@@ -12,4 +12,3 @@
 # in the repo, or drop the whole `suites` required check.
 
 bin/tests/carry-orphans.test.sh	#1120	commands/bashify.md and commands/cloture.md ride bashified with no carries.tsv row; removing them needs a deliberate `git rm` on bashified, which is a person's call, not this suite's or carry.sh's
-bin/tests/default-after-ruling-comment.test.sh	#1553	deliberately red: witness for #1553, piece 1 of #1523 -- etiquette.sh takes a lapsed DEFAULT-AFTER over a ruling already relayed in a comment; #1554 (piece 2) is the guard that turns this green
