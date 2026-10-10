@@ -175,6 +175,35 @@ eq "...and dispatched nothing itself" "$(dispatched | wc -l | tr -d ' ')" "2"
 PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send x alpha >/dev/null 2>&1; rc "...a pass count that is not a number exits 2" 2 "$?"
 PATH="$T/bin:$PATH" bash "$T/agent/nightly.sh" --send 3 >/dev/null 2>&1; rc "...no repo named exits 2" 2 "$?"
 
+section "H2. --help prints usage and exits 0, without ever reaching the lock (#1700)"
+rm -f "$T/dispatched" "$T/srv/nightly."*.log "$T/srv/.nightly.lock"
+out="$(PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --help 2>&1)"; helprc="$?"
+rc "...exits 0" 0 "$helprc"
+has "...prints usage" "$out" "usage: nightly.sh"
+eq "...dispatched nothing" "$(dispatched | wc -l | tr -d ' ')" "0"
+hasnt "...never took the lock -- no nightly log was written" "$(ls "$T/srv" 2>/dev/null)" "nightly."
+
+section "H3. any other unrecognised argument exits 2 with usage, not a full nightly (#1700)"
+rm -f "$T/dispatched" "$T/srv/nightly."*.log "$T/srv/.nightly.lock"
+out="$(PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --sned 2>&1)"; typorc="$?"
+rc "...exits 2" 2 "$typorc"
+has "...prints usage" "$out" "usage: nightly.sh"
+eq "...dispatched nothing" "$(dispatched | wc -l | tr -d ' ')" "0"
+hasnt "...never took the lock -- no nightly log was written" "$(ls "$T/srv" 2>/dev/null)" "nightly."
+
+section "H4. two --send calls in the same second do not collide on the unit name (#1700)"
+cat > "$T/bin/systemd-run" <<'STUB'
+#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in --unit=*) printf '%s\n' "${a#--unit=}" >> "$T/units" ;; esac
+done
+STUB
+chmod +x "$T/bin/systemd-run"
+rm -f "$T/units"
+PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --send 1 alpha >/dev/null 2>&1
+PATH="$T/bin:$PATH" AGENT_DIR="$T/srv" bash "$T/agent/nightly.sh" --send 1 alpha >/dev/null 2>&1
+eq "...two sends recorded, under two distinct unit names" "$(sort -u "$T/units" | wc -l | tr -d ' ')" "2"
+
 section "I. ONLY narrows a run to the repos it was sent with"
 out="$(ONLY="gamma" PASSES=1 run)"
 eq "...only gamma ran" "$(dispatched | tr '\n' ' ')" "gamma "
