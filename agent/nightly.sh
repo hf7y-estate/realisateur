@@ -22,16 +22,31 @@ passes="${PASSES:-1}"
 # is in `systemctl`, in the journal, and killable by name. Zach, 2026-10-01, on
 # the 330-character ssh line this replaces: "That incantation proves the
 # failure." Nothing else about a sent run differs from the 01:00 one.
+usage="usage: nightly.sh [--send <passes> <repo>...] [--help]"
 if [ "${1:-}" = --send ]; then
   shift
   p="${1:-}"; [ $# -gt 0 ] && shift
-  case "$p" in ''|*[!0-9]*) echo "usage: nightly.sh --send <passes> <repo>..." >&2; exit 2 ;; esac
-  [ $# -gt 0 ] || { echo "usage: nightly.sh --send <passes> <repo>..." >&2; exit 2; }
-  unit="agent-sent-$(date -u +%Y%m%dT%H%M%SZ)"
+  case "$p" in ''|*[!0-9]*) echo "$usage" >&2; exit 2 ;; esac
+  [ $# -gt 0 ] || { echo "$usage" >&2; exit 2; }
+  # The second is not enough on its own -- two callers in the same second (two
+  # sessions sending at once) collided on it (#1700) -- so the PID rides along
+  # too, unique per process even when the clock is not.
+  unit="agent-sent-$(date -u +%Y%m%dT%H%M%SZ)-$$"
   echo "sending: $* -- up to $p pass(es) each, as unit $unit"
   exec sudo -n systemd-run --unit="$unit" --uid="$(id -u)" --gid="$(id -g)" \
     --setenv=HOME="$HOME" --setenv=PATH="$PATH" --setenv=PASSES="$p" --setenv=ONLY="$*" ${TURNS:+--setenv=TURNS="$TURNS"} \
     "$here/nightly.sh"
+fi
+# --help, or anything else that is not --send or a bare invocation, used to
+# fall through to a full org-wide run (#1700): with the lock free, a typo'd
+# flag started a night's worth of passes instead of reporting itself.
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  echo "$usage"
+  exit 0
+fi
+if [ -n "${1:-}" ]; then
+  echo "$usage" >&2
+  exit 2
 fi
 only="${ONLY:-}"
 # The log and the lock live where the dispatch layer does. Named once, and
