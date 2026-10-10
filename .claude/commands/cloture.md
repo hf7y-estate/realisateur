@@ -107,4 +107,6 @@ The test is structural: **a paragraph about a defect ending in a question mark d
 
 Then the evidence: **every clause naming a problem is immediately followed by an issue or PR URL** -- which branch got which PR, which issues were filed, what was pushed where, what was reaped and its sha. Links are the proof, not the report. A URL standing where a sentence belongs fails exactly as a sentence standing where a URL belongs.
 
+**A block written for the next session is part of the close.** A handoff holds no fact that is not behind a URL on the same line; what has no home is filed first, then linked (#1642).
+
 Zach should never have to ask whether something landed, **or what you just said**.
