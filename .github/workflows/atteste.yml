@@ -26,7 +26,7 @@ jobs:
         run: |
           # Two days on a daily clock: a merged PR is graded at its merge
           # commit, so the overlap costs nothing and covers a missed run.
-          if ! gh search prs --owner hf7y --merged \
+          if ! gh search prs --owner hf7y-estate --merged \
                --merged-at ">=$(date -u -d '2 days ago' +%F)" \
                --limit 300 --json url --jq '.[].url' > "$RUNNER_TEMP/subjects"; then
             echo '::error::the PR search failed -- NOTHING was graded'; exit 1
