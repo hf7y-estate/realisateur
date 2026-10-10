@@ -4,7 +4,7 @@ description: Halve a repo's prose by deleting the mechanisms that manufacture it
 argument-hint: "<repo-name>"
 ---
 
-<!-- Source: hf7y/realisateur:.claude/commands/reap.md -- installed verbatim at
+<!-- Source: hf7y-estate/realisateur:.claude/commands/reap.md -- installed verbatim at
      USER level, so "this repo" below means realisateur, not your cwd. Edit it
      there, never the installed copy. -->
 
@@ -17,8 +17,8 @@ Reap `$ARGUMENTS`. Three targets: **prose in half, foreign mechanism in half,
 `.prose-ratchet`. Write both numbers down; every later claim is against them.
 
 **A repo with no prose guard adopts one by calling**
-`hf7y/etalon/.github/workflows/guard.yml@main`. Never copy the script: it is
-maintained in `hf7y/etalon` and nowhere else, and every vendored copy this
+`hf7y-estate/etalon/.github/workflows/guard.yml@main`. Never copy the script: it is
+maintained in `hf7y-estate/etalon` and nowhere else, and every vendored copy this
 estate has made has drifted or shipped broken.
 
 ## 2. Cut the generators, not the output
