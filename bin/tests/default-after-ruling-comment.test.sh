@@ -10,14 +10,10 @@
 #
 # `bin/etiquette.sh --apply` is the executor that acts on the lapse
 # (agent/nightly.sh:199 calls it `--apply` for exactly this reason, per its
-# own comment: "THE EXECUTOR DEFAULT-AFTER NEVER HAD (#1410)"). Its lapse
-# check (etiquette.sh:162-179) reads only the body and `createdAt` -- never a
-# comment -- so it cannot see the ruling and takes the stale default anyway.
-#
-# THIS SUITE IS EXPECTED RED TODAY. #1523's piece 2 (#1554) is the guard that
-# turns it green: refuse a lapsed default when a later comment already
-# answered it. Quarantined in bin/run-suites.quarantine until #1554 lands --
-# see the entry there for why.
+# own comment: "THE EXECUTOR DEFAULT-AFTER NEVER HAD (#1410)"). #1554 (piece
+# 2 of #1523) made its lapse check also read comments: a comment filed after
+# the issue, from the human or an agent relaying one (`decision-by:`,
+# #924/#1366), now refuses the stale default instead of taking it.
 #
 # HERMETICITY: full. A fake `gh` records every `issue edit`.
 set -uo pipefail

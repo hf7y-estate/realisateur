@@ -27,6 +27,7 @@ CLI_EXITS='  0  the repo carries the declared labels and every derived one match
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/cli-guard.sh"
 cli_guard "$@"
 . "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/body-grammar.sh"
+. "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/estate-set.sh"
 
 APPLY=0
 REPO=''
@@ -147,13 +148,13 @@ say ""
 # [] means both "missing repo" and "empty one" -- only the exit code separates
 # "nothing waiting" from "could not look".
 json="$(gh issue list --repo "$REPO" --state open --limit 200 \
-        --json number,title,body,labels,createdAt 2>&1)" || {
+        --json number,title,body,labels,createdAt,comments 2>&1)" || {
   printf '%s: BLIND -- could not read %s: %s\n' "$CLI_NAME" "$REPO" "$json" >&2
   printf '%s: that is "I could not look", not "nothing needs a human".\n' "$CLI_NAME" >&2
   exit 6
 }
 
-findings=0; matched=0; changed=0
+findings=0; matched=0; changed=0; answered=0
 # Line 1 ALONE decides the label (#1433): no comment, and no other label,
 # can take it off a body that still says DECISION:. To clear it, edit line 1.
 while IFS=$'\t' read -r num has_label title; do
@@ -169,7 +170,24 @@ while IFS=$'\t' read -r num has_label title; do
       if da="$(grammar_default_after "$body")" && [ "${da%%$'\t'*}" -gt 0 ]; then
         created="$(printf '%s' "$json" | jq -r --argjson n "$num" '.[]|select(.number==$n)|.createdAt // empty')"
         lapse="$(date -u -d "${created:0:10} + ${da%%$'\t'*} days" +%F 2>/dev/null)" || lapse=''
-        [ -n "$lapse" ] && [[ "$lapse" < "${ETIQUETTE_TODAY:-$(date -u +%F)}" ]] && want=no
+        if [ -n "$lapse" ] && [[ "$lapse" < "${ETIQUETTE_TODAY:-$(date -u +%F)}" ]]; then
+          # musc-2300#55/#219 (#1523, #1553): a comment filed after the issue,
+          # from the human or an agent relaying one (`decision-by:`, #924/
+          # #1366), already ruled -- taking the lapsed default anyway reads
+          # right past the ruling. REFUSE THE DEFAULT, never guess which way
+          # a comment points: the executor is not the reader of rulings.
+          ruled_at="$(printf '%s' "$json" | jq -r --argjson n "$num" --arg human "$GH_ESTATE_HUMAN" '
+            .[] | select(.number==$n) | (.comments // [])[]
+            | select((.author.login // "") == $human
+                     or ((.body // "") | test("<!--\\s*decision-by:")))
+            | .createdAt' | sort | tail -1)"
+          if [ -n "$ruled_at" ] && [[ "$ruled_at" > "$created" ]]; then
+            answered=$((answered + 1))
+            row ANSWERED "$num" "DEFAULT-AFTER lapsed but a comment on ${ruled_at:0:10} already ruled it -- ${title:0:40}"
+            continue
+          fi
+          want=no
+        fi
       fi ;;
     no-decision) want=no ;;
     none)
@@ -202,7 +220,7 @@ done < <(printf '%s' "$json" | jq -r --arg l "$LABEL" \
   '.[] | [.number, (if any(.labels[]; .name==$l) then "yes" else "no" end), .title] | @tsv')
 
 say ""
-say "$matched issue(s) agree, $findings issue finding(s), $label_findings label finding(s);"
+say "$matched issue(s) agree, $findings issue finding(s), $label_findings label finding(s), $answered answered-in-comment;"
 say "$changed label(s) reconciled, $provisioned label(s) provisioned."
 [ $((findings + label_findings)) -gt 0 ] && [ "$APPLY" -eq 0 ] && \
   say 'Re-run with --apply. An UNDECLARED body is NOT fixed by a label -- edit line 1.'

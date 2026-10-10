@@ -43,6 +43,14 @@ writes it, reading
 for the declaration, and for whether a stated
 .B DEFAULT-AFTER
 window has lapsed, and editing line 1 is how you change it.
+A lapsed window is not taken as a default when a comment filed after the
+issue already carries the ruling \(em from the owner, or an agent relaying
+one with
+.BR "<!-- decision-by: <who> -->" .
+Such an issue is reported
+.B ANSWERED,
+not relabelled, so the stale default cannot override a ruling the predicate
+never read (hf7y-estate/realisateur#1554).
 Typed by hand it was wrong three times out of three. This is the same
 declaration
 .BR gh-sign (1)
