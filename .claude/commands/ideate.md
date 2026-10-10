@@ -4,7 +4,7 @@ description: Interactive cross-project vision/triage pass -- surface state acros
 argument-hint: "[project-name]"
 ---
 
-<!-- Source: hf7y/realisateur:.claude/commands/ideate.md -- installed verbatim at
+<!-- Source: hf7y-estate/realisateur:.claude/commands/ideate.md -- installed verbatim at
      USER level, so "this repo" below means realisateur, not your cwd. Edit it
      there, never the installed copy. -->
 
@@ -26,7 +26,7 @@ With no argument, run the full sweep.
 
 ## 1. Orient
 
-`ausculte` for the estate's health before you touch any project.
+Start from the tracker: `gh issue list` across the org. `ausculte` is retired (Zach, 2026-10-09, #1651) -- do not run it or report its rows.
 
 **Read each project's open ISSUES, not its files.**
 
@@ -77,7 +77,7 @@ has already ruled on gets an answer that contradicts the ruling (#1379, #1543).
 ## 4. Record and queue, don't build
 
 **Park by default.** Against the project's open **native GitHub milestone**
-(`gh api repos/hf7y/<p>/milestones`): is this idea required to reach it? Yes → `active`;
+(`gh api repos/hf7y-estate/<p>/milestones`): is this idea required to reach it? Yes → `active`;
 if no, tag `(parked)` — or `(waiting: <dep>)` if blocked externally — and record
 one line of why. The metric that matters is the *active* set draining, not the
 parked reservoir shrinking; a free-fed reservoir is supposed to grow. Promoting
@@ -93,7 +93,7 @@ a parked idea is a deliberate, stated decision, never a silent reorder.
 
 **Every destination is a command, never a file:**
 
-- **realisateur's own scope** — file an issue on `hf7y/realisateur`.
+- **realisateur's own scope** — file an issue on `hf7y-estate/realisateur`.
 - **Machine-wide config** (crontab, `~/.claude` hooks, systemd, autostart, WM
   config, `~/.local/bin`) — `notify-senechal <door> <field>=<value>`. TYPED
   since 2026-08-16 (#352); the prose form exits 2. realisateur owns what it
@@ -124,14 +124,14 @@ idea changing under it; fine for nightly-batch to iterate. **Part of a
 still-forming dream** -- likely to morph before anything built against its
 current shape survives; slower iteration is the lever, not "don't build".
 
-Record it **on an issue assigned to that milestone** (the `milestone` label was retired #738/#875). It is no longer a
-`_paced.conf` weight: `scheduler/tempo.sh` paces on ACTIONABLE BACKLOG,
-ROSTER's `rate` is only a ceiling, and `TEMPO_BASE_MIN` is the single fleet
-knob. **Never edit a ROSTER row to change pace.**
+Record it **on an issue assigned to that milestone** (the `milestone` label was retired #738/#875). Pace is not a
+knob: `agent/nightly.sh` is the whole overnight scheduler, one pass per repo,
+with no pacer and no ROSTER. `nightly.sh --send <passes> <repo>#<n>` is the
+one way to order a run.
 
 ## 5. Proposals about scheduler itself go through the front door
 
-File an issue in `hf7y/scheduler`. Never hand-edit its engine from an ideate
+File an issue in `hf7y-estate/scheduler`. Never hand-edit its engine from an ideate
 session: it may have concurrent work in flight, and realisateur is not its owner.
 
 ## 6. Commit, push, and stop

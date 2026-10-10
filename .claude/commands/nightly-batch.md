@@ -10,14 +10,14 @@ can't be reverted -- an ordinary commit, branch, or new local scheduler
 registration never qualifies.
 
 **Findings go in the issue tracker, never in a markdown surface.**
-One destination, and it is a command: `gh issue create -R hf7y/realisateur`.
+One destination, and it is a command: `gh issue create -R hf7y-estate/realisateur`.
 
 This command runs unattended overnight, with no human review until morning.
 
 ## 1. Orient
 
 `git log --oneline -10`, `README.md`, and the open issues
-(`gh issue list -R hf7y/realisateur`). If a
+(`gh issue list -R hf7y-estate/realisateur`). If a
 previous nightly run left work in progress (check the last report under
 `~/reports/realisateur/`), pick up from there rather than starting over.
 
@@ -134,7 +134,7 @@ For each unarchived artifact:
 `~/.claude` settings hooks, systemd units, autostart, WM config, marker
 files under `~/.local/share`. Standing rule: realisateur *owns* the thing
 it generates; senechal *owns knowing it exists*. It files a labelled issue
-on `hf7y/senechal` with `gh` directly and reads it back to confirm it
+on `hf7y-estate/senechal` with `gh` directly and reads it back to confirm it
 landed, so it needs no clone of that repo and no push access to it.
 
 ## 4. Commit as you go
@@ -145,7 +145,7 @@ repo.
 
 ## 5. Flag what you built, and anything needing the user's own judgment
 
-One issue per item, on `hf7y/realisateur`:
+One issue per item, on `hf7y-estate/realisateur`:
 
 - **Every new project scaffolded tonight** -- what artifact it came from,
   what was inferred, where it lives, whether it got a scheduler

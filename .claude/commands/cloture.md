@@ -3,7 +3,7 @@ scope: user
 description: Session-closing rite -- reconcile every branch against the remote, deal with residue rather than narrating it, FIX the rows one edit away and file only what it cannot reach, surface what is blocked on Zach.
 ---
 
-<!-- Source: hf7y/realisateur:.claude/commands/cloture.md, installed at USER
+<!-- Source: hf7y-estate/realisateur:.claude/commands/cloture.md, installed at USER
      level: "this repo" below means realisateur, not your cwd. Edit it there.
      Self-contained on purpose -- git and gh, nothing else.
      Every rule here is one line and a citation. The argument lives in the
@@ -84,14 +84,14 @@ The **owning** repo -- `check-project-busy <target>` first if it isn't this one.
 
 ## 4. Blocked on Zach
 
-Only this session's own. **A body opening `DECISION:` is a question asked, not one still open** -- the ruling is usually in a comment the body never learned (#1044), so grade with the shared predicate, never the body (#1089):
+Only this session's own. **Line 1 of the body is the whole test** (#1433): `etiquette` derives `needs-human` from it alone. A ruling that sits in a comment while line 1 still opens `DECISION:` is a body to rewrite (`grammar_rewrite_on_ruling`), not a question still open (#1044).
 
 ```
-. bin/lib/answered.sh && issue_answered <owner/repo> <n>   # 0 answered  1 unanswered  2 uncounted  6 BLIND
+gh issue view <n> -R <owner/repo> --json body --jq '.body | split("\n")[0]'
 ```
 
-- **Only `1` is blocked on Zach.** `2` and `6` are rows too -- an unknowable is not an answer, and a check that could not look is a finding about the check.
-- **`needs-human` is `etiquette`'s VIEW of that same predicate, not a second opinion** -- stale wherever that sweep cannot write (2026-09-29: three repos blind on one credential).
+- **Only a line 1 opening `DECISION:` is blocked on Zach.** Anything that is neither `DECISION:` nor `NO-DECISION:` is a row too -- an undeclared body is a finding about the body.
+- **`needs-human` is `etiquette`'s VIEW of that same line, not a second opinion** -- stale wherever that sweep cannot write (2026-09-29: three repos blind on one credential).
 - **Residue this session CAUSED is never one of these.** Repair it or file it; handing it back is the failure.
 - **"Blocked on Zach: nothing" under an unmet goal is an alarm**, not a pass -- the only thing that stopped is the agent. While an unblocked next command exists, run it.
 - **An offer is not a landing.** "Want me to file that?", "say the word and I'll build it" -- nine in one session, one declined (#1239). An offer nobody declines was never a question.
