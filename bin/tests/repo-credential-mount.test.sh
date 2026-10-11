@@ -52,6 +52,19 @@ out="$(REPO_CREDENTIALS_TSV="$T/no-such-map.tsv" CRED_DIR="$T/creds" MOUNT_ROOT=
 rc "exits 0" 0 "$?"
 eq "...prints nothing" "$out" ""
 
+section "G. a credential directory the caller cannot read is asked through sudo -- dexter's /etc/selfdev is 700 root and run-agent.sh runs as zach (baudin#189)"
+mkdir -p "$T/bin" "$T/locked"
+printf 'ha-token-value\n' > "$T/locked/baudin-ha-token"
+chmod 000 "$T/locked"
+printf '#!/bin/sh\n[ "$1" = -n ] && shift\n[ "$1 $2" = "test -f" ] && [ "$3" = "%s" ]\n' "$T/locked/baudin-ha-token" > "$T/bin/sudo"
+chmod +x "$T/bin/sudo"
+out="$(PATH="$T/bin:$PATH" run hf7y-estate/baudin "$T/locked")"; rc "exits 0" 0 "$?"
+eq "...the mount spec, though [ -f ] alone says no" "$out" \
+  "$T/locked/baudin-ha-token:$T/run/baudin-ha-token:ro"
+out="$(PATH="$T/bin:$PATH" run hf7y-estate/baudin "$T/creds-nowhere")"; rc "exits 0" 0 "$?"
+eq "...and still nothing when sudo says no too" "$out" ""
+chmod 700 "$T/locked"
+
 section "F. the target argument is required"
 out="$("$RESOLVER" 2>&1)"; rc="$?"
 rc "exits nonzero" 1 "$rc"
