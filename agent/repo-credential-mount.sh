@@ -30,6 +30,10 @@ cred_key="$(awk -F'\t' -v r="$target" '$0 !~ /^#/ && $1==r {print $2; exit}' "$m
 [ -n "$cred_key" ] || exit 0
 
 cred_path="$CRED_DIR/$cred_key"
-[ -f "$cred_path" ] || exit 0
+# /etc/selfdev is 700 root and run-agent.sh calls this as zach, so a bare
+# [ -f ] said "not on this host" for a file that was (hf7y-estate/baudin#189,
+# 2026-10-10: the first baudin pass found no /run/baudin-ha-token). Ask the
+# way run-agent.sh reaches everything else in that directory.
+[ -f "$cred_path" ] || sudo -n test -f "$cred_path" 2>/dev/null || exit 0
 
 printf '%s:%s:ro\n' "$cred_path" "$MOUNT_ROOT/$cred_key"
